@@ -1,0 +1,162 @@
+version: "3.8"
+
+# ══════════════════════════════════════════════════
+# ForenHive — Docker Compose Principal
+# Plateforme d'Analyse Forensique Automatisée
+# ══════════════════════════════════════════════════
+
+services:
+
+  # ── C2 : Elasticsearch ──────────────────────────
+  elasticsearch:
+    image: elasticsearch:8.13.0
+    container_name: forenhive-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms4g -Xmx4g}
+      - xpack.security.enabled=false
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - backend-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── C2 : Logstash ───────────────────────────────
+  logstash:
+    image: logstash:8.13.0
+    container_name: forenhive-logstash
+    volumes:
+      - ./pipeline/logstash/pipelines:/usr/share/logstash/pipeline
+      - ./pipeline/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+    ports:
+      - "5044:5044"
+    networks:
+      - honeypot-net
+      - backend-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── C2 : Filebeat ───────────────────────────────
+  filebeat:
+    image: elastic/filebeat:8.13.0
+    container_name: forenhive-filebeat
+    user: root
+    volumes:
+      - ./pipeline/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - /var/log:/var/log:ro
+    networks:
+      - honeypot-net
+      - backend-net
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  # ── C2 : PostgreSQL ─────────────────────────────
+  postgresql:
+    image: postgres:15
+    container_name: forenhive-postgresql
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-forenhive_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forenhive_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-forenhive_db}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - backend-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forenhive_user}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── C4 : Ollama (LLM Mistral) ───────────────────
+  ollama:
+    image: ollama/ollama
+    container_name: forenhive-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - backend-net
+    restart: unless-stopped
+
+  # ── C5 : Backend FastAPI ────────────────────────
+  fastapi:
+    build: ./backend
+    container_name: forenhive-backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    networks:
+      - backend-net
+      - frontend-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── C5 : Frontend React ─────────────────────────
+  react:
+    build: ./frontend
+    container_name: forenhive-frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend-net
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
+  # ── Nginx Reverse Proxy ─────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: forenhive-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - frontend-net
+    depends_on:
+      - react
+      - fastapi
+    restart: unless-stopped
+
+# ══════════════════════════════════════════════════
+# RÉSEAUX
+# ══════════════════════════════════════════════════
+networks:
+  honeypot-net:
+    driver: bridge
+    internal: true
+  backend-net:
+    driver: bridge
+    internal: true
+  frontend-net:
+    driver: bridge
+
+# ══════════════════════════════════════════════════
+# VOLUMES
+# ══════════════════════════════════════════════════
+volumes:
+  es-data:
+  pg-data:
+  ollama-data:
