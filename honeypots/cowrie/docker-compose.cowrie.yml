@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: forenhive-cowrie
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+      - "2223:2223"
+    volumes:
+      - cowrie-logs:/cowrie/var/log/cowrie
+    networks:
+      - honeypot-net
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+
+volumes:
+  cowrie-logs:
+
+networks:
+  honeypot-net:
+    external: true
