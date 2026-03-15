@@ -4,18 +4,17 @@ services:
     container_name: forenhive-dionaea
     restart: unless-stopped
     ports:
-      - "21:21"         # FTP          → upload malwares
-      - "25:25"         # SMTP         → spam/phishing
-      - "80:80"         # HTTP         → attaques web
-      - "443:443"       # HTTPS        → attaques web
-      - "445:445"       # SMB          → WannaCry
-      - "1433:1433"     # MSSQL        → BDD Microsoft
-      - "3306:3306"     # MySQL        → BDD open source
-      - "5060:5060"     # SIP          → VoIP fraud
-      - "5900:5900"     # VNC          → accès bureau
-      - "27017:27017"   # MongoDB      → ransomware NoSQL
-      - "161:161"       # SNMP         → reconnaissance
-      - "389:389"       # LDAP         → Active Directory
+      - "23:23"         # Telnet
+      - "80:80"         # HTTP
+      - "135:135"       # EPMAP
+      - "443:443"       # HTTPS
+      - "445:445"       # SMB
+      - "1433:1433"     # MSSQL
+      - "1723:1723"     # PPTP
+      - "1883:1883"     # MQTT
+      - "3306:3306"     # MySQL
+      - "11211:11211"   # Memcache
+      - "27017:27017"   # MongoDB
     volumes:
       - dionaea-logs:/opt/dionaea/var/log
       - dionaea-malware:/opt/dionaea/var/lib/dionaea
