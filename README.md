@@ -656,9 +656,6 @@ Distribué sous licence MIT. Voir `LICENSE` pour plus de détails.
 - Zeineb Benrhouma : zeineb@isetrades.tn
 - Ismail Cherif : ismail@isetrades.tn
 
-**Superviseur PFE**
-- Ghazi Oueslati (Tunisie Telecom)
-
 **Partenaire Industriel**
 - Standard Sharing Software (3S), Charguia, Tunis
 
