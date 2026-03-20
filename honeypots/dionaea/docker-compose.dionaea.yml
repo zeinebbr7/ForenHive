@@ -4,17 +4,17 @@ services:
     container_name: forenhive-dionaea
     restart: unless-stopped
     ports:
-      - "23:23"         # Telnet
-      - "80:80"         # HTTP
-      - "135:135"       # EPMAP
-      - "443:443"       # HTTPS
-      - "445:445"       # SMB
-      - "1433:1433"     # MSSQL
-      - "1723:1723"     # PPTP
-      - "1883:1883"     # MQTT
-      - "3306:3306"     # MySQL
-      - "11211:11211"   # Memcache
-      - "27017:27017"   # MongoDB
+      - "23:23"
+      - "80:80"
+      - "135:135"
+      - "443:443"
+      - "445:445"
+      - "1433:1433"
+      - "1723:1723"
+      - "1883:1883"
+      - "3306:3306"
+      - "11211:11211"
+      - "27017:27017"
     volumes:
       - dionaea-logs:/opt/dionaea/var/log
       - dionaea-malware:/opt/dionaea/var/lib/dionaea

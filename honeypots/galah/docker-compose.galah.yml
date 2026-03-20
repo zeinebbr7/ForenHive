@@ -3,16 +3,8 @@ services:
     build: ./galah-src
     container_name: forenhive-galah
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-      - "8888:8888"
+    network_mode: host
     environment:
       - LLM_PROVIDER=ollama
       - LLM_MODEL=mistral
-      - LLM_SERVER_URL=http://172.19.0.1:11434
-    networks:
-      - honeypot-net
-
-networks:
-  honeypot-net:
-    external: true
+      - LLM_SERVER_URL=http://127.0.0.1:11434
