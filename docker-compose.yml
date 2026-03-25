@@ -51,6 +51,8 @@ services:
       - LLM_PROVIDER=ollama
       - LLM_MODEL=mistral
       - LLM_SERVER_URL=http://forenhive-ollama:11434
+    volumes:
+      - galah-logs:/app
 
   zeek:
     image: zeek/zeek:latest
@@ -82,6 +84,7 @@ services:
       - zeek-logs:/var/log/zeek:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - galah-logs:/var/log/galah:ro
     networks:
       - honeypot-net
       - backend-net
@@ -174,3 +177,4 @@ volumes:
   ollama-models:
     external: true
     name: llm_ollama-models
+  galah-logs:

@@ -38,6 +38,15 @@ filebeat.inputs:
                 container.name: "forenhive-galah"
     tags: ["galah", "honeypot"]
 
+
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/galah/event_log.json
+    tags: ["galah", "honeypot"]
+    json.keys_under_root: true
+    json.add_error_key: true
+
 output.logstash:
   hosts: ["logstash:5044"]
 
