@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   cowrie:
     image: cowrie/cowrie:latest
@@ -9,14 +7,16 @@ services:
       - "2222:2222"
       - "2223:2223"
     volumes:
-      - cowrie-logs:/cowrie/var/log/cowrie
+      - cowrie-var:/cowrie/cowrie-git/var
     networks:
       - honeypot-net
     environment:
       - COWRIE_TELNET_ENABLED=yes
 
 volumes:
-  cowrie-logs:
+  cowrie-var:
+    external: true
+    name: bb474ddc3d2a3f3026c85d4c2fe7f1c5723f2e68f8ba60a05e4c9bb4471292ce
 
 networks:
   honeypot-net:

@@ -1,162 +1,180 @@
-
-
-# ══════════════════════════════════════════════════
-# ForenHive — Docker Compose Principal
-# Plateforme d'Analyse Forensique Automatisée
-# ══════════════════════════════════════════════════
-
 services:
 
-  # ── C2 : Elasticsearch ──────────────────────────
-  elasticsearch:
-    image: elasticsearch:8.13.0
-    container_name: forenhive-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms4g -Xmx4g}
-      - xpack.security.enabled=false
-    volumes:
-      - es-data:/usr/share/elasticsearch/data
-    ports:
-      - "9200:9200"
-    networks:
-      - backend-net
+  # ── HONEYPOTS ────────────────────────────────────────
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: forenhive-cowrie
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # ── C2 : Logstash ───────────────────────────────
-  logstash:
-    image: logstash:8.13.0
-    container_name: forenhive-logstash
-    volumes:
-      - ./pipeline/logstash/pipelines:/usr/share/logstash/pipeline
-      - ./pipeline/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
     ports:
-      - "5044:5044"
+      - "2222:2222"
+      - "2223:2223"
+    volumes:
+      - cowrie-var:/cowrie/cowrie-git/var
+    networks:
+      - honeypot-net
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: forenhive-dionaea
+    restart: unless-stopped
+    ports:
+      - "23:23"
+      - "80:80"
+      - "135:135"
+      - "443:443"
+      - "445:445"
+      - "1433:1433"
+      - "1723:1723"
+      - "1883:1883"
+      - "3306:3306"
+      - "11211:11211"
+      - "27017:27017"
+    volumes:
+      - dionaea-logs:/opt/dionaea/var/log
+      - dionaea-malware:/opt/dionaea/var/lib/dionaea
+    networks:
+      - honeypot-net
+
+  galah:
+    build: ./honeypots/galah/galah-src
+    container_name: forenhive-galah
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8888:8888"
     networks:
       - honeypot-net
       - backend-net
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    restart: unless-stopped
+    environment:
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=mistral
+      - LLM_SERVER_URL=http://forenhive-ollama:11434
+    volumes:
+      - galah-logs:/app
 
-  # ── C2 : Filebeat ───────────────────────────────
+  zeek:
+    image: zeek/zeek:latest
+    container_name: forenhive-zeek
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - zeek-logs:/usr/local/zeek/logs
+      - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
+    command: >
+      sh -c "sed -i 's/interface=eth0/interface=eno8303/g'
+      /usr/local/zeek/etc/node.cfg &&
+      zeekctl deploy &&
+      tail -f /dev/null"
+
+  # ── PIPELINE ETL ─────────────────────────────────────
   filebeat:
-    image: elastic/filebeat:8.13.0
+    image: docker.elastic.co/beats/filebeat:8.13.0
     container_name: forenhive-filebeat
+    restart: unless-stopped
     user: root
     volumes:
-      - ./pipeline/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
-      - /var/log:/var/log:ro
+      - ./pipeline/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - cowrie-var:/var/log/cowrie:ro
+      - dionaea-logs:/var/log/dionaea:ro
+      - zeek-logs:/var/log/zeek:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - galah-logs:/var/log/galah:ro
     networks:
       - honeypot-net
       - backend-net
     depends_on:
       - logstash
-    restart: unless-stopped
 
-  # ── C2 : PostgreSQL ─────────────────────────────
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.0
+    container_name: forenhive-logstash
+    restart: unless-stopped
+    volumes:
+      - ./pipeline/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./pipeline/logstash/pipelines:/usr/share/logstash/pipeline
+    ports:
+      - "5044:5044"
+    networks:
+      - backend-net
+    environment:
+      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+    depends_on:
+      - elasticsearch
+
+  # ── STOCKAGE ─────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: forenhive-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - network.host=0.0.0.0
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - backend-net
+
   postgresql:
     image: postgres:15
     container_name: forenhive-postgresql
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-forenhive_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forenhive_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-forenhive_db}
+      - POSTGRES_DB=forenhive
+      - POSTGRES_USER=forenhive
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-forenhive2026}
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - postgresql-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     networks:
       - backend-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forenhive_user}"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
-  # ── C4 : Ollama (LLM Mistral) ───────────────────
+  # ── LLM ──────────────────────────────────────────────
   ollama:
-    image: ollama/ollama
+    image: ollama/ollama:latest
     container_name: forenhive-ollama
+    restart: unless-stopped
     volumes:
-      - ollama-data:/root/.ollama
-    ports:
-      - "11434:11434"
+      - ollama-models:/root/.ollama
     networks:
       - backend-net
-    restart: unless-stopped
 
-  # ── C5 : Backend FastAPI ────────────────────────
-  fastapi:
-    build: ./backend
-    container_name: forenhive-backend
-    env_file: .env
-    ports:
-      - "8000:8000"
-    networks:
-      - backend-net
-      - frontend-net
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-      postgresql:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    restart: unless-stopped
-
-  # ── C5 : Frontend React ─────────────────────────
-  react:
-    build: ./frontend
-    container_name: forenhive-frontend
-    ports:
-      - "3000:3000"
-    networks:
-      - frontend-net
-    depends_on:
-      - fastapi
-    restart: unless-stopped
-
-  # ── Nginx Reverse Proxy ─────────────────────────
-  nginx:
-    image: nginx:alpine
-    container_name: forenhive-nginx
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-    ports:
-      - "80:80"
-      - "443:443"
-    networks:
-      - frontend-net
-    depends_on:
-      - react
-      - fastapi
-    restart: unless-stopped
-
-# ══════════════════════════════════════════════════
-# RÉSEAUX
-# ══════════════════════════════════════════════════
+# ── RÉSEAUX ──────────────────────────────────────────
 networks:
   honeypot-net:
+    name: honeypot-net
     driver: bridge
-    internal: true
   backend-net:
-    driver: bridge
-    internal: true
-  frontend-net:
+    name: backend-net
     driver: bridge
 
-# ══════════════════════════════════════════════════
-# VOLUMES
-# ══════════════════════════════════════════════════
+# ── VOLUMES ──────────────────────────────────────────
 volumes:
-  es-data:
-  pg-data:
-  ollama-data:
+  cowrie-var:
+    external: true
+    name: bb474ddc3d2a3f3026c85d4c2fe7f1c5723f2e68f8ba60a05e4c9bb4471292ce
+  dionaea-logs:
+    external: true
+    name: dionaea_dionaea-logs
+  dionaea-malware:
+    external: true
+    name: dionaea_dionaea-malware
+  zeek-logs:
+    external: true
+    name: zeek_zeek-logs
+  elasticsearch-data:
+  postgresql-data:
+  ollama-models:
+    external: true
+    name: llm_ollama-models
+  galah-logs:

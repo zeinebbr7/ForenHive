@@ -1,0 +1,50 @@
+services:
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.0
+    container_name: forenhive-logstash
+    restart: unless-stopped
+    volumes:
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash/pipelines:/usr/share/logstash/pipeline
+    ports:
+      - "5044:5044"
+    networks:
+      - honeypot-net
+      - backend-net
+    environment:
+      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.13.0
+    container_name: forenhive-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - cowrie-var:/var/log/cowrie:ro
+      - dionaea_dionaea-logs:/var/log/dionaea:ro
+      - zeek_zeek-logs:/var/log/zeek:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - honeypot-net
+      - backend-net
+    depends_on:
+      - logstash
+
+networks:
+  honeypot-net:
+    external: true
+  backend-net:
+    name: backend-net
+    driver: bridge
+
+volumes:
+  cowrie-var:
+    external: true
+    name: bb474ddc3d2a3f3026c85d4c2fe7f1c5723f2e68f8ba60a05e4c9bb4471292ce
+  dionaea_dionaea-logs:
+    external: true
+  zeek_zeek-logs:
+    external: true
