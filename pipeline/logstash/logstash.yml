@@ -1,6 +1,0 @@
-http.host: "0.0.0.0"
-pipeline.workers: 4
-pipeline.batch.size: 125
-pipeline.batch.delay: 50
-log.level: info
-path.config: /usr/share/logstash/pipeline
