@@ -1,44 +1,32 @@
 filebeat.inputs:
 
+  # ── COWRIE (SSH/Telnet) ──────────────────────────────
   - type: log
     enabled: true
     paths:
-      - /var/log/cowrie/log/cowrie/cowrie.json
+      - /var/log/cowrie/cowrie.json
     tags: ["cowrie", "honeypot"]
     json.keys_under_root: true
     json.add_error_key: true
 
+  # ── DIONAEA (Malware) ────────────────────────────────
   - type: log
     enabled: true
     paths:
       - /var/log/dionaea/dionaea/dionaea.log
     tags: ["dionaea", "honeypot"]
 
+  # ── ZEEK (Network IDS) ──────────────────────────────
   - type: log
     enabled: true
     paths:
-      - /var/log/zeek/2*/conn.log
-      - /var/log/zeek/2*/ssh.log
+      - /var/log/zeek/current/conn.log
+      - /var/log/zeek/current/ssh.log
     tags: ["zeek", "honeypot"]
     json.keys_under_root: true
     json.add_error_key: true
 
-  - type: container
-    enabled: true
-    paths:
-      - /var/lib/docker/containers/*/
-    stream: stdout
-    processors:
-      - add_docker_metadata:
-          host: "unix:///var/run/docker.sock"
-      - drop_event:
-          when:
-            not:
-              equals:
-                container.name: "forenhive-galah"
-    tags: ["galah", "honeypot"]
-
-
+  # ── GALAH (HTTP LLM Honeypot) ────────────────────────
   - type: log
     enabled: true
     paths:
