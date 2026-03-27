@@ -66,7 +66,7 @@ services:
       - zeek-logs:/usr/local/zeek/logs
       - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
     command: >
-      sh -c "sed -i 's/interface=eth0/interface=eno8303/g'
+      sh -c "sed -i 's/interface=eth0/interface=eno12399/g'
       /usr/local/zeek/etc/node.cfg &&
       zeekctl deploy &&
       tail -f /dev/null"
