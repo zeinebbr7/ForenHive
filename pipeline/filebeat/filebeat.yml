@@ -1,22 +1,19 @@
 filebeat.inputs:
 
-  # ── COWRIE (SSH/Telnet) ──────────────────────────────
   - type: log
     enabled: true
     paths:
-      - /var/log/cowrie/cowrie.json
+      - /var/log/cowrie/log/cowrie/cowrie.json
     tags: ["cowrie", "honeypot"]
     json.keys_under_root: true
     json.add_error_key: true
 
-  # ── DIONAEA (Malware) ────────────────────────────────
   - type: log
     enabled: true
     paths:
       - /var/log/dionaea/dionaea/dionaea.log
     tags: ["dionaea", "honeypot"]
 
-  # ── ZEEK (Network IDS) ──────────────────────────────
   - type: log
     enabled: true
     paths:
@@ -26,7 +23,6 @@ filebeat.inputs:
     json.keys_under_root: true
     json.add_error_key: true
 
-  # ── GALAH (HTTP LLM Honeypot) ────────────────────────
   - type: log
     enabled: true
     paths:

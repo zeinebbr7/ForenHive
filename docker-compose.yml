@@ -10,6 +10,8 @@ services:
       - "2223:2223"
     volumes:
       - cowrie-var:/cowrie/cowrie-git/var
+      - ./honeypots/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./honeypots/cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
     networks:
       - honeypot-net
     environment:
@@ -34,6 +36,10 @@ services:
     volumes:
       - dionaea-logs:/opt/dionaea/var/log
       - dionaea-malware:/opt/dionaea/var/lib/dionaea
+      - ./honeypots/dionaea/smb.yaml:/opt/dionaea/template/etc/dionaea/services-enabled/smb.yaml:ro
+      - ./honeypots/dionaea/mssql.yaml:/opt/dionaea/template/etc/dionaea/services-enabled/mssql.yaml:ro
+    environment:
+      - DIONAEA_FORCE_INIT_DATA=1
     networks:
       - honeypot-net
 
@@ -53,6 +59,8 @@ services:
       - LLM_SERVER_URL=http://forenhive-ollama:11434
     volumes:
       - galah-logs:/app
+    depends_on:
+      - ollama
 
   zeek:
     image: zeek/zeek:latest
@@ -66,7 +74,7 @@ services:
       - zeek-logs:/usr/local/zeek/logs
       - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
     command: >
-      sh -c "sed -i 's/interface=eth0/interface=eno8303/g'
+      sh -c "sed -i 's/interface=eth0/interface=eno12399/g'
       /usr/local/zeek/etc/node.cfg &&
       zeekctl deploy &&
       tail -f /dev/null"
@@ -129,9 +137,9 @@ services:
     container_name: forenhive-postgresql
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=forenhive
-      - POSTGRES_USER=forenhive
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-forenhive2026}
+      - POSTGRES_DB=${POSTGRES_DB:-forenhive}
+      - POSTGRES_USER=${POSTGRES_USER:-forenhive}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgresql-data:/var/lib/postgresql/data
     ports:
