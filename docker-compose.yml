@@ -55,10 +55,13 @@ services:
       - backend-net
     environment:
       - LLM_PROVIDER=ollama
-      - LLM_MODEL=mistral
-      - LLM_SERVER_URL=http://forenhive-ollama:11434
+      - LLM_MODEL=${OLLAMA_MODEL:-mistral}
+      - LLM_SERVER_URL=http://${OLLAMA_HOST:-forenhive-ollama}:${OLLAMA_PORT:-11434}
+    command:
+      - --event-log-file=/app/logs/event_log.json
+      - --cache-db-file=/app/logs/cache.db
     volumes:
-      - galah-logs:/app
+      - galah-logs:/app/logs
     depends_on:
       - ollama
 
@@ -72,6 +75,7 @@ services:
       - NET_RAW
     volumes:
       - zeek-logs:/usr/local/zeek/logs
+      - zeek-spool:/usr/local/zeek/spool
       - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
     command: >
       sh -c "sed -i 's/interface=eth0/interface=eno12399/g'
@@ -85,11 +89,13 @@ services:
     container_name: forenhive-filebeat
     restart: unless-stopped
     user: root
+    command: filebeat -e --strict.perms=false
     volumes:
       - ./pipeline/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - cowrie-var:/var/log/cowrie:ro
       - dionaea-logs:/var/log/dionaea:ro
       - zeek-logs:/var/log/zeek:ro
+      - zeek-spool:/usr/local/zeek/spool:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - galah-logs:/var/log/galah:ro
@@ -127,8 +133,6 @@ services:
       - network.host=0.0.0.0
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
-    ports:
-      - "9200:9200"
     networks:
       - backend-net
 
@@ -142,8 +146,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgresql-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     networks:
       - backend-net
 
@@ -186,3 +188,4 @@ volumes:
     external: true
     name: llm_ollama-models
   galah-logs:
+  zeek-spool:

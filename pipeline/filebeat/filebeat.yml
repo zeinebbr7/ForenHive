@@ -4,7 +4,7 @@ filebeat.inputs:
     enabled: true
     paths:
       - /var/log/cowrie/log/cowrie/cowrie.json
-    tags: ["cowrie", "honeypot"]
+    tags: ["cowrie", "honeypot_cowrie"]
     json.keys_under_root: true
     json.add_error_key: true
 
@@ -12,14 +12,15 @@ filebeat.inputs:
     enabled: true
     paths:
       - /var/log/dionaea/dionaea/dionaea.log
-    tags: ["dionaea", "honeypot"]
+    tags: ["dionaea", "honeypot_dionaea"]
 
   - type: log
     enabled: true
     paths:
       - /var/log/zeek/current/conn.log
       - /var/log/zeek/current/ssh.log
-    tags: ["zeek", "honeypot"]
+      - /var/log/zeek/current/http.log
+    tags: ["zeek", "NIDS"]
     json.keys_under_root: true
     json.add_error_key: true
 
@@ -27,7 +28,7 @@ filebeat.inputs:
     enabled: true
     paths:
       - /var/log/galah/event_log.json
-    tags: ["galah", "honeypot"]
+    tags: ["galah", "honeypot_galah"]
     json.keys_under_root: true
     json.add_error_key: true
 
