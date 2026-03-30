@@ -32,7 +32,7 @@ def check_ip(ip):
         print(f"Erreur AbuseIPDB pour {ip}: {e}")
     return {"enriched": False}
 
-def enrich_batch(index="honeypot-logs-2026.03.27", max_docs=50):
+def enrich_batch(index=None, max_docs=50):
     query = {
         "query": {
             "bool": {
@@ -48,6 +48,9 @@ def enrich_batch(index="honeypot-logs-2026.03.27", max_docs=50):
         "size": max_docs
     }
 
+    from datetime import datetime
+    if index is None:
+        index = f"honeypot-logs-{datetime.now().strftime('%Y.%m.%d')}"
     resp = ES.search(index=index, body=query)
     hits = resp["hits"]["hits"]
     print(f"→ {len(hits)} documents à enrichir")

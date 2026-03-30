@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv("/home/pfe/ForenHive/.env")
 
 RULES_PATH = "/home/pfe/ForenHive/forensic-engine/yara-rules/malware.yar"
-SAMPLES_DIR = "/var/lib/docker/volumes/dionaea_dionaea-malware/_data"
+SAMPLES_DIR = "/home/pfe/ForenHive/malware-samples/binaries"
 ES_URL = "http://localhost:9200"
 
 def sha256(path):
