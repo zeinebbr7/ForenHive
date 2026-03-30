@@ -59,3 +59,11 @@ desktop.ini
 nginx/ssl/
 *.crt
 *.csr
+
+# Malware samples — ne jamais pusher
+malware-samples/
+*.exe
+*.dll
+*.bin
+# Données locales
+.env
