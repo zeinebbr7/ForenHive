@@ -1,9 +1,9 @@
 filebeat.inputs:
 
   # ── COWRIE (SSH/Telnet) ──────────────────────────────
-  
   - type: log
-    enabled: true 
+    enabled: true
+    paths:
       - /var/log/cowrie/log/cowrie/cowrie.json
     tags: ["cowrie", "honeypot"]
     json.keys_under_root: true
@@ -30,7 +30,7 @@ filebeat.inputs:
   - type: log
     enabled: true
     paths:
-      - /var/log/galah/app/event_log.json
+      - /var/log/galah/event_log.json
     tags: ["galah", "honeypot"]
     json.keys_under_root: true
     json.add_error_key: true
