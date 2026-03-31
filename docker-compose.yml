@@ -78,7 +78,7 @@ services:
       - zeek-spool:/usr/local/zeek/spool
       - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
     command: >
-      sh -c "sed -i 's/interface=eth0/interface=eno12399/g'
+      sh -c "sed -i 's/interface=eth0/interface=${ZEEK_INTERFACE:-eno12399}/g'
       /usr/local/zeek/etc/node.cfg &&
       zeekctl deploy &&
       tail -f /dev/null"
@@ -117,7 +117,7 @@ services:
     networks:
       - backend-net
     environment:
-      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+      - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms512m -Xmx512m}
     depends_on:
       - elasticsearch
 
@@ -129,7 +129,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms1g -Xmx1g}
       - network.host=0.0.0.0
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
