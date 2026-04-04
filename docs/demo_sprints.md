@@ -25,7 +25,7 @@ C1 Honeypots  →  C2 Pipeline ETL  →  C3 Moteur Forensique  →  C4 Backend  
 
 ### Objectif
 
-Déployer 4 honeypots qui simulent des services vulnérables pour attirer et capturer du trafic malveillant.
+Déployer 3 honeypots qui simulent des services vulnérables pour attirer et capturer du trafic malveillant.
 
 ### Conteneurs déployés
 
@@ -51,7 +51,7 @@ Il se présente comme `WIN-SERVER2019` sur le réseau SMB.
 qui génère une réponse HTML réaliste (page de login, 404, formulaire admin…).
 Les attaquants croient interagir avec un vrai serveur web.
 
-**Zeek** — analyseur passif. Il n'interagit pas avec les attaquants mais observe tout le trafic
+**Zeek** (n'est pas une honeypot) — analyseur passif. Il n'interagit pas avec les attaquants mais observe tout le trafic
 réseau de l'interface `eno12399` et génère des logs structurés (`conn.log`, `ssh.log`, `http.log`).
 
 ---

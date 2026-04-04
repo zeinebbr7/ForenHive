@@ -74,7 +74,7 @@ Zeek     ──┘
 - GeoIP enrichment on `srcIP` → `source.geo`
 - Full nested field rename to ECS: `[httpRequest][method]` → `http.request.method`, `[httpRequest][request]` → `http.request.uri`, `[httpRequest][userAgent]` → `user_agent.original`, etc.
 - LLM metadata preserved: `galah.response.source` (llm/cache/static), `galah.llm.model`
-- Timestamp correction: strips Go monotonic clock suffix, truncates to ms, parses `eventTime` → `@timestamp` (Africa/Tunis)
+- Timestamp correction: strips Go monotonic clock suffix, truncates to ms, parses `eventTime` → `@timestamp` (UTC — Galah container clock runs UTC)
 - Cleanup: removes raw nested objects (`httpRequest`, `httpResponse`, `responseMetadata`)
 
 #### Zeek filter
@@ -179,9 +179,9 @@ Zeek     ──┘
 
 **Root cause:** No `date` filter was applied to Cowrie or Galah — Logstash left `@timestamp` as set by Filebeat at ingest time. Zeek was already correct (had `date` filter on `ts`).
 
-**Fix:** Added `date` filters with `timezone: Africa/Tunis`:
-- **Cowrie:** parses `timestamp` field (ISO8601 with UTC Z suffix) → `@timestamp`, then removes `timestamp`
-- **Galah:** strips Go monotonic clock suffix (`m=+...`), truncates nanoseconds to milliseconds, parses `eventTime` → `@timestamp`, then removes `eventTime`
+**Fix:** Added `date` filters:
+- **Cowrie:** `timezone: Africa/Tunis` — parses `timestamp` field (ISO8601 with UTC Z suffix) → `@timestamp`, then removes `timestamp`
+- **Galah:** `timezone: UTC` — strips Go monotonic clock suffix (`m=+...`), truncates nanoseconds to milliseconds, parses `eventTime` → `@timestamp`, then removes `eventTime` (Galah container clock is UTC)
 
 **Verified:** Triggered a live Cowrie connection at 21:26:32 GMT+1 → `@timestamp: 2026-03-28T20:26:32Z` (correct UTC equivalent).
 
@@ -269,7 +269,33 @@ Zeek     ──┘
 | GeoIP fails on internal IPs | Docker 172.x addresses have no GeoIP record | `_geoip_lookup_failure` tag on internal connections; public attacker IPs resolve correctly |
 | Dionaea non-debug noise | `info` and `warning` level Dionaea messages without `source.ip` (startup messages) still stored | Minor disk overhead, not attack data |
 | Dionaea log rotation | No log rotation configured; `dionaea.log` will grow until container restart is required | Manual restart needed periodically |
+| Dionaea `@timestamp` = ingest time | No `date` filter for Dionaea — `@timestamp` was Filebeat processing time, not actual event time | ✅ Fixed in Sprint 3 (2026-04-04) — see Bug 6 |
 | Elasticsearch no auth | `xpack.security.enabled=false` — dev configuration | Not suitable for production without TLS + credentials |
+
+---
+
+---
+
+### Bug 6 — Dionaea `@timestamp` set to Filebeat ingest time (MEDIUM) *(fixed 2026-04-04)*
+
+**Symptom:** All Dionaea events had `@timestamp` reflecting when Filebeat ingested the log line, not the actual time of the network connection. This made Dionaea events unusable in timeline forensics.
+
+**Root cause:** The Logstash pipeline had `date` filters for Cowrie, Galah, and Zeek — but Dionaea was missed. Grok pattern 2 correctly extracted a `dionaea.date` field (`yyyy-MM-dd HH:mm:ss`) but nothing converted it to `@timestamp`.
+
+**Fix:** Added a conditional `date` filter inside the Dionaea block (after `drop` statements):
+```logstash
+if [dionaea.date] {
+  date {
+    match    => ["dionaea.date", "yyyy-MM-dd HH:mm:ss"]
+    target   => "@timestamp"
+    timezone => "Africa/Tunis"
+    remove_field => ["dionaea.date"]
+  }
+}
+```
+Guard with `if [dionaea.date]` because only grok pattern 2 produces this field — connection events (patterns 1, 3, 4) have no embedded timestamp.
+
+**File changed:** `pipeline/logstash/pipelines/main.conf`
 
 ---
 
