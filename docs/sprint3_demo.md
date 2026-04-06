@@ -1,249 +1,346 @@
-# ForenHive — Démonstration Sprint 3
-**Forensic Engine: Enrichissement · YARA · VirusTotal · Risk Scoring**
-*Branch: zeineb | Date: 2026-04-06*
+# ForenHive — Guide de test manuel Sprint 2 + Sprint 3
+
+**Branch:** `ismail2` | **Date:** 2026-04-06  
+**Serveur:** `172.16.1.100` | **Répertoire:** `/home/pfe/ForenHive`
 
 ---
 
-## Vue d'ensemble
-
-Sprint 3 implémente la couche d'analyse forensique (C3) qui consomme les événements normalisés de Sprint 2 (Elasticsearch) et produit des résultats forensiques stockés dans PostgreSQL.
-
-```
-Elasticsearch (14.7M+ events) ──┐
-                                 ├──► forensic-engine ──► PostgreSQL
-Dionaea malware captures ────────┘    (C3 layer)          (résultats enrichis)
-```
-
----
-
-## Prérequis — vérifier que les services Sprint 2 tournent
+## Avant de commencer — état des services
 
 ```bash
-docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -E "elastic|postgres|dionaea"
+cd /home/pfe/ForenHive
+docker compose ps --format "table {{.Name}}\t{{.Status}}"
 ```
-**Résultat attendu :** `forenhive-elasticsearch Up`, `forenhive-postgresql Up`, `forenhive-dionaea Up`
+
+Tout doit être `Up`. Si `forenhive-forensic-engine` est en `Restarting` c'est **normal** — il tourne en boucle.
 
 ---
 
-## Étape 1 — Construire l'image Docker du moteur forensique
+## PARTIE 1 — Sprint 2 : Pipeline ETL
+
+### 1.1 Elasticsearch est vivant ?
 
 ```bash
-docker compose build forensic-engine
+curl -s http://localhost:9200/_cluster/health | python3 -m json.tool
 ```
-**Résultat attendu :** `Image forenhive-forensic-engine Built`
 
-Le build installe `gcc`, `libssl-dev`, `libmagic1` pour compiler `yara-python`, puis installe toutes les dépendances Python (elasticsearch, psycopg2, geoip2, yara-python, shodan, ipwhois…).
+**Attendu :** `"status": "yellow"` ou `"green"`
 
 ---
 
-## Étape 2 — Initialiser le schéma PostgreSQL
+### 1.2 Combien d'événements dans le pipeline ?
 
 ```bash
-docker compose run --rm forensic-engine python db/init_db.py
-```
-**Résultat attendu :**
-```
-[init_db] PostgreSQL ready.
-[init_db] Schema applied successfully.
-[init_db] Done.
+curl -s "http://localhost:9200/honeypot-logs-*/_count" | python3 -m json.tool
 ```
 
-Vérifier les tables créées :
+**Attendu :** `"count": > 1000`
+
+---
+
+### 1.3 Répartition par honeypot
+
 ```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "\dt"
-```
-**Résultat obtenu :**
-```
-                List of relations
- Schema |        Name         | Type  |   Owner
---------+---------------------+-------+-----------
- public | file_analysis       | table | forenhive
- public | forensic_sessions   | table | forenhive
- public | ip_enrichment_cache | table | forenhive
- public | suspect_profiles    | table | forenhive
-(4 rows)
+curl -s "http://localhost:9200/honeypot-logs-*/_search" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "size": 0,
+    "aggs": {
+      "par_honeypot": {
+        "terms": { "field": "honeypot.type.keyword", "size": 10 }
+      }
+    }
+  }' | python3 -c "
+import sys, json
+r = json.load(sys.stdin)
+for b in r['aggregations']['par_honeypot']['buckets']:
+    print(f\"  {b['key']:15s} → {b['doc_count']:,} events\")
+"
 ```
 
 ---
 
-## Étape 3 — Scanner YARA (sans dépendances externes)
+### 1.4 Les champs ECS sont bien là ?
+
+```bash
+for field in "source.ip" "event.id" "honeypot.type" "source.geo.location"; do
+  count=$(curl -s "http://localhost:9200/honeypot-logs-*/_count" \
+    -H 'Content-Type: application/json' \
+    -d "{\"query\":{\"exists\":{\"field\":\"$field\"}}}" | python3 -c "import sys,json; print(json.load(sys.stdin)['count'])")
+  echo "  $field → $count docs"
+done
+```
+
+---
+
+### 1.5 Dernier événement reçu (pipeline toujours actif ?)
+
+```bash
+curl -s "http://localhost:9200/honeypot-logs-*/_search" \
+  -H 'Content-Type: application/json' \
+  -d '{"size":1,"sort":[{"@timestamp":"desc"}],"_source":["@timestamp","honeypot.type","event.id","source.ip"]}' \
+  | python3 -c "import sys,json; h=json.load(sys.stdin)['hits']['hits'][0]['_source']; print(json.dumps(h, indent=2))"
+```
+
+---
+
+### 1.6 Voir un événement Cowrie complet
+
+```bash
+curl -s "http://localhost:9200/honeypot-logs-*/_search" \
+  -H 'Content-Type: application/json' \
+  -d '{"size":1,"query":{"term":{"honeypot.type.keyword":"cowrie"}}}' \
+  | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['hits']['hits'][0]['_source'], indent=2))"
+```
+
+---
+
+### 1.7 Logstash traite encore des événements ?
+
+```bash
+docker logs forenhive-logstash --tail 5
+```
+
+**Attendu :** des lignes avec `events.in` / `events.out` ou des filtres actifs.
+
+---
+
+## PARTIE 2 — Sprint 3 : Forensic Engine
+
+### 2.1 Scanner YARA uniquement (rapide, offline)
 
 ```bash
 docker compose run --rm forensic-engine python engine.py --yara-only
 ```
-**Résultat obtenu :**
+
+**Attendu :**
 ```
-[INFO] yara_scanner — Compiled 6 YARA rule files: ['crypto_miner.yar', 'emotet.yar',
-       'credential_stealer.yar', 'generic_shell.yar', 'wannacry.yar', 'mirai.yar']
+[INFO] yara_scanner — Compiled 6 YARA rule files
 [INFO] yara_scanner — Scanning 2 Dionaea binary files ...
-[INFO] yara_scanner — MATCH [1bb736b97b5bcb4c5b3adf5c3c903fa3] SHA256=3ca20938... → ['CryptoMiner_XMRig', 'WannaCry_Ransomware']
+[INFO] yara_scanner — MATCH [1bb736b97b...] → ['CryptoMiner_XMRig', 'WannaCry_Ransomware']
 [INFO] yara_scanner — YARA scan complete: 1/2 files flagged
 ```
 
-**Interprétation :**
-- Fichier `1bb736b97b5bcb4c5b3adf5c3c903fa3` (5.1 MB ELF) — capturé par Dionaea le 2026-03-30 — déclenche 2 règles :
-  - `CryptoMiner_XMRig` : wallet Monero détecté à l'offset 131587
-  - `WannaCry_Ransomware` : chaînes `tasksche.exe`, `mssecsvc.exe`, `icacls` détectées (CVE-2017-0144)
-- Fichier `test_eicar.exe` (69 bytes) — aucun match (attendu — EICAR est un fichier test AV sans patterns malware réels)
-
 ---
 
-## Étape 4 — Analyse complète (enrichissement + VT + scoring)
+### 2.2 Vérifier le résultat YARA dans PostgreSQL
 
 ```bash
-docker compose run --rm forensic-engine python engine.py --hours 240
-```
-
-**Sortie complète obtenue :**
-```
-[INFO] engine — ====== ForenHive Full Analysis (last 240h) ======
-
-[INFO] engine — === IP Enrichment (last 240h) ===
-[INFO] enricher — Found 143 unique source IPs in the last 240h
-[INFO] enricher — Enriching batch of 143 unique IPs ...
-[INFO] enricher — Enriching 64.233.166.188 ...
-[INFO] enricher — Enriching 173.194.76.188 ...
-[INFO] engine — Enriched 143 IPs
-
-[INFO] engine — === YARA Scan (Dionaea binaries) ===
-[INFO] yara_scanner — MATCH [1bb736...] SHA256=3ca20938... → ['CryptoMiner_XMRig', 'WannaCry_Ransomware']
-[INFO] yara_scanner — YARA scan complete: 1/2 files flagged
-[INFO] virustotal — VirusTotal [3ca20938...] 66/72 detections, family=trojan
-
-[INFO] engine — === VirusTotal lookup for Cowrie downloads (last 240h) ===
-[INFO] engine — Found 6 unique hashes — submitting to VirusTotal ...
-[INFO] virustotal — VirusTotal: hash not found — 7b23224696dea3c1... (unknown malware)
-[INFO] virustotal — VirusTotal [a56145270ce6b3be...] 0/62 detections, family=unknown
-[INFO] virustotal — VirusTotal: hash not found — bed89110eafe9846... (unknown malware)
-[INFO] virustotal — VirusTotal: hash not found — a6594d0fed26788c... (unknown malware)
-[INFO] virustotal — VirusTotal: hash not found — f6ac9ab75f5067d8... (unknown malware)
-[INFO] virustotal — VirusTotal: hash not found — 2638f1c1c2018567... (unknown malware)
-
-[INFO] engine — === Session Scoring (last 240h) ===
-[INFO] engine — Found 46 Cowrie sessions to score
-
-[INFO] engine — ====== Analysis Complete ======
-[INFO] engine —   IPs enriched  : 143
-[INFO] engine —   Sessions scored: 46
-[INFO] engine —   Risk breakdown : CRITICAL=0 HIGH=0 MEDIUM=0
-[INFO] engine —   Duration       : 24.2s
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT
+  sha256,
+  jsonb_array_length(yara_matches) AS yara_hits,
+  yara_matches->0->>'rule' AS first_rule,
+  yara_matches->1->>'rule' AS second_rule,
+  analyzed_at
+FROM file_analysis
+ORDER BY yara_hits DESC NULLS LAST;
+"
 ```
 
 ---
 
-## Résultats extraits de PostgreSQL
-
-### 4.1 Analyse de fichiers malveillants (`file_analysis`)
+### 2.3 Enrichissement IP uniquement (AbuseIPDB + Shodan + IPLocate)
 
 ```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive \
-  -c "SELECT sha256, virustotal_result->>'detection_ratio' AS vt_ratio,
-             virustotal_result->>'family' AS family,
-             virustotal_result->>'tags' AS tags,
-             jsonb_array_length(yara_matches) AS yara_hits
-      FROM file_analysis ORDER BY sha256;"
+docker compose run --rm forensic-engine python engine.py --enrich-only --hours 48
 ```
 
-| SHA-256 (tronqué) | Fichier source | VT ratio | Famille | Tags VT | YARA hits |
-|---|---|---|---|---|---|
-| `3ca20938...` | `1bb736...` (Dionaea) | **66/72** | `trojan` | `pedll, cve-2017-0147, armadillo, overlay, exploit` | **2** |
-| `131f95c5...` | `test_eicar.exe` | — | — | — | 0 |
-| `a56145270c...` | Cowrie download | 0/62 | — | `known-distributor, text` | — |
-| `7b232246...` | Cowrie download | **inconnu** | — | non indexé VT | — |
-| `bed89110...` | Cowrie download | **inconnu** | — | non indexé VT | — |
-| `a6594d0f...` | Cowrie download | **inconnu** | — | non indexé VT | — |
-| `f6ac9ab7...` | Cowrie download | **inconnu** | — | non indexé VT | — |
-| `2638f1c1...` | Cowrie download | **inconnu** | — | non indexé VT | — |
+Voir les IPs enrichies :
 
-**Observation clé :** Le binaire `3ca20938` capturé par Dionaea est reconnu par **66 moteurs AV sur 72** comme un trojan avec les tags `cve-2017-0147` (EternalBlue/SMB) et `armadillo` (packer connu). C'est un exploit SMB weaponisé avec des composants de cryptominer Monero — une menace hybride. Les 5 fichiers téléchargés via Cowrie sont **inconnus de VirusTotal** (zero-day ou malware personnalisé).
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT
+  ip,
+  data->'reputation'->>'abuse_score'   AS abuse,
+  data->'infrastructure'->>'machine_type' AS machine,
+  data->'infrastructure'->>'org'       AS org,
+  data->'privacy'->>'is_tor'           AS tor,
+  data->'geo'->>'country'              AS country
+FROM ip_enrichment_cache
+ORDER BY (data->'reputation'->>'abuse_score')::int DESC NULLS LAST;
+"
+```
 
 ---
 
-### 4.2 Enrichissement IP (`ip_enrichment_cache`)
+### 2.4 Tester Shodan manuellement sur une IP
 
 ```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive \
-  -c "SELECT ip, data->'geo'->>'country' AS country, data->'geo'->>'org' AS org,
-             data->'geo'->>'asn' AS asn, data->'reputation'->>'abuse_score' AS abuse,
-             data->'reputation'->>'total_reports' AS reports,
-             data->'privacy'->>'is_tor' AS tor
-      FROM ip_enrichment_cache;"
+docker compose run --rm forensic-engine python3 -c "
+import sys; sys.path.insert(0,'.')
+import config, json
+from enricher import _shodan_lookup
+
+ip = '185.220.101.45'   # remplace par une IP de tes logs
+result = _shodan_lookup(ip)
+print(json.dumps(result, indent=2, default=str))
+"
 ```
 
-| IP | Pays | Org | ASN | Abuse Score | Reports | Tor |
-|---|---|---|---|---|---|---|
-| `64.233.166.188` | United States | Google LLC | 15169 | 0 | 1 | false |
-| `173.194.76.188` | United States | Google LLC | 15169 | 0 | 1 | false |
-
-**Note :** 141 des 143 IPs sont RFC 1918 (trafic Kali interne `10.212.134.x`, `172.20.0.x`) → enrichissement sauté automatiquement. Seules 2 IPs publiques Google LLC ont été enrichies — ces IPs apparaissent dans des requêtes HTTP sur Galah (scan automatique Google ou bot).
-
-GeoIP MaxMind opérationnel :
+**Ce que tu dois voir :**
 ```json
 {
-  "asn": 15169, "lat": 37.751, "lon": -97.822,
-  "org": "Google LLC", "country": "United States", "country_code": "US"
+  "machine_type": "vps",        ← type de machine
+  "open_ports": [22, 80, 443],  ← ports exposés
+  "services": [
+    {"port": 22, "product": "OpenSSH", "version": "8.9"},
+    {"port": 80, "product": "nginx"}
+  ],
+  "org": "DigitalOcean",
+  "tags": ["self-signed"],
+  "vulns": ["CVE-2023-XXXX"]
 }
 ```
 
 ---
 
-### 4.3 Sessions forensiques (`forensic_sessions`)
+### 2.5 Tester AbuseIPDB manuellement
 
 ```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive \
-  -c "SELECT count(*) AS total, count(DISTINCT source_ip) AS unique_ips,
-             max(risk_score) AS max_score, round(avg(risk_score),1) AS avg_score,
-             sum(CASE WHEN risk_score >= 80 THEN 1 ELSE 0 END) AS critical,
-             sum(CASE WHEN risk_score >= 60 THEN 1 ELSE 0 END) AS high,
-             sum(CASE WHEN risk_score >= 40 THEN 1 ELSE 0 END) AS medium
-      FROM forensic_sessions;"
+docker compose run --rm forensic-engine python3 -c "
+import sys; sys.path.insert(0,'.')
+import config, json
+from enricher import _abuseipdb_lookup
+
+result = _abuseipdb_lookup('185.220.101.45')
+print(json.dumps(result, indent=2))
+"
 ```
 
-| Total sessions | IPs uniques | Score max | Score moyen | CRITICAL | HIGH | MEDIUM |
-|---|---|---|---|---|---|---|
-| 46 | 3 | 5 | 0.2 | 0 | 0 | 0 |
-
-Sessions avec score > 0 :
-
-```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive \
-  -c "SELECT session_id, source_ip, risk_score, started_at, ended_at
-      FROM forensic_sessions WHERE risk_score > 0 ORDER BY risk_score DESC;"
-```
-
-| Session | IP | Score | Début | Fin |
-|---|---|---|---|---|
-| `719ec095c065` | `10.212.134.200` | **5** | 2026-03-28 12:20 | 2026-03-28 20:14 |
-| `dd46d1eb66e2` | `10.212.134.200` | 2 | 2026-03-28 12:18 | 2026-03-28 20:14 |
-| `3d540e70b01a` | `10.212.134.200` | 2 | 2026-03-28 12:30 | 2026-03-28 20:14 |
-| `6a6fce682665` | `172.20.0.1` | 2 | 2026-03-28 12:07 | 2026-03-28 20:14 |
-
-**Explication des scores faibles :** Tout le trafic actuel provient de la machine Kali du réseau interne (IPs RFC 1918). Les IPs privées obtiennent automatiquement un `abuse_score = 0` et `is_tor = false`, ce qui plafonne le score à 15 points maximum (login attempts + command count + port targeting). Les scores augmenteront significativement une fois le serveur exposé à Internet.
+**Attendu :** `abuse_score: 100`, `total_reports: > 50`
 
 ---
 
-## Résumé des résultats
+### 2.6 VirusTotal sur un SHA-256
 
-| Test | Résultat |
+```bash
+docker compose run --rm forensic-engine python3 -c "
+import sys; sys.path.insert(0,'.')
+from virustotal import VirusTotalScanner
+import json
+
+vt = VirusTotalScanner()
+# EICAR — toujours détecté par tous les AV
+result = vt.lookup_hash('275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f')
+print(json.dumps(result, indent=2, default=str))
+"
+```
+
+**Attendu :** `"detection_ratio": "67/69"`, `"family": "virus"`
+
+---
+
+### 2.7 Analyse complète (tout en même temps)
+
+```bash
+docker compose run --rm forensic-engine python engine.py --hours 24
+```
+
+Attendre la fin (~5-30s selon le nombre d'IPs), puis lire le résumé :
+
+```
+====== Analysis Complete ======
+  IPs enriched  : X
+  Sessions scored: X
+  Risk breakdown : CRITICAL=X HIGH=X MEDIUM=X
+  Duration       : X.Xs
+```
+
+---
+
+### 2.8 Voir les sessions forensiques scorées
+
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT
+  session_id,
+  source_ip,
+  risk_score,
+  honeypot_type,
+  started_at
+FROM forensic_sessions
+ORDER BY risk_score DESC
+LIMIT 10;
+"
+```
+
+Sessions par niveau de risque :
+
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT
+  CASE
+    WHEN risk_score >= 80 THEN 'CRITICAL'
+    WHEN risk_score >= 60 THEN 'HIGH'
+    WHEN risk_score >= 40 THEN 'MEDIUM'
+    WHEN risk_score >= 20 THEN 'LOW'
+    ELSE 'INFO'
+  END AS level,
+  COUNT(*) AS sessions
+FROM forensic_sessions
+GROUP BY level
+ORDER BY MIN(risk_score) DESC;
+"
+```
+
+---
+
+### 2.9 Voir l'enrichissement complet d'une IP
+
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT ip, jsonb_pretty(data) FROM ip_enrichment_cache LIMIT 1;
+"
+```
+
+---
+
+### 2.10 Vider le cache et forcer un ré-enrichissement
+
+```bash
+# Supprimer le cache (il sera refait au prochain run)
+docker exec forenhive-postgresql psql -U forenhive -d forenhive \
+  -c "DELETE FROM ip_enrichment_cache;"
+
+# Relancer l'analyse
+docker compose run --rm forensic-engine python engine.py --enrich-only --hours 24
+```
+
+---
+
+## PARTIE 3 — Suite de tests automatique (51/53)
+
+```bash
+docker run --rm \
+  --network=backend-net \
+  --env-file .env \
+  -e PG_HOST=forenhive-postgresql \
+  -e PG_PASSWORD=forenhive_dev \
+  -e ES_HOST=forenhive-elasticsearch \
+  -e ABUSEIPDB_KEY=$(grep ABUSEIPDB_API_KEY .env | cut -d= -f2) \
+  -e SHODAN_KEY=$(grep ^SHODAN_KEY .env | cut -d= -f2) \
+  -e VIRUSTOTAL_KEY=$(grep VIRUSTOTAL_API_KEY .env | cut -d= -f2) \
+  -v /home/pfe/ForenHive/forensic-engine:/app \
+  -v /home/pfe/ForenHive/malware-samples/binaries:/test-binaries:ro \
+  forenhive-forensic-engine:latest \
+  python /app/tests/test_all.py
+```
+
+**Résultat attendu :** `51/53 PASS — Score 96%`  
+Les 2 FAIL restants sont le GeoIP MaxMind (`.mmdb` non monté dans ce one-shot).
+
+---
+
+## Résumé des commandes clés
+
+| Quoi tester | Commande |
 |---|---|
-| Build Docker | ✅ yara-python compilé avec gcc |
-| Schéma PostgreSQL | ✅ 4 tables créées |
-| YARA scan (2 fichiers) | ✅ 1/2 fichiers flaggés (malware réel) |
-| VirusTotal (binaire Dionaea) | ✅ **66/72** détections — trojan + CVE-2017-0147 |
-| VirusTotal (Cowrie downloads) | ✅ 5 hashes inconnus, 1 clean |
-| GeoIP MaxMind | ✅ ASN + géolocalisation opérationnels |
-| AbuseIPDB enrichment | ✅ 2 IPs publiques enrichies |
-| IPLocate (Tor/VPN detection) | ✅ opérationnel |
-| Session scoring (46 sessions) | ✅ scorées et persistées en PostgreSQL |
-| Durée analyse complète | ✅ **24.2 secondes** |
-
----
-
-## Limites actuelles (trafic test)
-
-| Limitation | Cause | Impact attendu en production |
-|---|---|---|
-| Tous les scores ≤ 5 | IPs RFC 1918 → abuse_score = 0 | Scores 40-100 avec IPs publiques d'attaquants réels |
-| 5 hashes Cowrie inconnus de VT | Malware personnalisé ou récent | YARA les identifiera localement même sans VT |
-| 2 IPs publiques = Google LLC | Pas encore de vrais attaquants | Dès exposition Internet : IPs malveillantes dans AbuseIPDB |
-| Pas de sessions MEDIUM/HIGH/CRITICAL | Trafic interne uniquement | Dès exposition : sessions avec Tor, VPN, IPs connues |
+| Services actifs | `docker compose ps` |
+| Events dans ES | `curl localhost:9200/honeypot-logs-*/_count` |
+| YARA scan | `docker compose run --rm forensic-engine python engine.py --yara-only` |
+| Enrichissement IP | `docker compose run --rm forensic-engine python engine.py --enrich-only` |
+| Analyse complète | `docker compose run --rm forensic-engine python engine.py --hours 24` |
+| Tables PostgreSQL | `docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "\dt"` |
+| Sessions scorées | `SELECT * FROM forensic_sessions ORDER BY risk_score DESC LIMIT 10` |
+| Suite de tests auto | `docker run ... forenhive-forensic-engine python /app/tests/test_all.py` |

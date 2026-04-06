@@ -126,6 +126,56 @@ def _abuseipdb_lookup(ip: str) -> dict:
 
 # ── Shodan ────────────────────────────────────────────────────────────────────
 
+# Tags that indicate the machine type
+_IOT_TAGS = {"iot", "embedded", "webcam", "router", "printer", "scada", "ics", "dvr", "camera"}
+_VPS_ORGS = {
+    "digitalocean", "linode", "vultr", "hetzner", "ovh", "scaleway",
+    "amazon", "amazonaws", "google", "microsoft", "azure", "alibaba",
+    "upcloud", "contabo", "hostinger", "ionos", "leaseweb",
+}
+
+def _classify_machine(host: dict) -> str:
+    """
+    Classify the attacker's machine as: iot_device | vps | dedicated_server | unknown
+    Uses Shodan tags, org/ISP name, open ports, and OS field.
+    """
+    tags = {t.lower() for t in host.get("tags", [])}
+    if tags & _IOT_TAGS:
+        return "iot_device"
+
+    org = (host.get("org") or "").lower()
+    isp = (host.get("isp") or "").lower()
+    if any(v in org or v in isp for v in _VPS_ORGS):
+        return "vps"
+
+    # Dedicated/bare-metal hints: real OS reported + no cloud org
+    if host.get("os"):
+        return "dedicated_server"
+
+    return "unknown"
+
+
+def _extract_services(host: dict) -> list:
+    """
+    Build a list of exposed services with port, protocol, product, version, banner snippet.
+    """
+    services = []
+    for item in host.get("data", []):
+        svc = {
+            "port":      item.get("port"),
+            "transport": item.get("transport", "tcp"),
+            "product":   item.get("product"),
+            "version":   item.get("version"),
+            "cpe":       item.get("cpe", []),
+        }
+        # Include a short banner (first 200 chars) when no product is identified
+        if not svc["product"]:
+            banner = (item.get("data") or "").strip()
+            svc["banner"] = banner[:200] if banner else None
+        services.append(svc)
+    return services
+
+
 def _shodan_lookup(ip: str) -> dict:
     if not config.SHODAN_KEY:
         return {}
@@ -133,12 +183,21 @@ def _shodan_lookup(ip: str) -> dict:
         import shodan
         api = shodan.Shodan(config.SHODAN_KEY)
         host = api.host(ip)
+
+        machine_type = _classify_machine(host)
+        services     = _extract_services(host)
+
         return {
-            "open_ports": host.get("ports", []),
-            "vulns":      list(host.get("vulns", {}).keys()),
-            "hostnames":  host.get("hostnames", []),
-            "os":         host.get("os"),
-            "tags":       host.get("tags", []),
+            "machine_type": machine_type,          # iot_device | vps | dedicated_server | unknown
+            "open_ports":   host.get("ports", []),
+            "services":     services,              # per-port detail
+            "os":           host.get("os"),
+            "hostnames":    host.get("hostnames", []),
+            "org":          host.get("org"),
+            "isp":          host.get("isp"),
+            "tags":         host.get("tags", []),  # e.g. ["self-signed","iot"]
+            "vulns":        list(host.get("vulns", {}).keys()),
+            "last_update":  host.get("last_update"),
         }
     except Exception as e:
         log.warning(f"Shodan lookup failed for {ip}: {e}")

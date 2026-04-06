@@ -38,7 +38,7 @@ class VirusTotalScanner:
             time.sleep(config.VIRUSTOTAL_RATE_LIMIT_SEC - elapsed)
         self._last_request = time.time()
 
-    def lookup_hash(self, sha256: str) -> Optional[dict]:
+    def lookup_hash(self, sha256: str, _retries: int = 0) -> Optional[dict]:
         """
         Look up a SHA-256 hash on VirusTotal.
         Returns a normalized dict, or None if the hash is unknown.
@@ -64,9 +64,16 @@ class VirusTotalScanner:
             return None
 
         if resp.status_code == 429:
-            log.warning("VirusTotal rate limit hit — backing off 60s")
-            time.sleep(60)
-            return self.lookup_hash(sha256)
+            if _retries >= 2:
+                log.warning(
+                    f"VirusTotal rate limit persists after {_retries + 1} attempts "
+                    f"— skipping {sha256[:16]}..."
+                )
+                return None
+            backoff = 60 * (2 ** _retries)
+            log.warning(f"VirusTotal rate limit hit — backing off {backoff}s (attempt {_retries + 1}/3)")
+            time.sleep(backoff)
+            return self.lookup_hash(sha256, _retries=_retries + 1)
 
         if resp.status_code != 200:
             log.warning(f"VirusTotal returned {resp.status_code} for {sha256[:16]}...")

@@ -29,6 +29,7 @@ from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
 from risk_score import calculate_risk_score, risk_level
+from ollama_mitre import OllamaMitreMapper
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -135,6 +136,35 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
     return [b["key"] for b in resp["aggregations"]["hashes"]["buckets"]]
 
 
+def _fetch_session_commands(es: Elasticsearch, session_id: str) -> list:
+    """Fetch the list of shell commands executed in a Cowrie session from ES."""
+    query = {
+        "size": 50,
+        "_source": ["event.original", "process.command_line"],
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term":   {"session.id.keyword": session_id}},
+                    {"prefix": {"event.id": "cowrie.command"}}
+                ]
+            }
+        },
+        "sort": [{"@timestamp": "asc"}]
+    }
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+        cmds = []
+        for hit in resp["hits"]["hits"]:
+            src = hit["_source"]
+            cmd = src.get("process.command_line") or src.get("event.original", "")
+            if cmd:
+                cmds.append(cmd)
+        return cmds
+    except Exception as e:
+        log.warning(f"Could not fetch commands for session {session_id[:12]}: {e}")
+        return []
+
+
 # ── Session persistence ────────────────────────────────────────────────────────
 
 def _save_session(session: dict):
@@ -178,6 +208,7 @@ class ForensicEngine:
         self.enricher = IPEnricher()
         self.yara     = YARAScanner()
         self.vt       = VirusTotalScanner()
+        self.mitre    = OllamaMitreMapper()
 
     # ── Enrichment pass ────────────────────────────────────────────────────────
 
@@ -249,13 +280,21 @@ class ForensicEngine:
             session["risk_score"]      = score
             session["enrichment_data"] = enrich
 
+            # ── MITRE ATT&CK mapping (skip score=0 with no activity) ──
+            mitre_result = None
+            if score > 0 or session.get("login_attempts", 0) > 0:
+                commands = _fetch_session_commands(self.es, session["session_id"])
+                mitre_result = self.mitre.map_session(session, commands)
+            session["mitre_techniques"] = mitre_result or {}
+
             _save_session(session)
             scored.append((session["session_id"], source_ip, score, level))
 
             if score >= 40:
+                phase = (mitre_result or {}).get("kill_chain_phase", "unknown")
                 log.info(
                     f"[{level}] Session {session['session_id'][:12]}... "
-                    f"IP={source_ip} score={score}"
+                    f"IP={source_ip} score={score} kill_chain={phase}"
                 )
 
         return scored
@@ -295,9 +334,10 @@ class ForensicEngine:
 
 def main():
     parser = argparse.ArgumentParser(description="ForenHive Forensic Engine")
-    parser.add_argument("--hours",       type=int, default=24, help="Hours to look back in ES")
+    parser.add_argument("--hours",        type=int, default=24, help="Hours to look back in ES")
     parser.add_argument("--enrich-only", action="store_true",  help="Run IP enrichment only")
     parser.add_argument("--yara-only",   action="store_true",  help="Run YARA scan only")
+    parser.add_argument("--score-only",  action="store_true",  help="Run session scoring + MITRE mapping only")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema and exit")
     args = parser.parse_args()
 
@@ -313,6 +353,8 @@ def main():
         engine.run_enrichment(args.hours)
     elif args.yara_only:
         engine.run_yara_scan()
+    elif args.score_only:
+        engine.run_session_scoring(args.hours)
     else:
         engine.run_full_analysis(args.hours)
 
