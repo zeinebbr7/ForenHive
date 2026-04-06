@@ -80,9 +80,9 @@ def _query_sessions(es: Elasticsearch, hours_back: int) -> list:
         },
         "aggs": {
             "by_session": {
-                "terms": {"field": "session.id", "size": 5000},
+                "terms": {"field": "session.id.keyword", "size": 5000},
                 "aggs": {
-                    "source_ip":     {"terms": {"field": "source.ip",     "size": 1}},
+                    "source_ip":     {"terms": {"field": "source.ip.keyword",     "size": 1}},
                     "dest_port":     {"terms": {"field": "destination.port", "size": 1}},
                     "login_count":   {"filter": {"prefix": {"event.id": "cowrie.login"}}},
                     "command_count": {"filter": {"prefix": {"event.id": "cowrie.command"}}},
@@ -128,7 +128,7 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
             }
         },
         "aggs": {
-            "hashes": {"terms": {"field": "file.hash.sha256", "size": 1000}}
+            "hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 1000}}
         }
     }
     resp = es.search(index=config.ES_INDEX, body=query)

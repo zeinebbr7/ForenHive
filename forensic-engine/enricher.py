@@ -256,7 +256,6 @@ class IPEnricher:
         Query ES for distinct source.ip values in the last N hours,
         then enrich each one (skips private IPs and cache hits).
         """
-        from datetime import timezone
         since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
         query = {
             "size": 0,
@@ -270,7 +269,7 @@ class IPEnricher:
             },
             "aggs": {
                 "unique_ips": {
-                    "terms": {"field": "source.ip", "size": 10000}
+                    "terms": {"field": "source.ip.keyword", "size": 10000}
                 }
             }
         }
