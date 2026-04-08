@@ -135,6 +135,66 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
     return [b["key"] for b in resp["aggregations"]["hashes"]["buckets"]]
 
 
+def _query_ip_to_sha256(es: Elasticsearch, hours_back: int) -> dict:
+    """
+    Build a mapping of source_ip → [sha256, ...] from Cowrie download events in ES.
+    Used to link YARA/VT results from file_analysis to sessions by IP.
+    """
+    since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
+    query = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range":  {"@timestamp":      {"gte": since}}},
+                    {"exists": {"field": "file.hash.sha256"}},
+                    {"exists": {"field": "source.ip"}}
+                ]
+            }
+        },
+        "aggs": {
+            "by_ip": {
+                "terms": {"field": "source.ip.keyword", "size": 10000},
+                "aggs": {
+                    "hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 100}}
+                }
+            }
+        }
+    }
+    resp = es.search(index=config.ES_INDEX, body=query)
+    result = {}
+    for bucket in resp["aggregations"]["by_ip"]["buckets"]:
+        ip = bucket["key"]
+        hashes = [h["key"] for h in bucket["hashes"]["buckets"]]
+        result[ip] = hashes
+    return result
+
+
+def _load_file_analysis_from_pg() -> dict:
+    """
+    Load all file_analysis rows from PostgreSQL.
+    Returns a dict: sha256 → {yara_matches: [...], vt_malicious: int}
+    """
+    results = {}
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT sha256, yara_matches, virustotal_result FROM file_analysis")
+                for row in cur.fetchall():
+                    sha256 = row["sha256"]
+                    yara = row["yara_matches"] or []
+                    rule_names = [m["rule"] for m in yara if isinstance(m, dict) and "rule" in m]
+                    vt = row["virustotal_result"] or {}
+                    vt_malicious = int(vt.get("malicious", 0))
+                    results[sha256] = {
+                        "yara_matches": rule_names,
+                        "vt_malicious": vt_malicious,
+                    }
+    except Exception as e:
+        log.warning(f"Could not load file_analysis from PostgreSQL: {e}")
+    return results
+
+
 # ── Session persistence ────────────────────────────────────────────────────────
 
 def _save_session(session: dict):
@@ -225,13 +285,30 @@ class ForensicEngine:
         log.info(f"Found {len(sessions)} Cowrie sessions to score")
 
         enrichment_cache = enrichment_cache or {}
+
+        # Load YARA/VT results from PostgreSQL and map them to source IPs via ES
+        file_analysis   = _load_file_analysis_from_pg()
+        ip_to_sha256    = _query_ip_to_sha256(self.es, hours_back)
+        log.info(f"Loaded {len(file_analysis)} file_analysis entries, "
+                 f"{len(ip_to_sha256)} IPs with file hashes")
+
         scored = []
 
         for session in sessions:
-            source_ip = session.get("source_ip", "")
-            enrich    = enrichment_cache.get(source_ip, {})
+            source_ip  = session.get("source_ip", "")
+            enrich     = enrichment_cache.get(source_ip, {})
             reputation = enrich.get("reputation", {})
             privacy    = enrich.get("privacy", {})
+
+            # Aggregate YARA/VT signals across all files downloaded by this IP
+            ip_hashes    = ip_to_sha256.get(source_ip, [])
+            yara_matches = []
+            vt_malicious = 0
+            for sha256 in ip_hashes:
+                fa = file_analysis.get(sha256, {})
+                yara_matches.extend(fa.get("yara_matches", []))
+                vt_malicious = max(vt_malicious, fa.get("vt_malicious", 0))
+            yara_matches = list(set(yara_matches))  # deduplicate rule names
 
             session_data = {
                 **session,
@@ -239,8 +316,8 @@ class ForensicEngine:
                 "is_tor":       privacy.get("is_tor", False),
                 "is_vpn":       privacy.get("is_vpn", False),
                 "is_proxy":     privacy.get("is_proxy", False),
-                "yara_matches": [],   # populated below if matching
-                "vt_malicious": 0,
+                "yara_matches": yara_matches,
+                "vt_malicious": vt_malicious,
             }
 
             score = calculate_risk_score(session_data)

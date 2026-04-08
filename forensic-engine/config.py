@@ -29,7 +29,7 @@ PG_HOST     = os.environ.get("PG_HOST",     "forenhive-postgresql")
 PG_PORT     = int(os.environ.get("PG_PORT", "5432"))
 PG_DB       = os.environ.get("PG_DB",       "forenhive")
 PG_USER     = os.environ.get("PG_USER",     "forenhive")
-PG_PASSWORD = os.environ.get("PG_PASSWORD", "")
+PG_PASSWORD = os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
 
 # ── Ollama / LLM ───────────────────────────────────────────────────────────────
 OLLAMA_HOST  = os.environ.get("OLLAMA_HOST",  "forenhive-ollama")
