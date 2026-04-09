@@ -6,6 +6,7 @@ Results are merged into the file_analysis table in PostgreSQL.
 
 import json
 import logging
+import os
 import time
 from typing import Optional
 
@@ -23,7 +24,7 @@ def _pg_conn():
     return psycopg2.connect(
         host=config.PG_HOST, port=config.PG_PORT,
         dbname=config.PG_DB, user=config.PG_USER,
-        password=config.PG_PASSWORD
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 
@@ -31,6 +32,7 @@ class VirusTotalScanner:
 
     def __init__(self):
         self._last_request = 0.0
+        self._network_dead = False   # set True on first DNS failure — skip all subsequent calls
 
     def _rate_limit(self):
         elapsed = time.time() - self._last_request
@@ -38,13 +40,35 @@ class VirusTotalScanner:
             time.sleep(config.VIRUSTOTAL_RATE_LIMIT_SEC - elapsed)
         self._last_request = time.time()
 
+    def _is_cached(self, sha256: str) -> bool:
+        """Return True if this sha256 already has a VT result in file_analysis."""
+        try:
+            with _pg_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM file_analysis WHERE sha256=%s "
+                        "AND virustotal_result IS NOT NULL",
+                        (sha256,)
+                    )
+                    return cur.fetchone() is not None
+        except Exception:
+            return False
+
     def lookup_hash(self, sha256: str) -> Optional[dict]:
         """
         Look up a SHA-256 hash on VirusTotal.
-        Returns a normalized dict, or None if the hash is unknown.
+        Returns a normalized dict, or None if the hash is unknown or unreachable.
         """
         if not config.VIRUSTOTAL_KEY:
             log.warning("VIRUSTOTAL_KEY not set — skipping lookup")
+            return None
+
+        if self._network_dead:
+            log.debug(f"VT network unavailable — skipping {sha256[:16]}...")
+            return None
+
+        if self._is_cached(sha256):
+            log.info(f"VT cache hit — {sha256[:16]}... (already analyzed)")
             return None
 
         self._rate_limit()
@@ -56,7 +80,14 @@ class VirusTotalScanner:
                 timeout=15
             )
         except Exception as e:
-            log.warning(f"VirusTotal request failed for {sha256}: {e}")
+            err = str(e)
+            # DNS / network unreachable — mark dead and stop all future calls
+            if any(kw in err for kw in ("NameResolutionError", "Failed to resolve",
+                                        "ConnectionError", "Network is unreachable")):
+                log.warning(f"VT network unreachable ({err[:80]}) — disabling VT for this run")
+                self._network_dead = True
+            else:
+                log.warning(f"VirusTotal request failed for {sha256}: {e}")
             return None
 
         if resp.status_code == 404:
@@ -64,9 +95,20 @@ class VirusTotalScanner:
             return None
 
         if resp.status_code == 429:
-            log.warning("VirusTotal rate limit hit — backing off 60s")
-            time.sleep(60)
-            return self.lookup_hash(sha256)
+            attempt = getattr(self, '_vt_attempt', 1)
+            max_attempts = 3
+            if attempt <= max_attempts:
+                backoff = 60 * attempt
+                log.warning(f"VirusTotal rate limit hit — backing off {backoff}s (attempt {attempt}/{max_attempts})")
+                self._vt_attempt = attempt + 1
+                time.sleep(backoff)
+                result = self.lookup_hash(sha256)
+                self._vt_attempt = 1
+                return result
+            else:
+                self._vt_attempt = 1
+                log.warning(f"VirusTotal rate limit persists after {max_attempts} attempts — skipping {sha256[:16]}...")
+                return None
 
         if resp.status_code != 200:
             log.warning(f"VirusTotal returned {resp.status_code} for {sha256[:16]}...")

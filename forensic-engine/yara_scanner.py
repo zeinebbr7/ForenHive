@@ -32,7 +32,7 @@ def _pg_conn():
     return psycopg2.connect(
         host=config.PG_HOST, port=config.PG_PORT,
         dbname=config.PG_DB, user=config.PG_USER,
-        password=config.PG_PASSWORD
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 

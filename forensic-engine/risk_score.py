@@ -9,22 +9,7 @@ CRITICAL_PORTS = {445, 1433, 27017, 3306, 5432, 6379, 2375, 9200}
 
 
 def calculate_risk_score(session_data: dict) -> int:
-    """
-    Calculate risk score (0-100) from aggregated session forensic data.
 
-    Expected keys in session_data:
-      abuse_score       int  (0-100 from AbuseIPDB)
-      is_tor            bool
-      is_vpn            bool
-      is_proxy          bool
-      yara_matches      list (YARA rule names matched)
-      vt_malicious      int  (VirusTotal malicious engine count)
-      login_attempts    int  (total login attempts in session)
-      destination_port  int  (primary target port)
-      honeypot_type     str  (cowrie / dionaea / galah / zeek)
-      command_count     int  (commands executed in cowrie session)
-      exfil_bytes       int  (bytes transferred / network.bytes)
-    """
     score = 0
 
     # ── IP reputation (0-40 pts) ────────────────────────────────────────────────

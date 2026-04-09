@@ -7,6 +7,7 @@ Results are cached in PostgreSQL (24h TTL).
 import ipaddress
 import json
 import logging
+import os
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -36,7 +37,7 @@ def _pg_conn():
     return psycopg2.connect(
         host=config.PG_HOST, port=config.PG_PORT,
         dbname=config.PG_DB, user=config.PG_USER,
-        password=config.PG_PASSWORD
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 # ── GeoIP (offline MaxMind) ────────────────────────────────────────────────────
@@ -124,24 +125,29 @@ def _abuseipdb_lookup(ip: str) -> dict:
         log.warning(f"AbuseIPDB lookup failed for {ip}: {e}")
     return {}
 
-# ── Shodan ────────────────────────────────────────────────────────────────────
+# ── InternetDB (Shodan free — no key required) ────────────────────────────────
 
 def _shodan_lookup(ip: str) -> dict:
-    if not config.SHODAN_KEY:
-        return {}
+    """Uses Shodan InternetDB — free, no API key needed."""
     try:
-        import shodan
-        api = shodan.Shodan(config.SHODAN_KEY)
-        host = api.host(ip)
-        return {
-            "open_ports": host.get("ports", []),
-            "vulns":      list(host.get("vulns", {}).keys()),
-            "hostnames":  host.get("hostnames", []),
-            "os":         host.get("os"),
-            "tags":       host.get("tags", []),
-        }
+        resp = requests.get(
+            f"https://internetdb.shodan.io/{ip}",
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if "detail" in data:
+                return {}
+            return {
+                "open_ports": data.get("ports", []),
+                "vulns":      data.get("vulns", []),
+                "hostnames":  data.get("hostnames", []),
+                "cpes":       data.get("cpes", []),
+                "tags":       data.get("tags", []),
+            }
+        log.warning(f"InternetDB returned {resp.status_code} for {ip}")
     except Exception as e:
-        log.warning(f"Shodan lookup failed for {ip}: {e}")
+        log.warning(f"InternetDB lookup failed for {ip}: {e}")
     return {}
 
 # ── Whois / RDAP ──────────────────────────────────────────────────────────────
@@ -222,8 +228,7 @@ class IPEnricher:
         # 3 — AbuseIPDB
         reputation = _abuseipdb_lookup(ip)
 
-        # 4 — Shodan (rate limit: 1 req/sec)
-        time.sleep(config.SHODAN_RATE_LIMIT_SEC)
+        # 4 — InternetDB (Shodan free, no key)
         infrastructure = _shodan_lookup(ip)
 
         # 5 — Whois/RDAP
