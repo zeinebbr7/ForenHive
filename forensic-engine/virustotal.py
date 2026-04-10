@@ -1,11 +1,13 @@
 """
-ForenHive Forensic Engine — VirusTotal SHA-256 Lookup
-Looks up file hashes against VirusTotal v3 API.
-Results are merged into the file_analysis table in PostgreSQL.
+ForenHive -- VirusTotal SHA-256 Lookup
+Analyse les fichiers malveillants captures par Dionaea ou Cowrie
+en soumettant leur empreinte SHA-256 a l'API VirusTotal v3.
+Les resultats sont sauvegardes dans la table file_analysis (PostgreSQL).
 """
 
 import json
 import logging
+import os
 import time
 from typing import Optional
 
@@ -16,107 +18,169 @@ import config
 
 log = logging.getLogger("virustotal")
 
-VT_BASE = "https://www.virustotal.com/api/v3"
+VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3"
 
 
-def _pg_conn():
+def connexion_postgres():
+    """Ouvre une connexion a PostgreSQL."""
     return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=config.PG_PASSWORD
+        host=config.PG_HOST,
+        port=config.PG_PORT,
+        dbname=config.PG_DB,
+        user=config.PG_USER,
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
 
 class VirusTotalScanner:
+    """
+    Envoie des hashes SHA-256 a VirusTotal et recupere les resultats d'analyse.
+
+    Gestion automatique :
+    - Cache en base (evite de re-soumettre un hash deja analyse)
+    - Rate limiting (free tier : 4 req/sec, 500 req/jour)
+    - Retry automatique sur erreur 429 (3 tentatives max)
+    """
 
     def __init__(self):
-        self._last_request = 0.0
+        self._dernier_appel  = 0.0    # timestamp du dernier appel API
+        self._reseau_mort    = False  # True si le reseau est inaccessible
 
-    def _rate_limit(self):
-        elapsed = time.time() - self._last_request
-        if elapsed < config.VIRUSTOTAL_RATE_LIMIT_SEC:
-            time.sleep(config.VIRUSTOTAL_RATE_LIMIT_SEC - elapsed)
-        self._last_request = time.time()
+    # ── Respect du rate limit ──────────────────────────────────────────────────
 
-    def lookup_hash(self, sha256: str, _retries: int = 0) -> Optional[dict]:
+    def _attendre_rate_limit(self):
+        """Attend si necessaire pour respecter la limite de 4 req/sec."""
+        temps_ecoule = time.time() - self._dernier_appel
+        if temps_ecoule < config.VIRUSTOTAL_RATE_LIMIT_SEC:
+            time.sleep(config.VIRUSTOTAL_RATE_LIMIT_SEC - temps_ecoule)
+        self._dernier_appel = time.time()
+
+    # ── Verification du cache ──────────────────────────────────────────────────
+
+    def _deja_analyse(self, sha256: str) -> bool:
         """
-        Look up a SHA-256 hash on VirusTotal.
-        Returns a normalized dict, or None if the hash is unknown.
+        Retourne True si ce hash a deja ete analyse et sauvegarde en base.
+        Evite d'appeler l'API pour un fichier qu'on connait deja.
         """
+        try:
+            with connexion_postgres() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT 1 FROM file_analysis "
+                        "WHERE sha256 = %s AND virustotal_result IS NOT NULL",
+                        (sha256,)
+                    )
+                    return cur.fetchone() is not None
+        except Exception:
+            return False
+
+    # ── Appel API VirusTotal ───────────────────────────────────────────────────
+
+    def analyser_hash(self, sha256: str, tentative: int = 0) -> Optional[dict]:
+        """
+        Interroge VirusTotal pour un hash SHA-256.
+
+        Retourne un dictionnaire avec les resultats, ou None si :
+        - Pas de cle API configuree
+        - Hash inconnu de VT (fichier tres recent ou rare)
+        - Reseau inaccessible
+        """
+        # Verifications preliminaires
         if not config.VIRUSTOTAL_KEY:
-            log.warning("VIRUSTOTAL_KEY not set — skipping lookup")
+            log.warning("VIRUSTOTAL_KEY non configuree -- analyse ignoree")
             return None
 
-        self._rate_limit()
+        if self._reseau_mort:
+            log.debug(f"Reseau VT indisponible -- {sha256[:16]}... ignore")
+            return None
 
+        if self._deja_analyse(sha256):
+            log.info(f"VT cache hit -- {sha256[:16]}... (deja analyse)")
+            return None
+
+        # Respecter le rate limit
+        self._attendre_rate_limit()
+
+        # Appel API
         try:
-            resp = requests.get(
-                f"{VT_BASE}/files/{sha256}",
+            reponse = requests.get(
+                f"{VIRUSTOTAL_URL}/files/{sha256}",
                 headers={"x-apikey": config.VIRUSTOTAL_KEY},
                 timeout=15
             )
         except Exception as e:
-            log.warning(f"VirusTotal request failed for {sha256}: {e}")
+            erreur = str(e)
+            # Si le reseau est completement inaccessible, on arrete tous les appels
+            if any(mot in erreur for mot in ("NameResolutionError", "Failed to resolve",
+                                             "ConnectionError", "Network is unreachable")):
+                log.warning(f"Reseau VT inaccessible ({erreur[:80]}) -- desactivation VT")
+                self._reseau_mort = True
+            else:
+                log.warning(f"Appel VT echoue pour {sha256} : {e}")
             return None
 
-        if resp.status_code == 404:
-            log.info(f"VirusTotal: hash not found — {sha256[:16]}... (unknown malware)")
+        # Hash inconnu de VirusTotal
+        if reponse.status_code == 404:
+            log.info(f"VT: hash inconnu -- {sha256[:16]}... (malware tres recent ?)")
             return None
 
-        if resp.status_code == 429:
-            if _retries >= 2:
-                log.warning(
-                    f"VirusTotal rate limit persists after {_retries + 1} attempts "
-                    f"— skipping {sha256[:16]}..."
-                )
+        # Rate limit depasse -- on attend et on reessaie (3 tentatives max)
+        if reponse.status_code == 429:
+            if tentative >= 2:
+                log.warning(f"Rate limit VT persiste apres {tentative + 1} tentatives -- abandon")
                 return None
-            backoff = 60 * (2 ** _retries)
-            log.warning(f"VirusTotal rate limit hit — backing off {backoff}s (attempt {_retries + 1}/3)")
-            time.sleep(backoff)
-            return self.lookup_hash(sha256, _retries=_retries + 1)
+            attente = 60 * (2 ** tentative)  # 60s, 120s
+            log.warning(f"Rate limit VT -- attente {attente}s (tentative {tentative + 1}/3)")
+            time.sleep(attente)
+            return self.analyser_hash(sha256, tentative=tentative + 1)
 
-        if resp.status_code != 200:
-            log.warning(f"VirusTotal returned {resp.status_code} for {sha256[:16]}...")
+        if reponse.status_code != 200:
+            log.warning(f"VT a retourne {reponse.status_code} pour {sha256[:16]}...")
             return None
 
-        data = resp.json().get("data", {}).get("attributes", {})
-        last_analysis = data.get("last_analysis_stats", {})
-        malicious  = last_analysis.get("malicious", 0)
-        suspicious = last_analysis.get("suspicious", 0)
-        undetected = last_analysis.get("undetected", 0)
-        total      = malicious + suspicious + undetected + last_analysis.get("harmless", 0)
+        # Extraire les statistiques de detection
+        data          = reponse.json().get("data", {}).get("attributes", {})
+        stats         = data.get("last_analysis_stats", {})
+        nb_malveillant = stats.get("malicious",  0)
+        nb_suspect     = stats.get("suspicious", 0)
+        nb_propre      = stats.get("undetected", 0)
+        nb_total       = nb_malveillant + nb_suspect + nb_propre + stats.get("harmless", 0)
 
-        # Extract family from popular threat classification
-        family = ""
-        popular = data.get("popular_threat_classification", {})
-        if popular:
-            label = popular.get("suggested_threat_label", "")
-            family = label.split(".")[0] if label else ""
+        # Famille de malware (si VT la connait)
+        famille = ""
+        classification = data.get("popular_threat_classification", {})
+        if classification:
+            label   = classification.get("suggested_threat_label", "")
+            famille = label.split(".")[0] if label else ""
 
-        result = {
+        resultat = {
             "sha256":           sha256,
-            "detection_ratio":  f"{malicious}/{total}" if total else "0/0",
-            "malicious":        malicious,
-            "suspicious":       suspicious,
-            "undetected":       undetected,
-            "family":           family,
-            "tags":             data.get("tags", []),
+            "detection_ratio":  f"{nb_malveillant}/{nb_total}" if nb_total else "0/0",
+            "malicious":        nb_malveillant,
+            "suspicious":       nb_suspect,
+            "undetected":       nb_propre,
+            "family":           famille,
+            "tags":             data.get("tags",  []),
             "first_seen":       data.get("first_submission_date", ""),
-            "last_seen":        data.get("last_analysis_date", ""),
+            "last_seen":        data.get("last_analysis_date",    ""),
             "names":            data.get("names", [])[:5],
         }
 
         log.info(
-            f"VirusTotal [{sha256[:16]}...] "
-            f"{malicious}/{total} detections, family={family or 'unknown'}"
+            f"VT [{sha256[:16]}...] "
+            f"{nb_malveillant}/{nb_total} detections, famille={famille or 'inconnue'}"
         )
 
-        self._save_to_db(sha256, result)
-        return result
+        # Sauvegarder en base PostgreSQL
+        self._sauvegarder(sha256, resultat)
+        return resultat
 
-    def _save_to_db(self, sha256: str, vt_result: dict):
+    # ── Sauvegarde en base ─────────────────────────────────────────────────────
+
+    def _sauvegarder(self, sha256: str, resultat: dict):
+        """Insere ou met a jour le resultat VT dans la table file_analysis."""
         try:
-            with _pg_conn() as conn:
+            with connexion_postgres() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -126,17 +190,32 @@ class VirusTotalScanner:
                             SET virustotal_result = EXCLUDED.virustotal_result,
                                 analyzed_at       = NOW()
                         """,
-                        (sha256, json.dumps(vt_result))
+                        (sha256, json.dumps(resultat))
                     )
                 conn.commit()
         except Exception as e:
-            log.warning(f"DB write failed for {sha256}: {e}")
+            log.warning(f"Sauvegarde VT echouee pour {sha256} : {e}")
 
-    def lookup_batch(self, sha256_list: list) -> dict:
-        """Lookup multiple hashes. Returns {sha256: result_or_None}."""
-        results = {}
-        unique = list(set(sha256_list))
-        log.info(f"VirusTotal batch lookup: {len(unique)} hashes")
-        for sha256 in unique:
-            results[sha256] = self.lookup_hash(sha256)
-        return results
+    # ── Analyse par lot ────────────────────────────────────────────────────────
+
+    def analyser_lot(self, liste_sha256: list) -> dict:
+        """
+        Analyse une liste de hashes SHA-256.
+        Retourne un dictionnaire {sha256: resultat_ou_None}.
+        """
+        resultats  = {}
+        uniques    = list(set(liste_sha256))
+        log.info(f"VT analyse par lot : {len(uniques)} hashes")
+        for sha256 in uniques:
+            resultats[sha256] = self.analyser_hash(sha256)
+        return resultats
+
+    # ── Alias (compatibilite avec l'ancien code) ───────────────────────────────
+    def lookup_hash(self, sha256: str, _retries: int = 0) -> Optional[dict]:
+        return self.analyser_hash(sha256, tentative=_retries)
+
+    def lookup_batch(self, liste: list) -> dict:
+        return self.analyser_lot(liste)
+
+    def _is_cached(self, sha256: str) -> bool:
+        return self._deja_analyse(sha256)

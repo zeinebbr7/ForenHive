@@ -1,91 +1,109 @@
 """
-ForenHive Forensic Engine — Risk Score Calculator
-Produces a 0-100 score per session based on multiple forensic signals.
+ForenHive -- Calcul du Score de Risque
+Attribue un score de 0 a 100 a chaque session d'attaque
+en fonction de plusieurs indicateurs forensiques.
+
+Grille de scoring :
+  0-40  pts : Reputation IP (AbuseIPDB)
+  0-10  pts : Anonymisation (Tor / VPN / Proxy)
+  0-20  pts : Malware detecte par YARA
+  0-15  pts : Detections VirusTotal
+  0-10  pts : Volume de tentatives de connexion
+  0-5   pts : Port cible critique (SMB, SQL, etc.)
+  0-5   pts : Commandes executees (post-exploitation)
+  0-5   pts : Volume de donnees exfiltrees
 """
 
 
-# Ports that indicate attacks on critical services
-CRITICAL_PORTS = {445, 1433, 27017, 3306, 5432, 6379, 2375, 9200}
+# Ports critiques (bases de donnees, partage de fichiers, Docker...)
+PORTS_CRITIQUES = {445, 1433, 27017, 3306, 5432, 6379, 2375, 9200}
 
 
-def calculate_risk_score(session_data: dict) -> int:
+def calculer_score_risque(session: dict) -> int:
     """
-    Calculate risk score (0-100) from aggregated session forensic data.
+    Calcule le score de risque d'une session (0 = inoffensif, 100 = critique).
 
-    Expected keys in session_data:
-      abuse_score       int  (0-100 from AbuseIPDB)
-      is_tor            bool
-      is_vpn            bool
-      is_proxy          bool
-      yara_matches      list (YARA rule names matched)
-      vt_malicious      int  (VirusTotal malicious engine count)
-      login_attempts    int  (total login attempts in session)
-      destination_port  int  (primary target port)
-      honeypot_type     str  (cowrie / dionaea / galah / zeek)
-      command_count     int  (commands executed in cowrie session)
-      exfil_bytes       int  (bytes transferred / network.bytes)
+    Parametres attendus dans `session` :
+      abuse_score     : score AbuseIPDB (0-100)
+      is_tor          : bool
+      is_vpn          : bool
+      is_proxy        : bool
+      yara_matches    : liste de noms de regles YARA
+      vt_malicious    : nombre de moteurs VT ayant detecte un malware
+      login_attempts  : nombre de tentatives de connexion
+      destination_port: port cible
+      command_count   : nombre de commandes executees (Cowrie)
+      exfil_bytes     : octets transferes
     """
     score = 0
 
-    # ── IP reputation (0-40 pts) ────────────────────────────────────────────────
-    abuse_score = int(session_data.get("abuse_score", 0))
-    score += int(abuse_score * 0.40)
+    # ── 1. Reputation IP via AbuseIPDB (0-40 pts) ──────────────────────────────
+    # Un score AbuseIPDB de 100 = IP tres connue comme malveillante
+    score_abuseipdb = int(session.get("abuse_score", 0))
+    score += int(score_abuseipdb * 0.40)   # ex: 100 -> +40 pts
 
-    # ── Anonymization tools (0-10 pts) ─────────────────────────────────────────
-    if session_data.get("is_tor") or session_data.get("is_vpn") or session_data.get("is_proxy"):
+    # ── 2. Anonymisation : Tor / VPN / Proxy (0-10 pts) ───────────────────────
+    # L'attaquant cache son identite = signal fort
+    utilise_anonymiseur = (
+        session.get("is_tor")   or
+        session.get("is_vpn")   or
+        session.get("is_proxy")
+    )
+    if utilise_anonymiseur:
         score += 10
 
-    # ── Malware detected (0-20 pts) ────────────────────────────────────────────
-    yara_matches = session_data.get("yara_matches") or []
-    if yara_matches:
-        # Extra weight for critical malware families
-        high_severity = {"Mirai_Botnet", "WannaCry_Ransomware", "Emotet_Loader"}
-        if any(m in high_severity for m in yara_matches):
-            score += 20
+    # ── 3. Malware detecte par YARA (0-20 pts) ────────────────────────────────
+    regles_yara = session.get("yara_matches") or []
+    if regles_yara:
+        # Familles particulierement dangereuses
+        familles_critiques = {"Mirai_Botnet", "WannaCry_Ransomware", "Emotet_Loader"}
+        if any(r in familles_critiques for r in regles_yara):
+            score += 20   # malware de haute severite
         else:
-            score += 12
+            score += 12   # autre malware
 
-    # ── VirusTotal detections (0-15 pts) ───────────────────────────────────────
-    vt_malicious = int(session_data.get("vt_malicious", 0))
-    if vt_malicious > 10:
-        score += 15
-    elif vt_malicious > 0:
-        score += 8
+    # ── 4. Detections VirusTotal (0-15 pts) ───────────────────────────────────
+    nb_detections_vt = int(session.get("vt_malicious", 0))
+    if nb_detections_vt > 10:
+        score += 15   # largement detecte (> 10 moteurs)
+    elif nb_detections_vt > 0:
+        score += 8    # quelques detections
 
-    # ── Login attempt volume (0-10 pts) ────────────────────────────────────────
-    attempts = int(session_data.get("login_attempts", 0))
-    if attempts > 500:
-        score += 10
-    elif attempts > 100:
+    # ── 5. Volume de tentatives de connexion (0-10 pts) ───────────────────────
+    nb_tentatives = int(session.get("login_attempts", 0))
+    if nb_tentatives > 500:
+        score += 10   # brute force massif
+    elif nb_tentatives > 100:
         score += 5
-    elif attempts > 10:
+    elif nb_tentatives > 10:
         score += 2
 
-    # ── Critical service targeting (0-5 pts) ───────────────────────────────────
-    dest_port = session_data.get("destination_port")
-    if dest_port and int(dest_port) in CRITICAL_PORTS:
+    # ── 6. Port cible critique (0-5 pts) ──────────────────────────────────────
+    port = session.get("destination_port")
+    if port and int(port) in PORTS_CRITIQUES:
         score += 5
 
-    # ── Post-exploitation signals (bonus, capped at total 100) ─────────────────
-    # Commands executed in shell (Cowrie)
-    command_count = int(session_data.get("command_count", 0))
-    if command_count > 20:
+    # ── 7. Commandes executees dans le shell (0-5 pts) ────────────────────────
+    # Plus de commandes = l'attaquant est alle loin (post-exploitation)
+    nb_commandes = int(session.get("command_count", 0))
+    if nb_commandes > 20:
         score += 5
-    elif command_count > 5:
+    elif nb_commandes > 5:
         score += 2
 
-    # Large data transfer
-    exfil_bytes = int(session_data.get("exfil_bytes", 0))
-    if exfil_bytes > 1_000_000:   # >1MB
+    # ── 8. Volume d'exfiltration (0-5 pts) ────────────────────────────────────
+    octets_exfiltres = int(session.get("exfil_bytes", 0))
+    if octets_exfiltres > 1_000_000:   # > 1 Mo
         score += 5
-    elif exfil_bytes > 100_000:   # >100KB
+    elif octets_exfiltres > 100_000:   # > 100 Ko
         score += 2
 
+    # Le score est toujours compris entre 0 et 100
     return min(score, 100)
 
 
-def risk_level(score: int) -> str:
-    """Human-readable risk level from numeric score."""
+def niveau_risque(score: int) -> str:
+    """Convertit un score numerique en niveau lisible."""
     if score >= 80:
         return "CRITICAL"
     elif score >= 60:
@@ -96,3 +114,8 @@ def risk_level(score: int) -> str:
         return "LOW"
     else:
         return "INFO"
+
+
+# Alias (compatibilite avec l'ancien code)
+calculate_risk_score = calculer_score_risque
+risk_level           = niveau_risque
