@@ -133,6 +133,8 @@ services:
       - network.host=0.0.0.0
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
     networks:
       - backend-net
 
@@ -166,6 +168,12 @@ services:
       - .env
     environment:
       - PG_HOST=forenhive-postgresql
+      - PG_PASSWORD=${POSTGRES_PASSWORD}
+      - PG_USER=${POSTGRES_USER}
+      - PG_DB=${POSTGRES_DB}
+      - PG_PASSWORD=${POSTGRES_PASSWORD}
+      - PG_USER=${POSTGRES_USER}
+      - PG_DB=${POSTGRES_DB}
       - PG_PORT=${POSTGRES_PORT:-5432}
       - PG_DB=${POSTGRES_DB:-forenhive}
       - PG_USER=${POSTGRES_USER:-forenhive}
