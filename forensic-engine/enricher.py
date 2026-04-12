@@ -28,6 +28,43 @@ def _is_private(ip: str) -> bool:
     except ValueError:
         return True
 
+def _classify_private_ip(ip: str) -> dict:
+    """Classify a private IP into a risk category for behavioral scoring."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return {"network_class": "private_unknown", "is_docker": False, "private_risk_level": "monitor"}
+
+    if addr.is_loopback:
+        return {"network_class": "loopback", "is_docker": False, "private_risk_level": "ignore"}
+
+    docker_nets = [
+        ipaddress.ip_network("172.17.0.0/16"),
+        ipaddress.ip_network("172.18.0.0/16"),
+        ipaddress.ip_network("172.19.0.0/16"),
+    ]
+    if any(addr in net for net in docker_nets):
+        return {"network_class": "docker_bridge", "is_docker": True, "private_risk_level": "ignore"}
+
+    try:
+        vpn_ranges = [
+            ipaddress.ip_network(r.strip())
+            for r in config.PRIVATE_VPN_RANGES.split(",") if r.strip()
+        ]
+    except Exception:
+        vpn_ranges = []
+    if any(addr in net for net in vpn_ranges):
+        return {"network_class": "vpn_tunnel", "is_docker": False, "private_risk_level": "investigate"}
+
+    if addr in ipaddress.ip_network("10.0.0.0/8"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+    if addr in ipaddress.ip_network("172.16.0.0/12"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+    if addr in ipaddress.ip_network("192.168.0.0/16"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "monitor"}
+
+    return {"network_class": "private_unknown", "is_docker": False, "private_risk_level": "monitor"}
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -207,9 +244,10 @@ class IPEnricher:
 
     def enrich(self, ip: str) -> dict:
         """Full enrichment pipeline for a single IP."""
-        # Return minimal record for private IPs
+        # Return classification record for private IPs
         if _is_private(ip):
-            return {"ip": ip, "private": True}
+            classification = _classify_private_ip(ip)
+            return {"ip": ip, "private": True, **classification}
 
         # Check cache first
         cached = self.check_cache(ip)

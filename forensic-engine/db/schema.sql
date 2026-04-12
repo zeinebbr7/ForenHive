@@ -29,8 +29,18 @@ CREATE TABLE IF NOT EXISTS forensic_sessions (
     risk_score          INTEGER CHECK (risk_score >= 0 AND risk_score <= 100),
     mitre_techniques    JSONB,
     enrichment_data     JSONB,
+    kill_chain_phase    VARCHAR(50),
+    kill_chain_stage    INTEGER,
+    primary_technique   VARCHAR(20),
+    forensic_narrative  TEXT,
     created_at          TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Migration: add new columns to existing deployments
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase   VARCHAR(50);
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_stage   INTEGER;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS primary_technique  VARCHAR(20);
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS forensic_narrative TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source_ip    ON forensic_sessions (source_ip);
 CREATE INDEX IF NOT EXISTS idx_sessions_risk_score   ON forensic_sessions (risk_score DESC);

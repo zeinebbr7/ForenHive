@@ -61,6 +61,9 @@ YARA_RULES_DIR = os.environ.get(
 # ── Cache TTL ──────────────────────────────────────────────────────────────────
 ENRICHMENT_CACHE_TTL_HOURS = int(os.environ.get("ENRICHMENT_CACHE_TTL_HOURS", "24"))
 
+# ── Private IP ranges treated as internal/VPN (not Docker) ────────────────────
+PRIVATE_VPN_RANGES = os.environ.get("PRIVATE_VPN_RANGES", "10.212.0.0/16")
+
 # ── Rate limiting ──────────────────────────────────────────────────────────────
 SHODAN_RATE_LIMIT_SEC    = 1.0   # 1 req/sec
 ABUSEIPDB_DAILY_LIMIT    = 1000  # free tier

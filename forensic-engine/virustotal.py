@@ -32,7 +32,9 @@ class VirusTotalScanner:
 
     def __init__(self):
         self._last_request = 0.0
-        self._network_dead = False   # set True on first DNS failure — skip all subsequent calls
+        self._network_dead = False       # set True on first DNS failure — skip all subsequent calls
+        self._quota_exhausted = False    # set True after 3 consecutive 429s — daily limit hit
+        self._rate_limit_retries = 0     # global counter across all hashes in this run
 
     def _rate_limit(self):
         elapsed = time.time() - self._last_request
@@ -67,6 +69,10 @@ class VirusTotalScanner:
             log.debug(f"VT network unavailable — skipping {sha256[:16]}...")
             return None
 
+        if self._quota_exhausted:
+            log.debug(f"VT quota exhausted — skipping {sha256[:16]}...")
+            return {"vt_available": False, "reason": "quota_exhausted"}
+
         if self._is_cached(sha256):
             log.info(f"VT cache hit — {sha256[:16]}... (already analyzed)")
             return None
@@ -95,20 +101,18 @@ class VirusTotalScanner:
             return None
 
         if resp.status_code == 429:
-            attempt = getattr(self, '_vt_attempt', 1)
-            max_attempts = 3
-            if attempt <= max_attempts:
-                backoff = 60 * attempt
-                log.warning(f"VirusTotal rate limit hit — backing off {backoff}s (attempt {attempt}/{max_attempts})")
-                self._vt_attempt = attempt + 1
-                time.sleep(backoff)
-                result = self.lookup_hash(sha256)
-                self._vt_attempt = 1
-                return result
-            else:
-                self._vt_attempt = 1
-                log.warning(f"VirusTotal rate limit persists after {max_attempts} attempts — skipping {sha256[:16]}...")
-                return None
+            self._rate_limit_retries += 1
+            if self._rate_limit_retries > 3:
+                self._quota_exhausted = True
+                log.warning("VT daily quota exhausted — disabling all further lookups for this run")
+                return {"vt_available": False, "reason": "quota_exhausted"}
+            backoff = 60 * self._rate_limit_retries
+            log.warning(
+                f"VT rate limit — backoff {backoff}s "
+                f"(global attempt {self._rate_limit_retries}/3)"
+            )
+            time.sleep(backoff)
+            return self.lookup_hash(sha256)
 
         if resp.status_code != 200:
             log.warning(f"VirusTotal returned {resp.status_code} for {sha256[:16]}...")
@@ -167,11 +171,17 @@ class VirusTotalScanner:
         except Exception as e:
             log.warning(f"DB write failed for {sha256}: {e}")
 
+    def is_quota_exhausted(self) -> bool:
+        return self._quota_exhausted
+
     def lookup_batch(self, sha256_list: list) -> dict:
         """Lookup multiple hashes. Returns {sha256: result_or_None}."""
         results = {}
         unique = list(set(sha256_list))
         log.info(f"VirusTotal batch lookup: {len(unique)} hashes")
         for sha256 in unique:
+            if self._quota_exhausted:
+                results[sha256] = {"vt_available": False, "reason": "quota_exhausted"}
+                continue
             results[sha256] = self.lookup_hash(sha256)
         return results
