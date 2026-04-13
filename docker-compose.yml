@@ -133,6 +133,8 @@ services:
       - network.host=0.0.0.0
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
     networks:
       - backend-net
 

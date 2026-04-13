@@ -14,6 +14,7 @@ import psycopg2
 import requests
 
 import config
+from quota_tracker import get_tracker
 
 log = logging.getLogger("virustotal")
 
@@ -33,8 +34,8 @@ class VirusTotalScanner:
     def __init__(self):
         self._last_request = 0.0
         self._network_dead = False       # set True on first DNS failure — skip all subsequent calls
-        self._quota_exhausted = False    # set True after 3 consecutive 429s — daily limit hit
         self._rate_limit_retries = 0     # global counter across all hashes in this run
+        self._tracker = get_tracker()
 
     def _rate_limit(self):
         elapsed = time.time() - self._last_request
@@ -69,8 +70,8 @@ class VirusTotalScanner:
             log.debug(f"VT network unavailable — skipping {sha256[:16]}...")
             return None
 
-        if self._quota_exhausted:
-            log.debug(f"VT quota exhausted — skipping {sha256[:16]}...")
+        if self._tracker.is_exhausted("virustotal"):
+            log.debug(f"VT quota exhausted (persistent) — skipping {sha256[:16]}...")
             return {"vt_available": False, "reason": "quota_exhausted"}
 
         if self._is_cached(sha256):
@@ -101,18 +102,13 @@ class VirusTotalScanner:
             return None
 
         if resp.status_code == 429:
-            self._rate_limit_retries += 1
-            if self._rate_limit_retries > 3:
-                self._quota_exhausted = True
-                log.warning("VT daily quota exhausted — disabling all further lookups for this run")
-                return {"vt_available": False, "reason": "quota_exhausted"}
-            backoff = 60 * self._rate_limit_retries
-            log.warning(
-                f"VT rate limit — backoff {backoff}s "
-                f"(global attempt {self._rate_limit_retries}/3)"
+            # Free tier is 4 req/day — on first 429 we treat the quota as dead
+            # for the rest of the UTC day instead of burning long backoffs.
+            self._tracker.mark_exhausted(
+                "virustotal",
+                reason=f"HTTP 429 on {sha256[:16]}..."
             )
-            time.sleep(backoff)
-            return self.lookup_hash(sha256)
+            return {"vt_available": False, "reason": "quota_exhausted"}
 
         if resp.status_code != 200:
             log.warning(f"VirusTotal returned {resp.status_code} for {sha256[:16]}...")
@@ -172,15 +168,18 @@ class VirusTotalScanner:
             log.warning(f"DB write failed for {sha256}: {e}")
 
     def is_quota_exhausted(self) -> bool:
-        return self._quota_exhausted
+        return self._tracker.is_exhausted("virustotal")
 
     def lookup_batch(self, sha256_list: list) -> dict:
         """Lookup multiple hashes. Returns {sha256: result_or_None}."""
         results = {}
         unique = list(set(sha256_list))
         log.info(f"VirusTotal batch lookup: {len(unique)} hashes")
+        if self._tracker.is_exhausted("virustotal"):
+            log.warning("VT quota already exhausted — skipping entire batch")
+            return {h: {"vt_available": False, "reason": "quota_exhausted"} for h in unique}
         for sha256 in unique:
-            if self._quota_exhausted:
+            if self._tracker.is_exhausted("virustotal"):
                 results[sha256] = {"vt_available": False, "reason": "quota_exhausted"}
                 continue
             results[sha256] = self.lookup_hash(sha256)

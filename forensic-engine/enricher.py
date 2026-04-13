@@ -17,8 +17,10 @@ import psycopg2.extras
 import requests
 
 import config
+from quota_tracker import get_tracker
 
 log = logging.getLogger("enricher")
+_tracker = get_tracker()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +121,8 @@ def _geoip_lookup(ip: str) -> dict:
 # ── IPLocate (free, no key) ────────────────────────────────────────────────────
 
 def _iplocate_lookup(ip: str) -> dict:
+    if _tracker.is_exhausted("iplocate"):
+        return {}
     try:
         resp = requests.get(
             f"https://www.iplocate.io/api/lookup/{ip}",
@@ -132,6 +136,10 @@ def _iplocate_lookup(ip: str) -> dict:
                 "is_proxy":   data.get("is_proxy", False),
                 "is_hosting": data.get("is_hosting", False),
             }
+        if resp.status_code in (429, 403):
+            _tracker.mark_exhausted("iplocate", reason=f"HTTP {resp.status_code}")
+        else:
+            log.warning(f"IPLocate returned {resp.status_code} for {ip}")
     except Exception as e:
         log.warning(f"IPLocate lookup failed for {ip}: {e}")
     return {}
@@ -140,6 +148,8 @@ def _iplocate_lookup(ip: str) -> dict:
 
 def _abuseipdb_lookup(ip: str) -> dict:
     if not config.ABUSEIPDB_KEY:
+        return {}
+    if _tracker.is_exhausted("abuseipdb"):
         return {}
     try:
         resp = requests.get(
@@ -157,7 +167,12 @@ def _abuseipdb_lookup(ip: str) -> dict:
                 "is_tor":        d.get("isTor", False),
                 "country_code":  d.get("countryCode", ""),
             }
-        log.warning(f"AbuseIPDB returned {resp.status_code} for {ip}")
+        if resp.status_code == 429:
+            _tracker.mark_exhausted("abuseipdb", reason="HTTP 429")
+        elif resp.status_code == 401:
+            _tracker.mark_exhausted("abuseipdb", reason="HTTP 401 (invalid key)")
+        else:
+            log.warning(f"AbuseIPDB returned {resp.status_code} for {ip}")
     except Exception as e:
         log.warning(f"AbuseIPDB lookup failed for {ip}: {e}")
     return {}
@@ -166,6 +181,8 @@ def _abuseipdb_lookup(ip: str) -> dict:
 
 def _shodan_lookup(ip: str) -> dict:
     """Uses Shodan InternetDB — free, no API key needed."""
+    if _tracker.is_exhausted("shodan"):
+        return {}
     try:
         resp = requests.get(
             f"https://internetdb.shodan.io/{ip}",
@@ -182,7 +199,10 @@ def _shodan_lookup(ip: str) -> dict:
                 "cpes":       data.get("cpes", []),
                 "tags":       data.get("tags", []),
             }
-        log.warning(f"InternetDB returned {resp.status_code} for {ip}")
+        if resp.status_code == 429:
+            _tracker.mark_exhausted("shodan", reason="HTTP 429")
+        elif resp.status_code != 404:
+            log.warning(f"InternetDB returned {resp.status_code} for {ip}")
     except Exception as e:
         log.warning(f"InternetDB lookup failed for {ip}: {e}")
     return {}
@@ -316,7 +336,16 @@ class IPEnricher:
                 }
             }
         }
-        resp = es_client.search(index=config.ES_INDEX, body=query)
-        ips = [b["key"] for b in resp["aggregations"]["unique_ips"]["buckets"]]
+        try:
+            resp = es_client.search(index=config.ES_INDEX, body=query)
+        except Exception as e:
+            log.warning(f"ES search failed (no honeypot indices yet?): {e}")
+            return {}
+        buckets = (
+            resp.get("aggregations", {})
+                .get("unique_ips", {})
+                .get("buckets", [])
+        )
+        ips = [b["key"] for b in buckets]
         log.info(f"Found {len(ips)} unique source IPs in the last {hours_back}h")
         return self.enrich_batch(ips)

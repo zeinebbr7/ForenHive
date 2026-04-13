@@ -105,9 +105,13 @@ def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
         }
     }
 
-    resp = es.search(index=config.ES_INDEX, body=query)
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+    except Exception as e:
+        log.warning(f"Cowrie session query failed: {e}")
+        return []
     sessions = []
-    for bucket in resp["aggregations"]["by_session"]["buckets"]:
+    for bucket in resp.get("aggregations", {}).get("by_session", {}).get("buckets", []):
         session_id = bucket["key"]
         source_ip  = (bucket["source_ip"]["buckets"] or [{}])[0].get("key", "")
         dest_port  = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
@@ -161,7 +165,7 @@ def _query_dionaea_sessions(es: Elasticsearch, hours_back: int) -> list:
         return []
 
     sessions = []
-    for bucket in resp["aggregations"]["by_ip"]["buckets"]:
+    for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
         source_ip = bucket["key"]
         dest_port = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
         sessions.append({
@@ -215,7 +219,7 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
         return []
 
     sessions = []
-    for bucket in resp["aggregations"]["by_ip"]["buckets"]:
+    for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
         source_ip  = bucket["key"]
         dest_port  = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
         http_paths = [p["key"] for p in bucket.get("http_paths", {}).get("buckets", [])]
@@ -281,8 +285,12 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
             "hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 1000}}
         }
     }
-    resp = es.search(index=config.ES_INDEX, body=query)
-    return [b["key"] for b in resp["aggregations"]["hashes"]["buckets"]]
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+    except Exception as e:
+        log.warning(f"SHA256 query failed: {e}")
+        return []
+    return [b["key"] for b in resp.get("aggregations", {}).get("hashes", {}).get("buckets", [])]
 
 
 def _query_ip_to_sha256(es: Elasticsearch, hours_back: int) -> dict:
@@ -308,11 +316,15 @@ def _query_ip_to_sha256(es: Elasticsearch, hours_back: int) -> dict:
             }
         }
     }
-    resp = es.search(index=config.ES_INDEX, body=query)
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+    except Exception as e:
+        log.warning(f"IP→SHA256 query failed: {e}")
+        return {}
     result = {}
-    for bucket in resp["aggregations"]["by_ip"]["buckets"]:
+    for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
         ip = bucket["key"]
-        hashes = [h["key"] for h in bucket["hashes"]["buckets"]]
+        hashes = [h["key"] for h in bucket.get("hashes", {}).get("buckets", [])]
         result[ip] = hashes
     return result
 
@@ -331,10 +343,14 @@ def _query_ip_honeypot_types(es: Elasticsearch, hours_back: int) -> dict:
             "aggs": {"honeypot_types": {"terms": {"field": "honeypot.type.keyword", "size": 10}}}
         }}
     }
-    resp = es.search(index=config.ES_INDEX, body=query)
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+    except Exception as e:
+        log.warning(f"IP→honeypot_types query failed: {e}")
+        return {}
     result = {}
-    for b in resp["aggregations"]["by_ip"]["buckets"]:
-        result[b["key"]] = [t["key"] for t in b["honeypot_types"]["buckets"]]
+    for b in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
+        result[b["key"]] = [t["key"] for t in b.get("honeypot_types", {}).get("buckets", [])]
     return result
 
 
@@ -785,12 +801,26 @@ def main():
     parser.add_argument("--yara-only",   action="store_true",  help="YARA scan only")
     parser.add_argument("--score-only",  action="store_true",  help="Scoring + MITRE only")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
+    parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
+    parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
     args = parser.parse_args()
 
     if args.init_db:
         params = get_conn_params()
         if wait_for_postgres(params):
             init_schema(params)
+        sys.exit(0)
+
+    if args.quota_status:
+        from quota_tracker import get_tracker
+        for row in get_tracker().status():
+            mark = "EXHAUSTED" if row["exhausted"] else "ok"
+            log.info(f"  {row['api_name']:12s} {mark:10s} reset_at={row['reset_at']} last_error={row['last_error']}")
+        sys.exit(0)
+
+    if args.quota_reset:
+        from quota_tracker import get_tracker
+        get_tracker().reset(args.quota_reset)
         sys.exit(0)
 
     engine = ForensicEngine()

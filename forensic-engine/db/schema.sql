@@ -47,6 +47,17 @@ CREATE INDEX IF NOT EXISTS idx_sessions_risk_score   ON forensic_sessions (risk_
 CREATE INDEX IF NOT EXISTS idx_sessions_honeypot     ON forensic_sessions (honeypot_type);
 CREATE INDEX IF NOT EXISTS idx_sessions_started_at   ON forensic_sessions (started_at DESC);
 
+-- External API quota tracker (persistent across forensic-engine runs)
+-- Used to skip calls to rate-limited APIs once their daily quota is exhausted,
+-- instead of burning retries every run. Reset time is stored in UTC.
+CREATE TABLE IF NOT EXISTS api_quota_status (
+    api_name     VARCHAR(32) PRIMARY KEY,
+    exhausted    BOOLEAN     NOT NULL DEFAULT FALSE,
+    reset_at     TIMESTAMPTZ,
+    last_error   TEXT,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Suspect profiles (aggregated per IP, built by LLM)
 CREATE TABLE IF NOT EXISTS suspect_profiles (
     id          SERIAL      PRIMARY KEY,
