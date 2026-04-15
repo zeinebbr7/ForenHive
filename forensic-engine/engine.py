@@ -39,6 +39,9 @@ from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
 from risk_score import calculate_risk_score, risk_level
 from mitre_mapper import MitreMapper
+from timeline_builder import TimelineBuilder
+from ioc_extractor import IOCExtractor
+from chain_of_custody import ChainOfCustody
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -485,6 +488,20 @@ class ForensicEngine:
         self.yara     = YARAScanner()
         self.vt       = VirusTotalScanner()
         self.mitre    = MitreMapper(use_llm=True)
+        self.timeline = TimelineBuilder(self.es, _pg_conn)
+        self.ioc      = IOCExtractor(_pg_conn)
+        self.coc      = ChainOfCustody(_pg_conn)
+
+    # ── Timeline build ────────────────────────────────────────────────────────
+
+    def run_timeline_build(self, hours_back: int = 24):
+        return self.timeline.build(hours_back)
+
+    def run_ioc_extraction(self, hours_back: int = 24):
+        return self.ioc.build(hours_back)
+
+    def run_chain_of_custody(self):
+        return self.coc.run()
 
     # ── SMB profile query ─────────────────────────────────────────────────────
 
@@ -767,6 +784,15 @@ class ForensicEngine:
         vt_ok = not self.vt.is_quota_exhausted()
         scored = self.run_session_scoring(hours_back, enrichment_cache, vt_was_available=vt_ok)
 
+        # Phase 4 — Per-IP unified timeline (Cowrie + Dionaea + Galah + Zeek)
+        timeline_stats = self.run_timeline_build(hours_back)
+
+        # Phase 5 — Extract structured IoCs from timeline events
+        ioc_stats = self.run_ioc_extraction(hours_back)
+
+        # Phase 6 — Seal new forensic_sessions (SHA-256 + hash chain + RFC 3161)
+        coc_stats = self.run_chain_of_custody()
+
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
         log.info(f"{'='*60}")
@@ -789,6 +815,13 @@ class ForensicEngine:
             info     = sum(1 for _, _, s, _, _ in scored if s < 20)
             log.info(f"  Risk breakdown : CRITICAL={critical} HIGH={high} "
                      f"MEDIUM={medium} LOW={low} INFO={info}")
+        log.info(f"  Timeline events: +{timeline_stats['inserted']} "
+                 f"(seen: {timeline_stats['seen']})")
+        log.info(f"  IoCs extracted : {ioc_stats['extracted']} "
+                 f"(from {ioc_stats['rows_scanned']} timeline rows)")
+        log.info(f"  Custody sealed : {coc_stats['sealed']} session(s), "
+                 f"batch=#{coc_stats.get('batch_id')}, "
+                 f"TSA={coc_stats.get('tsa_status')}")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
@@ -800,6 +833,9 @@ def main():
     parser.add_argument("--enrich-only", action="store_true",  help="IP enrichment only")
     parser.add_argument("--yara-only",   action="store_true",  help="YARA scan only")
     parser.add_argument("--score-only",  action="store_true",  help="Scoring + MITRE only")
+    parser.add_argument("--timeline-only", action="store_true", help="Build per-IP timeline only")
+    parser.add_argument("--ioc-only",      action="store_true", help="Extract IoCs from existing timeline only")
+    parser.add_argument("--coc-only",      action="store_true", help="Seal unsealed sessions (chain of custody) only")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
     parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
     parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
@@ -831,6 +867,12 @@ def main():
         engine.run_yara_scan()
     elif args.score_only:
         engine.run_session_scoring(args.hours)
+    elif args.timeline_only:
+        engine.run_timeline_build(args.hours)
+    elif args.ioc_only:
+        engine.run_ioc_extraction(args.hours)
+    elif args.coc_only:
+        engine.run_chain_of_custody()
     else:
         engine.run_full_analysis(args.hours)
 

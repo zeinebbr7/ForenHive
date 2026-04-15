@@ -58,6 +58,91 @@ CREATE TABLE IF NOT EXISTS api_quota_status (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Forensic timeline: per-IP unified event stream across all honeypots + Zeek.
+-- One row per atomic event (connect, login, command, http request, file drop,
+-- conn.log, weird, scan…). Enables cross-honeypot reconstruction of an
+-- attacker's activity with millisecond precision.
+CREATE TABLE IF NOT EXISTS forensic_timeline_events (
+    id                BIGSERIAL    PRIMARY KEY,
+    source_ip         VARCHAR(45)  NOT NULL,
+    ts                TIMESTAMPTZ  NOT NULL,
+    honeypot_type     VARCHAR(20)  NOT NULL,
+    event_category    VARCHAR(32)  NOT NULL,
+    event_action      VARCHAR(64)  NOT NULL,
+    session_id        VARCHAR(100),
+    destination_port  INTEGER,
+    protocol          VARCHAR(16),
+    summary           TEXT,
+    raw               JSONB,
+    es_doc_id         VARCHAR(64)  UNIQUE,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_ip_ts       ON forensic_timeline_events (source_ip, ts);
+CREATE INDEX IF NOT EXISTS idx_timeline_ts          ON forensic_timeline_events (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_timeline_honeypot    ON forensic_timeline_events (honeypot_type);
+CREATE INDEX IF NOT EXISTS idx_timeline_session     ON forensic_timeline_events (session_id);
+CREATE INDEX IF NOT EXISTS idx_timeline_category    ON forensic_timeline_events (event_category);
+
+-- Forensic IoCs: structured indicators extracted from timeline events.
+-- Each row = one unique (type, value, source_ip) tuple, with seen counts
+-- and provenance. Enables fast pivots ("all URLs from attacker X") and
+-- threat-intel export (STIX / MISP).
+CREATE TABLE IF NOT EXISTS forensic_iocs (
+    id             BIGSERIAL   PRIMARY KEY,
+    ioc_type       VARCHAR(24) NOT NULL,
+    ioc_value      TEXT        NOT NULL,
+    source_ip      VARCHAR(45) NOT NULL,
+    honeypot_types TEXT[]      NOT NULL DEFAULT '{}',
+    first_seen     TIMESTAMPTZ NOT NULL,
+    last_seen      TIMESTAMPTZ NOT NULL,
+    occurrences    INTEGER     NOT NULL DEFAULT 1,
+    context        JSONB,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (ioc_type, ioc_value, source_ip)
+);
+
+CREATE INDEX IF NOT EXISTS idx_iocs_source_ip ON forensic_iocs (source_ip);
+CREATE INDEX IF NOT EXISTS idx_iocs_type      ON forensic_iocs (ioc_type);
+CREATE INDEX IF NOT EXISTS idx_iocs_value     ON forensic_iocs (ioc_value);
+CREATE INDEX IF NOT EXISTS idx_iocs_last_seen ON forensic_iocs (last_seen DESC);
+
+-- Forensic chain of custody: SHA-256 seal + hash chain + RFC 3161 timestamp
+-- for each forensic_session. Tampering with a sealed session is detectable
+-- because (a) the canonical hash no longer matches and (b) the prev_hash
+-- chain breaks at the altered record, invalidating everything downstream.
+-- Batched RFC 3161 timestamps (Merkle root) bind the chain head to a
+-- certified wall-clock time from a public TSA.
+CREATE TABLE IF NOT EXISTS forensic_chain_of_custody (
+    id              BIGSERIAL    PRIMARY KEY,
+    session_id      VARCHAR(100) NOT NULL UNIQUE REFERENCES forensic_sessions(session_id) ON DELETE CASCADE,
+    record_hash     CHAR(64)     NOT NULL,
+    prev_hash       CHAR(64),
+    canonical_json  JSONB        NOT NULL,
+    batch_id        BIGINT,
+    sealed_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coc_session    ON forensic_chain_of_custody (session_id);
+CREATE INDEX IF NOT EXISTS idx_coc_sealed_at  ON forensic_chain_of_custody (sealed_at);
+CREATE INDEX IF NOT EXISTS idx_coc_batch      ON forensic_chain_of_custody (batch_id);
+
+-- RFC 3161 batch timestamps: one row per TSA request, binding a Merkle root
+-- of all records sealed in that batch to a trusted time from a public TSA.
+CREATE TABLE IF NOT EXISTS forensic_coc_batches (
+    id             BIGSERIAL    PRIMARY KEY,
+    merkle_root    CHAR(64)     NOT NULL,
+    record_count   INTEGER      NOT NULL,
+    tsa_provider   VARCHAR(128) NOT NULL,
+    tsa_time       TIMESTAMPTZ,
+    tsa_response   BYTEA,
+    tsa_status     VARCHAR(32)  NOT NULL,
+    tsa_error      TEXT,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coc_batch_time ON forensic_coc_batches (tsa_time);
+
 -- Suspect profiles (aggregated per IP, built by LLM)
 CREATE TABLE IF NOT EXISTS suspect_profiles (
     id          SERIAL      PRIMARY KEY,

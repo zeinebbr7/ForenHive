@@ -6,3 +6,4 @@ geoip2==4.8.0
 yara-python==4.5.0
 shodan==1.31.0
 ipwhois==1.2.0
+rfc3161-client==0.1.2
