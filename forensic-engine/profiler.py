@@ -164,7 +164,10 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
                 """
                 INSERT INTO suspect_profiles (source_ip, profile, risk_score)
                 VALUES (%s, %s, %s)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (source_ip) DO UPDATE SET
+                    profile    = EXCLUDED.profile,
+                    risk_score = EXCLUDED.risk_score,
+                    updated_at = NOW()
                 """,
                 (source_ip, json.dumps(profile), risk_score),
             )

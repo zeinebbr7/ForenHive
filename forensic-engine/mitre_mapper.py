@@ -295,7 +295,7 @@ def get_forensic_narrative(session: dict, technique_ids: list) -> str:
                     "stop": ["\n\n", "3."],
                 },
             },
-            timeout=60,
+            timeout=300,
         )
         resp.raise_for_status()
         text = resp.json().get("response", "").strip()
