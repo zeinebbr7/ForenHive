@@ -43,7 +43,6 @@ docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
 
 ### 1c. Fichiers logs des honeypots
 ```bash
-COWRIE_VOL=$(docker inspect forenhive-cowrie --format '{{range .Mounts}}{{if eq .Destination "/cowrie/cowrie-git/var"}}{{.Name}}{{end}}{{end}}')
 docker run --rm \
   -v $COWRIE_VOL:/cowrie-var \
   -v dionaea_dionaea-logs:/dionaea-logs \
@@ -59,7 +58,8 @@ docker run --rm \
     echo cowrie=\$(wc -l < /cowrie-var/log/cowrie/cowrie.json)
     echo dionaea=\$(wc -l < /dionaea-logs/dionaea.log)
     echo galah=\$(wc -l < /galah-logs/event_log.json)
-  "
+  "COWRIE_VOL=$(docker inspect forenhive-cowrie --format '{{range .Mounts}}{{if eq .Destination "/cowrie/cowrie-git/var"}}{{.Name}}{{end}}{{end}}')
+
 ```
 **Attendu :** `cowrie=0`, `dionaea=0`, `galah=0`.
 
@@ -167,6 +167,55 @@ Duration       : ~520s
 
 ## Phase 5 — Résultats forensiques (2 min de requêtes)
 
+### 5-YARA. Scan YARA + VirusTotal sur binaires capturés par Dionaea
+```bash
+# Vérifier qu'il y a bien un binaire capturé par Dionaea
+docker exec forenhive-dionaea ls -la /opt/dionaea/var/lib/dionaea/binaries/
+```
+**Attendu :** au moins 1 fichier (ex. `1bb736b97b5bcb4c5b3adf5c3c903fa3`).
+
+> Si le dossier est vide, c'est que Dionaea n'a capturé aucun binaire récemment. Pour la démo, le binaire existant suffit — YARA le scanne à chaque run de l'engine.
+
+```bash
+# Afficher les matches YARA + résultat VirusTotal
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -x -c "
+SELECT
+  LEFT(sha256, 20) || '...'                                 AS sha256,
+  jsonb_array_length(yara_matches)                          AS nb_yara_hits,
+  yara_matches->0->>'rule'                                  AS rule_1,
+  yara_matches->0->'meta'->>'severity'                      AS severity_1,
+  yara_matches->1->>'rule'                                  AS rule_2,
+  yara_matches->1->'meta'->>'severity'                      AS severity_2
+FROM file_analysis
+WHERE jsonb_array_length(yara_matches) > 0;"
+```
+**Observé :**
+```
+sha256       | 3ca20938c652880a6272...
+nb_yara_hits | 2
+rule_1       | CryptoMiner_XMRig
+severity_1   | medium
+rule_2       | WannaCry_Ransomware
+severity_2   | critical
+```
+> **À dire :** « Le binaire capturé par Dionaea déclenche 2 règles YARA : **CryptoMiner XMRig** (mineur de Monero) et **WannaCry** (ransomware CVE-2017-0144 EternalBlue). C'est un binaire réel multi-payload. Le SHA-256 est ensuite envoyé à VirusTotal pour corrélation. »
+
+```bash
+# Voir les détails des chaînes détectées
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT sha256,
+       jsonb_path_query(yara_matches, '$[*] ? (@.rule == \"WannaCry_Ransomware\").strings') AS wannacry_strings
+FROM file_analysis WHERE jsonb_array_length(yara_matches) > 0;"
+```
+Montre les **offsets exacts** dans le binaire où WannaCry a matché (preuve technique).
+
+```bash
+# Relancer YARA seul si besoin (idempotent, rapide)
+docker exec forenhive-forensic-engine-dev python engine.py --yara-only
+```
+
+---
+
 ### 5a. Enrichissement IP (pays, ASN, score abuse, Tor, VPN)
 ```bash
 docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
@@ -226,7 +275,50 @@ ORDER BY occurrences DESC LIMIT 15;"
 ```
 **Observé :** 21 IoCs — URL `http://45.9.148.108/bins/mirai.x86`, commande `wget ... mirai.x86`, paths `/etc/passwd`, user agents de scanners, etc.
 
-### 5e. Chain of custody (hash + RFC 3161 TSA)
+### 5e. Infrastructure attaquant via **Shodan** (ports ouverts, CVE, hostnames)
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT ip, jsonb_pretty(data->'infrastructure') AS shodan_infra
+FROM ip_enrichment_cache ORDER BY ip;"
+```
+**Observé :**
+```
+185.220.101.45 → hostnames=[tor-exit-45.for-privacy.net], open_ports=[80]
+45.227.254.8   → open_ports=[135, 3389]   (RDP exposé)
+193.32.162.157 → (Shodan n'a pas indexé cette IP)
+```
+> **À dire :** « Shodan nous dit quelles machines l'attaquant possède ou utilise : ports ouverts côté attaquant, CVEs connues, hostnames. Pour la Tor exit node on voit le reverse DNS qui confirme l'identité ; pour le brute-forcer Panama on voit RDP exposé côté attaquant. »
+
+### 5f. Profiling attaquant par **Ollama/Mistral 7B** (LLM offline)
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT source_ip, risk_score,
+       profile->>'sophistication'   AS sophistication,
+       profile->>'kill_chain_phase' AS phase,
+       profile->'mitre_techniques'  AS techniques,
+       profile->>'primary_objective' AS objective,
+       profile->>'escalation_detected' AS escalation
+FROM suspect_profiles ORDER BY risk_score DESC;"
+```
+**Observé :**
+```
+ source_ip      | risk | sophistication | phase             | techniques                      | objective         | escalation
+----------------+------+----------------+-------------------+---------------------------------+-------------------+-----------
+ 185.220.101.45 |  88  | intermediate   | lateral_movement  | [T1021.002,T1110.001,T1190]     | lateral_movement  | true
+ 10.212.134.201 |  35  | intermediate   | ...               | ...                             | ...               | ...
+```
+
+**Narratif complet généré par Mistral (en plain text) :**
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT source_ip, profile->>'detective_narrative' AS narrative
+FROM suspect_profiles WHERE source_ip='185.220.101.45';"
+```
+**Observé (extrait) :** *« The attacker exhibits intermediate sophistication with custom tools and targeted credentials. The primary objective is lateral movement, possibly for credential harvesting or data exfiltration. »*
+
+> **À dire :** « Mistral 7B tourne **localement sur Ollama**, aucune donnée ne sort de notre serveur. Il lit tous les événements de la session et produit : score de risque, niveau de sophistication, tactique dominante, techniques MITRE, traits comportementaux, et un **narratif en langage naturel** exploitable directement dans un rapport d'incident. »
+
+### 5g. Chain of custody (hash + RFC 3161 TSA)
 ```bash
 docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
 SELECT id, record_count, LEFT(merkle_root,24) AS merkle_head,
@@ -285,8 +377,8 @@ ORDER BY t;"
 ## Points clés à souligner à l'encadrant
 
 1. **IP privée traitée différemment** — pas d'enrichissement externe (économie de quota, confidentialité).
-2. **3 sources d'enrichissement** pour chaque IP publique : AbuseIPDB (réputation/score), IPLocate (TOR/VPN/proxy), MaxMind (ASN/pays/géo).
-3. **Mapping MITRE ATT&CK** fait par **Mistral 7B local** (pas d'API cloud, offline).
+2. **4 sources d'enrichissement** pour chaque IP publique : AbuseIPDB (réputation/score), IPLocate (TOR/VPN/proxy), MaxMind (ASN/pays/géo), **Shodan** (ports ouverts/CVE/hostnames côté attaquant).
+3. **Mapping MITRE + profiling** fait par **Mistral 7B local via Ollama** (pas d'API cloud, offline, aucune fuite de données).
 4. **Timeline ms-precision** corrèle 3 honeypots (Cowrie/Dionaea/Galah) pour la même IP.
 5. **Chain of custody RFC 3161** — Merkle root scellé par TSA public (freetsa.org) = preuve légale d'intégrité temporelle.
 6. **Score 94/100 pour Tor** vs **13/100 pour un brute-forcer isolé** — le moteur discrimine correctement.
