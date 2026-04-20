@@ -260,12 +260,40 @@ FROM forensic_sessions ORDER BY source_ip, honeypot_type;"
 ```
 
 ### 5c. Timeline (ms-precision, multi-honeypots entrelacés)
+
+**Répartition par honeypot (vérifier que les 3 sont bien là) :**
 ```bash
 docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
-SELECT ts, honeypot_type, source_ip, event_action
-FROM forensic_timeline_events ORDER BY ts LIMIT 12;"
+SELECT honeypot_type, COUNT(*) AS nb, MIN(ts) AS first, MAX(ts) AS last
+FROM forensic_timeline_events GROUP BY honeypot_type ORDER BY nb DESC;"
 ```
-Montre les connexions Tor + Kali entrelacées à la milliseconde près sur Cowrie/Dionaea/Galah.
+**Observé :** cowrie=34, dionaea=14, galah=6 — total 54 événements.
+
+> ⚠️ Un simple `LIMIT 12` ne montre que Cowrie (qui vient en tête chronologiquement). Utiliser une des 2 requêtes ci-dessous pour voir les 3 honeypots.
+
+**Vue chronologique de l'attaquant Tor à travers les 3 honeypots (recommandé pour la démo) :**
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT ts, honeypot_type, event_action
+FROM forensic_timeline_events
+WHERE source_ip='185.220.101.45'
+ORDER BY ts;"
+```
+Montre la **même IP Tor** attaquer SSH (Cowrie) → SMB (Dionaea) → HTTP (Galah) à la milliseconde près. C'est ça la valeur de la timeline multi-sources.
+
+**Échantillon équilibré des 3 honeypots :**
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+(SELECT ts, honeypot_type, source_ip, event_action FROM forensic_timeline_events
+ WHERE honeypot_type='cowrie'  ORDER BY ts LIMIT 4)
+UNION ALL
+(SELECT ts, honeypot_type, source_ip, event_action FROM forensic_timeline_events
+ WHERE honeypot_type='dionaea' ORDER BY ts LIMIT 4)
+UNION ALL
+(SELECT ts, honeypot_type, source_ip, event_action FROM forensic_timeline_events
+ WHERE honeypot_type='galah'   ORDER BY ts LIMIT 4)
+ORDER BY ts;"
+```
 
 ### 5d. IoCs extraits
 ```bash
