@@ -6,14 +6,21 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import get_settings
-from routers import alerts, attacks, geo, profiling, reports, sessions
+from db import dispose as dispose_db, init_db
+from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, sessions
+from services import audit_service
+from services.alert_watcher import get_watcher
+from services.auth_service import bootstrap_admin, get_current_user
 from services.elasticsearch import get_es
 
 logging.basicConfig(
@@ -22,11 +29,23 @@ logging.basicConfig(
 )
 log = logging.getLogger("forenhive.backend")
 
+settings = get_settings()
+
+limiter = Limiter(key_func=get_remote_address, default_limits=[settings.ratelimit_default])
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings()
     log.info("ForenHive backend starting (env=%s)", settings.app_env)
+
+    # Postgres
+    try:
+        await init_db()
+        await bootstrap_admin()
+    except Exception as exc:
+        log.exception("postgres init failed: %s", exc)
+
+    # Elasticsearch
     es = get_es()
     healthy = await es.ping()
     log.info("Elasticsearch reachable: %s", healthy)
@@ -35,8 +54,21 @@ async def lifespan(app: FastAPI):
             await es.ensure_internal_indices()
         except Exception as exc:
             log.warning("index bootstrap failed: %s", exc)
+
+    # Alert watcher (background task)
+    try:
+        await get_watcher().start()
+    except Exception as exc:
+        log.warning("watcher start failed: %s", exc)
+
     yield
+
+    try:
+        await get_watcher().stop()
+    except Exception:
+        pass
     await es.close()
+    await dispose_db()
     log.info("ForenHive backend stopped")
 
 
@@ -47,7 +79,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-settings = get_settings()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,8 +92,12 @@ app.add_middleware(
 )
 
 
+_AUDITED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_AUDIT_SKIP_PREFIXES = ("/api/alerts/evaluate", "/api/auth/login")
+
+
 @app.middleware("http")
-async def request_logging(request: Request, call_next):
+async def request_middleware(request: Request, call_next):
     req_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     start = time.perf_counter()
     try:
@@ -78,6 +115,27 @@ async def request_logging(request: Request, call_next):
         "req_id=%s method=%s path=%s status=%s duration_ms=%.1f",
         req_id, request.method, request.url.path, response.status_code, duration,
     )
+
+    # Async audit fire-and-forget (POST/PUT/PATCH/DELETE on /api/*)
+    path = request.url.path
+    if (
+        request.method in _AUDITED_METHODS
+        and path.startswith("/api/")
+        and not any(path.startswith(p) for p in _AUDIT_SKIP_PREFIXES)
+    ):
+        actor = getattr(request.state, "user", None)
+        try:
+            await audit_service.record(
+                action=f"{request.method.lower()}:{path}",
+                actor=actor,
+                method=request.method,
+                path=path,
+                status_code=response.status_code,
+                ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+            )
+        except Exception:
+            pass
     return response
 
 
@@ -100,11 +158,7 @@ def _problem(
         body["instance"] = instance
     if extra:
         body.update(extra)
-    return JSONResponse(
-        body,
-        status_code=status_code,
-        media_type="application/problem+json",
-    )
+    return JSONResponse(body, status_code=status_code, media_type="application/problem+json")
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -139,7 +193,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ---------- health ----------
+# ---------- health (public) ----------
 @app.get("/health", tags=["meta"])
 async def health() -> Dict[str, Any]:
     es_ok = await get_es().ping()
@@ -147,16 +201,25 @@ async def health() -> Dict[str, Any]:
         "status": "ok" if es_ok else "degraded",
         "elasticsearch": es_ok,
         "version": app.version,
+        "auth_enabled": not settings.disable_auth,
     }
 
 
 # ---------- routers ----------
-app.include_router(attacks.router)
-app.include_router(sessions.router)
-app.include_router(geo.router)
-app.include_router(alerts.router)
-app.include_router(profiling.router)
-app.include_router(reports.router)
+# /api/auth is public (login + refresh). Everything else requires a bearer token
+# unless DISABLE_AUTH=true is set (useful for local dev).
+app.include_router(auth.router)
+
+_protected_deps = [] if settings.disable_auth else [Depends(get_current_user)]
+
+app.include_router(attacks.router, dependencies=_protected_deps)
+app.include_router(sessions.router, dependencies=_protected_deps)
+app.include_router(geo.router, dependencies=_protected_deps)
+app.include_router(alerts.router, dependencies=_protected_deps)
+app.include_router(profiling.router, dependencies=_protected_deps)
+app.include_router(reports.router, dependencies=_protected_deps)
+app.include_router(forensics.router, dependencies=_protected_deps)
+app.include_router(audit.router)  # audit has its own admin guard
 
 
 if __name__ == "__main__":
