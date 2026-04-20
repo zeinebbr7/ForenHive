@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from models.session import SessionDetail, SessionListResponse, SessionSummary
 from services.elasticsearch import get_es
@@ -27,9 +26,9 @@ async def get_session(session_id: str) -> SessionDetail:
     return SessionDetail.model_validate(detail)
 
 
-@router.delete("/{session_id}", status_code=204)
-async def force_close_session(session_id: str) -> None:
+@router.delete("/{session_id}", status_code=204, response_class=Response)
+async def force_close_session(session_id: str) -> Response:
     ok = await get_es().mark_session_closed(session_id)
     if not ok:
         raise HTTPException(status_code=404, detail="session not found or already closed")
-    return None
+    return Response(status_code=204)

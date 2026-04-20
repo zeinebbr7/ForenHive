@@ -1,16 +1,20 @@
-from __future__ import annotations
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from config import get_settings
 from models.report import ReportListResponse, ReportMeta, ReportRequest
 from services.report_service import get_reports
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
+limiter = Limiter(key_func=get_remote_address)
+_SENSITIVE = get_settings().ratelimit_sensitive
 
 
 @router.post("/generate", response_model=ReportMeta)
-async def generate_report(req: ReportRequest) -> ReportMeta:
+@limiter.limit(_SENSITIVE)
+async def generate_report(request: Request, req: ReportRequest = Body(...)) -> ReportMeta:
     if req.scope.value == "ip" and not req.ip:
         raise HTTPException(status_code=400, detail="ip required for ip scope")
     if req.scope.value == "session" and not req.session_id:

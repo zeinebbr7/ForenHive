@@ -134,24 +134,49 @@ class ReportService:
         meta = await self.get_meta(report_id)
         if not meta:
             return None
-        events = await get_es().events_for_ip(
-            ip=self._infer_ip(meta), size=500
-        ) if meta.scope == ReportScope.IP else []
+        events: List[Dict[str, Any]] = []
+        es = get_es()
+        if meta.scope == ReportScope.IP:
+            ip = self._extract_ip_from_title(meta.title)
+            if ip:
+                events = await es.events_for_ip(ip=ip, size=500)
+        elif meta.scope == ReportScope.SESSION:
+            sid = self._extract_session_from_title(meta.title)
+            if sid:
+                detail = await es.session_detail(sid)
+                if detail:
+                    # Reconstitute raw events for STIX observables
+                    body = {
+                        "size": 500,
+                        "query": {"term": {"session": sid}},
+                        "sort": [{"@timestamp": {"order": "asc"}}],
+                    }
+                    resp = await es.search_docs(self.settings.honeypot_indices, body)
+                    events = [h["_source"] | {"_id": h["_id"]} for h in resp["hits"]["hits"]]
+        # time_range scope: we cannot reconstruct dates from title alone — return empty bundle.
+
         bundle = self.build_stix_bundle(events, meta.title)
         stix_file = Path(self.settings.reports_dir) / f"{report_id}.stix.json"
         stix_file.write_text(json.dumps(bundle, indent=2))
         if not meta.stix_path:
             meta.stix_path = str(stix_file)
-            await get_es().index_doc(
+            await es.index_doc(
                 self.settings.es_index_reports, report_id, meta.model_dump(mode="json")
             )
         return bundle
 
     # ---------- helpers ----------
     @staticmethod
-    def _infer_ip(meta: ReportMeta) -> str:
-        # stored only as title; caller should prefer ReportRequest regen
-        return ""
+    def _extract_ip_from_title(title: str) -> Optional[str]:
+        import re
+        m = re.search(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", title)
+        return m.group(1) if m else None
+
+    @staticmethod
+    def _extract_session_from_title(title: str) -> Optional[str]:
+        import re
+        m = re.search(r"Session\s+([A-Za-z0-9_-]+)", title)
+        return m.group(1) if m else None
 
     @staticmethod
     def _default_title(req: ReportRequest) -> str:

@@ -49,8 +49,8 @@ class AlertWatcher:
     async def _get_watermark(self) -> str:
         es = get_es()
         doc = await es.get_doc(WATERMARK_INDEX, WATERMARK_DOC_ID)
-        if doc and doc.get("value"):
-            return str(doc["value"])
+        if doc and doc.get("watermark_ts"):
+            return str(doc["watermark_ts"])
         # First run: start from 5 minutes ago to avoid replaying history.
         return (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
 
@@ -58,7 +58,7 @@ class AlertWatcher:
         await get_es().index_doc(
             WATERMARK_INDEX,
             WATERMARK_DOC_ID,
-            {"key": "alert_watcher_watermark", "value": iso_ts},
+            {"key": "alert_watcher_watermark", "watermark_ts": iso_ts},
         )
 
     @staticmethod

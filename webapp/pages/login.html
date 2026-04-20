@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForenHive — Connexion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="login-glow"></div>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="login-hex">⬡</span>
+      <div class="login-name">FORENHIVE</div>
+      <div class="login-sub">SOC PLATFORM · v1.0</div>
+    </div>
+
+    <div id="err" class="alert err hide">Identifiants invalides</div>
+
+    <form id="login-form">
+      <div class="form-g">
+        <label class="form-l">Email</label>
+        <input class="form-i" type="email" id="email" placeholder="admin@forenhive.io" required>
+      </div>
+      <div class="form-g">
+        <label class="form-l">Mot de passe</label>
+        <div class="pwd-wrap">
+          <input class="form-i" type="password" id="pwd" placeholder="••••••••" required>
+          <button type="button" class="pwd-toggle" id="pwd-toggle" aria-label="Afficher">👁</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-gold btn-lg" style="width:100%;justify-content:center;margin-top:6px">Connexion →</button>
+    </form>
+
+    <div class="quick">
+      <div class="quick-l">⚡ Quick login (démo)</div>
+      <div class="quick-btns">
+        <button class="quick-btn admin"   data-role="admin"   data-email="admin@forenhive.io">Admin</button>
+        <button class="quick-btn analyst" data-role="analyst" data-email="analyst@forenhive.io">Analyst</button>
+        <button class="quick-btn user"    data-role="user"    data-email="user@forenhive.io">User</button>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:22px;font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;letter-spacing:1px">
+      © 2026 FORENHIVE · <a href="../index.html" style="color:var(--gold);text-decoration:none">← Landing</a>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/app.js"></script>
+<script>
+  const $ = s => document.querySelector(s);
+  const err = $('#err');
+
+  // toggle password visibility
+  $('#pwd-toggle').addEventListener('click', () => {
+    const i = $('#pwd'); i.type = i.type === 'password' ? 'text' : 'password';
+  });
+
+  // quick login buttons
+  document.querySelectorAll('.quick-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      Auth.login(b.dataset.email, b.dataset.role);
+      location.href = '../app.html';
+    });
+  });
+
+  // form submit (demo: accepts any non-empty credentials, role based on email)
+  $('#login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const email = $('#email').value.trim();
+    const pwd = $('#pwd').value;
+    if (!email || !pwd) { err.classList.remove('hide'); return; }
+    let role = 'user';
+    if (email.startsWith('admin')) role = 'admin';
+    else if (email.startsWith('analyst')) role = 'analyst';
+    Auth.login(email, role);
+    location.href = '../app.html';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">⬡ Vue d'ensemble</div>
+    <h2 class="page-title">Tableau de <span>bord</span></h2>
+    <div class="page-sub">Monitoring en temps réel des 4 honeypots et des événements forensiques.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm">📥 Exporter</button>
+    <button class="btn btn-gold btn-sm">🔄 Actualiser</button>
+  </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi g"><div class="kpi-label">Sessions totales</div><div class="kpi-val" id="kpi-sessions">0</div><div class="kpi-delta up">▲ +12 ce mois</div></div>
+  <div class="kpi r"><div class="kpi-label">Événements critiques</div><div class="kpi-val" id="kpi-crit">0</div><div class="kpi-delta down">▼ score ≥ 80</div></div>
+  <div class="kpi b"><div class="kpi-label">IPs enrichies</div><div class="kpi-val" id="kpi-ips">0</div><div class="kpi-delta up">▲ 5 nœuds Tor</div></div>
+  <div class="kpi p"><div class="kpi-label">YARA matches</div><div class="kpi-val" id="kpi-yara">0</div><div class="kpi-delta">Mirai · XMRig</div></div>
+</div>
+
+<!-- Grille -->
+<div class="grid-2" style="margin-bottom:20px">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Sessions par honeypot</div><div class="card-sub">7 derniers jours</div></div>
+    <div id="dash-hpot"></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>temps réel</div></div>
+    <div id="dash-logs" class="scroll-y maxh-360" style="max-height:320px"></div>
+  </div>
+</div>
+
+<!-- Sessions récentes -->
+<div class="card">
+  <div class="card-h">
+    <div class="card-t">Sessions récentes</div>
+    <div class="card-sub">cliquer pour voir le détail</div>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr>
+        <th>Session ID</th><th>Honeypot</th><th>IP Source</th><th>Pays</th><th>Score</th><th>Statut</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="dash-sessions"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  const { SESSIONS, INITIAL_EVENTS, IP_POOL, COUNTRIES, fmt, esc, $ } = FH;
+
+  // KPIs
+  $('#kpi-sessions').textContent = SESSIONS.length;
+  $('#kpi-crit').textContent = SESSIONS.filter(s => s.score >= 80).length;
+  $('#kpi-ips').textContent = IP_POOL.length;
+  $('#kpi-yara').textContent = SESSIONS.filter(s => s.yara).length;
+
+  // Bars par honeypot
+  const hpColors = { cowrie:'var(--gold)', dionaea:'var(--red)', galah:'var(--blue)', zeek:'var(--purple)' };
+  const counts = { cowrie:0, dionaea:0, galah:0, zeek:0 };
+  SESSIONS.forEach(s => counts[s.honeypot]++);
+  const max = Math.max(...Object.values(counts), 1);
+  $('#dash-hpot').innerHTML = Object.entries(counts).map(([k,v]) => `
+    <div class="hbar">
+      <div class="hbar-l">${k.charAt(0).toUpperCase()+k.slice(1)}</div>
+      <div class="hbar-t"><div class="hbar-f" style="width:${(v/max*100).toFixed(1)}%;background:${hpColors[k]}"></div></div>
+      <div class="hbar-v">${v}</div>
+    </div>`).join('');
+
+  // Live logs
+  $('#dash-logs').innerHTML = INITIAL_EVENTS.slice(0,12).map(ev => `
+    <div class="log-row">
+      <div class="log-t">${fmt.time(ev.t)}</div>
+      <div class="log-s ${ev.honeypot}">${ev.honeypot}</div>
+      <div class="log-ip">${esc(ev.ip)}</div>
+      <div class="log-m">${esc(ev.message)}</div>
+    </div>`).join('');
+
+  // Sessions récentes
+  const countryName = iso => (COUNTRIES.find(c => c.iso === iso) || {name:iso, flag:'🏳️'});
+  const statusBadge = st => {
+    if (st === 'critical') return '<span class="badge red">⚠ Critique</span>';
+    if (st === 'analyzed') return '<span class="badge blue">✓ Analysé</span>';
+    return '<span class="badge teal">● Actif</span>';
+  };
+  $('#dash-sessions').innerHTML = SESSIONS.slice(0,10).map(s => {
+    const c = countryName(s.country);
+    return `<tr data-id="${s.id}" style="cursor:pointer">
+      <td><span class="mono">${esc(s.id.slice(0,16))}…</span></td>
+      <td><span class="badge gold">${s.honeypot}</span></td>
+      <td class="mono">${esc(s.ip)}</td>
+      <td>${c.flag} ${c.name}</td>
+      <td><span class="score ${fmt.scoreClass(s.score)}">${s.score}</span></td>
+      <td>${statusBadge(s.status)}</td>
+      <td><button class="btn btn-out btn-sm">Voir</button></td>
+    </tr>`;
+  }).join('');
+
+  // Click → drawer
+  $('#dash-sessions').addEventListener('click', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const s = SESSIONS.find(x => x.id === tr.dataset.id); if (!s) return;
+    const c = countryName(s.country);
+    openDrawer(`
+      <div class="drawer-h">
+        <div><div class="card-t">${esc(s.id)}</div><div class="card-sub">Session · ${fmt.date(s.timestamp)}</div></div>
+        <button class="drawer-close" onclick="closeDrawer()">✕</button>
+      </div>
+      <div class="drawer-b">
+        <div class="flex gap-8 mb-12"><span class="score ${fmt.scoreClass(s.score)}" style="font-size:15px;padding:6px 14px">${s.score} / 100</span>${s.status==='critical'?'<span class="badge red">⚠ Critique</span>':''}</div>
+        <div class="mb-12"><span class="mono text-m">${esc(s.ip)}</span> · ${c.flag} ${c.name} · <span class="text-3 mono">${esc(s.asn)}</span></div>
+        <div class="flex gap-8 mb-12" style="flex-wrap:wrap">${s.techniques.map(t => `<span class="tag">${esc(t)}</span>`).join('')}${s.yara?`<span class="badge purple">YARA: ${s.yara}</span>`:''}</div>
+        <div class="card-sub mb-12" style="margin-top:18px">Logs bruts</div>
+        <pre class="pre">${esc(s.logs)}</pre>
+        <div class="flex gap-8" style="margin-top:16px">
+          <button class="btn btn-out btn-sm">🧠 Voir profil</button>
+          <button class="btn btn-gold btn-sm">📋 Générer rapport</button>
+        </div>
+      </div>`);
+  });
+})();
+</script>

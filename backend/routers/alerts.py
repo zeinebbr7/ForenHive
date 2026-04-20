@@ -1,10 +1,11 @@
-from __future__ import annotations
-
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from config import get_settings
 from models.alert import (
     AlertConfig,
     AlertConfigUpdate,
@@ -17,6 +18,8 @@ from services.email_service import get_email
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 log = logging.getLogger(__name__)
+limiter = Limiter(key_func=get_remote_address)
+_SENSITIVE = get_settings().ratelimit_sensitive
 
 
 @router.get("/config", response_model=AlertConfig)
@@ -36,7 +39,8 @@ async def update_config(patch: AlertConfigUpdate) -> AlertConfig:
 
 
 @router.post("/test", response_model=TestAlertResponse)
-async def send_test_alert() -> TestAlertResponse:
+@limiter.limit(_SENSITIVE)
+async def send_test_alert(request: Request) -> TestAlertResponse:
     cfg = await get_alert_engine().get_config()
     if not cfg.recipients:
         raise HTTPException(status_code=400, detail="no recipients configured")

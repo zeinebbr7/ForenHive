@@ -139,10 +139,12 @@ class ESClient:
 
     @staticmethod
     def _honeypot_from_doc(src: Dict[str, Any], index: str) -> HoneypotType:
+        fileset = src.get("fileset") if isinstance(src.get("fileset"), dict) else {}
+        service = src.get("service") if isinstance(src.get("service"), dict) else {}
         hp = (
             src.get("honeypot")
-            or src.get("fileset", {}).get("module")
-            or src.get("service", {}).get("type")
+            or fileset.get("module")
+            or service.get("type")
         )
         if hp:
             hp = str(hp).lower()
@@ -290,7 +292,7 @@ class ESClient:
                         "min_doc_count": 0,
                     },
                     "aggs": {
-                        "per_honeypot": {"terms": {"field": "honeypot", "size": 10}},
+                        "per_honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 10}},
                     },
                 }
             },
@@ -321,7 +323,7 @@ class ESClient:
                     "terms": {"field": "source.geo.country_iso_code", "size": top},
                     "aggs": {
                         "name": {"terms": {"field": "source.geo.country_name", "size": 1}},
-                        "unique_ips": {"cardinality": {"field": "source.ip"}},
+                        "unique_ips": {"cardinality": {"field": "source.ip.keyword"}},
                         "avg_risk": {"avg": {"field": "risk_score"}},
                     },
                 }
@@ -360,7 +362,7 @@ class ESClient:
         body = {
             "size": 0,
             "aggs": {
-                "per_honeypot": {"terms": {"field": "honeypot", "size": 10, "missing": "unknown"}}
+                "per_honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 10, "missing": "unknown"}}
             },
         }
         resp = await self.client.search(
@@ -395,8 +397,8 @@ class ESClient:
                     "aggs": {
                         "latest": {"max": {"field": "@timestamp"}},
                         "earliest": {"min": {"field": "@timestamp"}},
-                        "honeypot": {"terms": {"field": "honeypot", "size": 1}},
-                        "src_ip": {"terms": {"field": "source.ip", "size": 1}},
+                        "honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 1}},
+                        "src_ip": {"terms": {"field": "source.ip.keyword", "size": 1}},
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
                         "username": {"terms": {"field": "user.name", "size": 1}},
                         "cmd_count": {
@@ -547,7 +549,7 @@ class ESClient:
             "aggs": {
                 "first_seen": {"min": {"field": "@timestamp"}},
                 "last_seen": {"max": {"field": "@timestamp"}},
-                "honeypots": {"terms": {"field": "honeypot", "size": 10}},
+                "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 10}},
                 "sessions": {"cardinality": {"field": "session"}},
                 "usernames": {"terms": {"field": "user.name", "size": 10}},
                 "passwords": {"terms": {"field": "password", "size": 10}},

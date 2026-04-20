@@ -10,7 +10,7 @@ weasyprint==63.1
 python-multipart==0.0.20
 email-validator==2.2.0
 sse-starlette==2.2.1
-rfc3161-client==0.1.2
+rfc3161-client==1.0.6
 cryptography==44.0.0
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0

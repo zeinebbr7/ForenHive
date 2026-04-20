@@ -16,6 +16,12 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b}
       - REPORTS_DIR=/reports
+      - PG_HOST=forenhive-postgresql
+      - PG_PORT=${POSTGRES_PORT:-5432}
+      - PG_DB=${POSTGRES_DB:-forenhive}
+      - PG_USER=${POSTGRES_USER:-forenhive}
+      - PG_PASSWORD=${POSTGRES_PASSWORD}
+      - FORENSIC_ENGINE_URL=http://forensic-engine:8001
     ports:
       - "8000:8000"
     volumes:
@@ -24,6 +30,7 @@ services:
       - backend-net
     depends_on:
       - elasticsearch
+      - postgresql
       - ollama
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]

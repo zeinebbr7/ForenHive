@@ -14,7 +14,11 @@ from config import get_settings
 log = logging.getLogger(__name__)
 
 try:
-    from rfc3161_client import TimestampRequestBuilder, decode_timestamp_response
+    from rfc3161_client import (
+        HashAlgorithm,
+        TimestampRequestBuilder,
+        decode_timestamp_response,
+    )
     _RFC3161_AVAILABLE = True
 except Exception:  # pragma: no cover
     _RFC3161_AVAILABLE = False
@@ -41,45 +45,59 @@ class ChainOfCustody:
         self.settings = get_settings()
 
     @staticmethod
-    def sha256_payload(payload: Any) -> str:
+    def _serialize(payload: Any) -> bytes:
+        if isinstance(payload, bytes):
+            return payload
         if isinstance(payload, (dict, list)):
-            raw = json.dumps(payload, sort_keys=True, default=str).encode()
-        elif isinstance(payload, bytes):
-            raw = payload
-        else:
-            raw = str(payload).encode()
-        return hashlib.sha256(raw).hexdigest()
+            return json.dumps(payload, sort_keys=True, default=str).encode()
+        return str(payload).encode()
 
-    async def timestamp(self, sha256_hex: str) -> CustodyRecord:
+    @classmethod
+    def sha256_payload(cls, payload: Any) -> str:
+        return hashlib.sha256(cls._serialize(payload)).hexdigest()
+
+    async def _request_token(self, raw: bytes) -> Optional[bytes]:
         if not _RFC3161_AVAILABLE:
-            return CustodyRecord(sha256_hex, None, self.settings.tsa_url, False)
-
-        try:
-            digest = bytes.fromhex(sha256_hex)
-            req = (
-                TimestampRequestBuilder()
-                .data(digest, hash_algorithm="sha256", is_digest=True)
-                .cert_req(True)
-                .build()
+            return None
+        req = (
+            TimestampRequestBuilder()
+            .data(raw)
+            .hash_algorithm(HashAlgorithm.SHA256)
+            .nonce(nonce=True)
+            .cert_request(cert_request=True)
+            .build()
+        )
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                self.settings.tsa_url,
+                content=req.as_bytes(),
+                headers={"Content-Type": "application/timestamp-query"},
             )
-            async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.post(
-                    self.settings.tsa_url,
-                    content=req.as_bytes(),
-                    headers={"Content-Type": "application/timestamp-query"},
-                )
-                r.raise_for_status()
-                token_bytes = r.content
-                decode_timestamp_response(token_bytes)  # validates structure
-                token_b64 = base64.b64encode(token_bytes).decode()
-                return CustodyRecord(sha256_hex, token_b64, self.settings.tsa_url, True)
-        except Exception as exc:
-            log.warning("TSA timestamping failed: %s", exc)
-            return CustodyRecord(sha256_hex, None, self.settings.tsa_url, False)
+            r.raise_for_status()
+            token_bytes = r.content
+            decode_timestamp_response(token_bytes)  # validates structure
+            return token_bytes
 
     async def seal(self, payload: Any) -> CustodyRecord:
-        digest = self.sha256_payload(payload)
-        return await self.timestamp(digest)
+        raw = self._serialize(payload)
+        digest = hashlib.sha256(raw).hexdigest()
+        try:
+            token = await self._request_token(raw)
+        except Exception as exc:
+            log.warning("TSA timestamping failed: %s", exc)
+            return CustodyRecord(digest, None, self.settings.tsa_url, False)
+        if token is None:
+            return CustodyRecord(digest, None, self.settings.tsa_url, False)
+        return CustodyRecord(
+            digest,
+            base64.b64encode(token).decode(),
+            self.settings.tsa_url,
+            True,
+        )
+
+    # Kept for backward compatibility (e.g. callers that already have a digest).
+    async def timestamp(self, sha256_hex: str) -> CustodyRecord:
+        return CustodyRecord(sha256_hex, None, self.settings.tsa_url, False)
 
     async def verify(self, payload: Any, record: Dict[str, Any]) -> bool:
         if not record:
