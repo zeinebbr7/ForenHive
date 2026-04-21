@@ -2,7 +2,7 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">🛠 Configuration</div>
     <h2 class="page-title">Paramètres <span>système</span></h2>
-    <div class="page-sub">Configuration des honeypots, SIEM, moteur forensique et intégrations tierces.</div>
+    <div class="page-sub">Alerting backend · config honeypots locale.</div>
   </div>
   <div class="page-actions">
     <span class="badge gold">👑 Admin uniquement</span>
@@ -13,97 +13,56 @@
 
 <div id="cfg-body" class="hide">
 
-  <!-- Honeypots -->
+  <!-- Alerting (backend) -->
   <div class="acc open" data-acc>
-    <div class="acc-h"><div class="acc-t">🍯 Honeypots</div><div class="acc-i">▶</div></div>
+    <div class="acc-h"><div class="acc-t">🔔 Alerting (backend)</div><div class="acc-i">▶</div></div>
     <div class="acc-b">
-      <table class="tbl" style="margin-bottom:14px"><thead><tr>
-        <th>Honeypot</th><th>Ports</th><th>Mode</th><th>Actif</th>
-      </tr></thead><tbody id="hp-body"></tbody></table>
-      <div class="flex gap-8" style="justify-content:flex-end">
-        <button class="btn btn-gold btn-sm" data-save="honeypots">💾 Sauvegarder</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- SIEM -->
-  <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">📊 SIEM · Elasticsearch</div><div class="acc-i">▶</div></div>
-    <div class="acc-b">
+      <div id="alert-status"><div class="alert info">Chargement…</div></div>
       <div class="grid-2">
-        <div class="form-g"><label class="form-l">URL Elasticsearch</label><input class="form-i" data-cfg="siem.url" value="http://elasticsearch:9200"></div>
-        <div class="form-g"><label class="form-l">Index pattern</label><input class="form-i" data-cfg="siem.index" value="honeypot-logs-*"></div>
-        <div class="form-g"><label class="form-l">Retention (jours)</label><input class="form-i" type="number" data-cfg="siem.retention" value="90"></div>
-        <div class="form-g"><label class="form-l">Logstash pipeline</label><input class="form-i" data-cfg="siem.pipeline" value="main"></div>
-      </div>
-      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gh btn-sm" data-test="siem">🔌 Tester la connexion</button>
-        <button class="btn btn-gold btn-sm" data-save="siem">💾 Sauvegarder</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Forensic engine -->
-  <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">🔬 Forensic Engine · Ollama</div><div class="acc-i">▶</div></div>
-    <div class="acc-b">
-      <div class="flex items-c" style="justify-content:space-between;margin-bottom:14px">
-        <div><b>Activer Ollama</b><div class="text-3 mono" style="font-size:11px">MITRE mapping par LLM local</div></div>
-        <label class="toggle"><input type="checkbox" data-cfg="fe.ollama_enabled" checked><span class="toggle-slider"></span></label>
-      </div>
-      <div class="grid-2">
-        <div class="form-g"><label class="form-l">Endpoint Ollama</label><input class="form-i" data-cfg="fe.ollama_url" value="http://ollama:11434"></div>
-        <div class="form-g"><label class="form-l">Modèle</label>
-          <select class="form-s" data-cfg="fe.model">
-            <option value="mistral:7b" selected>mistral:7b</option>
-            <option value="llama3:8b">llama3:8b</option>
-            <option value="phi3:3.8b">phi3:3.8b</option>
-          </select>
-        </div>
-        <div class="form-g"><label class="form-l">Seuil de risque critique</label><input class="form-i" type="number" min="0" max="100" data-cfg="fe.risk_threshold" value="80"></div>
-        <div class="form-g"><label class="form-l">Règles YARA (chemin)</label><input class="form-i" data-cfg="fe.yara_path" value="/opt/forenhive/rules/"></div>
-      </div>
-      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gh btn-sm" data-test="fe">🔌 Tester Ollama</button>
-        <button class="btn btn-gold btn-sm" data-save="fe">💾 Sauvegarder</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Intégrations -->
-  <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">🔗 Intégrations tierces</div><div class="acc-i">▶</div></div>
-    <div class="acc-b">
-      <div class="grid-2">
-        <div class="form-g"><label class="form-l">AbuseIPDB API Key</label><input class="form-i" type="password" data-cfg="int.abuseipdb" placeholder="••••••••••"></div>
-        <div class="form-g"><label class="form-l">VirusTotal API Key</label><input class="form-i" type="password" data-cfg="int.virustotal" placeholder="••••••••••"></div>
-        <div class="form-g"><label class="form-l">Shodan API Key</label><input class="form-i" type="password" data-cfg="int.shodan" placeholder="••••••••••"></div>
-        <div class="form-g"><label class="form-l">MaxMind licence key</label><input class="form-i" type="password" data-cfg="int.maxmind" placeholder="••••••••••"></div>
-      </div>
-      <div class="alert info" style="margin-top:8px">⚠ VirusTotal free tier = 4 requêtes/jour. Préférer <span class="mono">--yara-only</span> en itération.</div>
-      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gh btn-sm" data-test="int">🔌 Tester toutes les clés</button>
-        <button class="btn btn-gold btn-sm" data-save="int">💾 Sauvegarder</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Alerting -->
-  <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">🔔 Alerting</div><div class="acc-i">▶</div></div>
-    <div class="acc-b">
-      <div class="grid-2">
-        <div class="form-g"><label class="form-l">Seuil score critique</label><input class="form-i" type="number" min="0" max="100" data-cfg="alert.threshold" value="80"></div>
-        <div class="form-g"><label class="form-l">Email notification</label><input class="form-i" type="email" data-cfg="alert.email" value="soc@forenhive.io"></div>
-        <div class="form-g" style="grid-column:1/-1"><label class="form-l">Webhook Slack</label><input class="form-i" data-cfg="alert.slack" placeholder="https://hooks.slack.com/services/…"></div>
+        <div class="form-g"><label class="form-l">Seuil score critique</label><input class="form-i" type="number" min="0" max="100" id="a-threshold"></div>
+        <div class="form-g"><label class="form-l">Email destinataire</label><input class="form-i" type="email" id="a-email"></div>
+        <div class="form-g" style="grid-column:1/-1"><label class="form-l">Webhook Slack</label><input class="form-i" id="a-slack" placeholder="https://hooks.slack.com/services/…"></div>
       </div>
       <div class="flex items-c" style="justify-content:space-between;margin-top:14px">
-        <div><b>Notifications temps réel</b><div class="text-3 mono" style="font-size:11px">Push UI dès qu'une session ≥ seuil</div></div>
-        <label class="toggle"><input type="checkbox" data-cfg="alert.realtime" checked><span class="toggle-slider"></span></label>
+        <div><b>Activer alerting</b><div class="text-3 mono" style="font-size:11px">déclenche les notifications backend</div></div>
+        <label class="toggle"><input type="checkbox" id="a-enabled"><span class="toggle-slider"></span></label>
       </div>
       <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gh btn-sm" data-test="alert">✉ Test alerte</button>
-        <button class="btn btn-gold btn-sm" data-save="alert">💾 Sauvegarder</button>
+        <button class="btn btn-gh btn-sm" id="a-test">✉ Envoyer alerte test</button>
+        <button class="btn btn-gold btn-sm" id="a-save">💾 Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historique alertes -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">📜 Historique alertes</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="alert-history"><div class="alert info">Chargement…</div></div>
+    </div>
+  </div>
+
+  <!-- Honeypots (info read-only depuis split) -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">🍯 Sources actives</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="sources-info"><div class="alert info">Chargement…</div></div>
+    </div>
+  </div>
+
+  <!-- Intégrations (locale) -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">🔗 Intégrations API (préférences locales)</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div class="alert info">Ces clés sont stockées localement uniquement (la configuration réelle se fait côté serveur via <span class="mono">.env</span>).</div>
+      <div class="grid-2">
+        <div class="form-g"><label class="form-l">AbuseIPDB API Key</label><input class="form-i" type="password" data-cfg="int.abuseipdb"></div>
+        <div class="form-g"><label class="form-l">VirusTotal API Key</label><input class="form-i" type="password" data-cfg="int.virustotal"></div>
+        <div class="form-g"><label class="form-l">Shodan API Key</label><input class="form-i" type="password" data-cfg="int.shodan"></div>
+        <div class="form-g"><label class="form-l">MaxMind licence key</label><input class="form-i" type="password" data-cfg="int.maxmind"></div>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gold btn-sm" data-save="int">💾 Sauvegarder localement</button>
       </div>
     </div>
   </div>
@@ -111,100 +70,107 @@
 </div>
 
 <script>
-(function(){
-  const { Auth, HONEYPOTS, $, $$ } = FH;
-  const user = Auth.current();
+(async function(){
+  const { SOURCE_META, fmt, esc, $, $$ } = FH;
+  const user = FH.Auth.current();
 
-  if (user.role !== 'admin') {
+  if (!user || user.role !== 'admin') {
     $('#cfg-gate').innerHTML = `<div class="alert err">⛔ Accès refusé. Cette page est réservée aux administrateurs.</div>`;
     return;
   }
   $('#cfg-body').classList.remove('hide');
 
-  // accordion behaviour
   $$('[data-acc] .acc-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
 
-  // honeypot table
-  const hpDefaults = {
-    cowrie:   { ports:'2222, 2223',                           mode:'medium', enabled:true },
-    dionaea:  { ports:'21, 80, 443, 445, 1433, 3306, 27017',  mode:'low',    enabled:true },
-    galah:    { ports:'8080, 8888',                           mode:'high',   enabled:true },
-    zeek:     { ports:'host-net (eno12399)',                  mode:'passive',enabled:true },
-  };
-  const hpState = Object.assign({}, hpDefaults, JSON.parse(localStorage.getItem('fh.config.honeypots') || '{}'));
-  function renderHp(){
-    $('#hp-body').innerHTML = Object.entries(hpState).map(([k,v]) => `
-      <tr>
-        <td><b>${k}</b></td>
-        <td class="mono" style="font-size:11px">${v.ports}</td>
-        <td>
-          <select class="form-s" data-hpk="${k}" data-hpf="mode" style="width:130px;padding:4px 8px;font-size:12px">
-            <option ${v.mode==='low'?'selected':''}>low</option>
-            <option ${v.mode==='medium'?'selected':''}>medium</option>
-            <option ${v.mode==='high'?'selected':''}>high</option>
-            <option ${v.mode==='passive'?'selected':''}>passive</option>
-          </select>
-        </td>
-        <td><label class="toggle"><input type="checkbox" data-hpk="${k}" data-hpf="enabled" ${v.enabled?'checked':''}><span class="toggle-slider"></span></label></td>
-      </tr>`).join('');
+  // Alerting config
+  try {
+    const cfg = await api.alertConfig();
+    $('#alert-status').innerHTML = `<div class="alert ok">✓ Config alerting chargée depuis backend</div>`;
+    $('#a-threshold').value = cfg.threshold ?? cfg.critical_threshold ?? 80;
+    $('#a-email').value = cfg.email || cfg.notify_email || '';
+    $('#a-slack').value = cfg.slack_webhook || cfg.webhook || '';
+    $('#a-enabled').checked = cfg.enabled !== false;
+  } catch (e) {
+    $('#alert-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
   }
-  renderHp();
-  $('#hp-body').addEventListener('change', e => {
-    const el = e.target.closest('[data-hpk]'); if (!el) return;
-    const k = el.dataset.hpk, f = el.dataset.hpf;
-    hpState[k][f] = el.type === 'checkbox' ? el.checked : el.value;
+
+  $('#a-save').addEventListener('click', async () => {
+    const btn = $('#a-save'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '⟳ Enregistrement…';
+    try {
+      await api.setAlertConfig({
+        threshold: parseInt($('#a-threshold').value, 10),
+        email: $('#a-email').value.trim(),
+        slack_webhook: $('#a-slack').value.trim(),
+        enabled: $('#a-enabled').checked,
+      });
+      btn.innerHTML = '✓ Sauvegardé'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+      btn.innerHTML = old; btn.disabled = false;
+    }
   });
 
-  // load saved cfg into inputs
+  $('#a-test').addEventListener('click', async () => {
+    try {
+      await api.alertTest({ message: 'Test depuis ForenHive UI' });
+      openModal(`<div class="alert ok">✓ Alerte de test envoyée.</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+
+  // Alert history
+  try {
+    const res = await api.alertHistory({ limit: 20 });
+    const items = (res && res.items) || [];
+    $('#alert-history').innerHTML = items.length ? `
+      <table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Cible</th><th>Statut</th></tr></thead>
+      <tbody>${items.map(a => `
+        <tr><td class="mono" style="font-size:11px">${fmt.date(a.timestamp || a.created_at)}</td>
+        <td>${esc(a.type || a.kind || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc(a.target || a.recipient || '—')}</td>
+        <td>${a.status === 'sent' ? '<span class="badge teal">✓ envoyé</span>' : (a.status === 'failed' ? '<span class="badge red">✗ erreur</span>' : '<span class="badge gold">'+esc(a.status || '—')+'</span>')}</td>
+        </tr>`).join('')}</tbody></table>` : '<div class="alert info">Aucune alerte dans l\'historique.</div>';
+  } catch (e) {
+    $('#alert-history').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  // Sources info
+  try {
+    const split = await api.geoSplit();
+    const arr = (split && split.split) || [];
+    $('#sources-info').innerHTML = `
+      <table class="tbl"><thead><tr><th>Source</th><th>Type</th><th>Description</th><th>Événements</th><th>Part</th></tr></thead>
+      <tbody>${arr.map(x => {
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', kind: '?', desc: '—' };
+        return `<tr>
+          <td><b>${meta.icon} ${meta.label}</b></td>
+          <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.kind === 'sensor' ? 'Capteur NDR' : 'Honeypot'}</span></td>
+          <td class="mono" style="font-size:11px">${esc(meta.desc)}</td>
+          <td class="mono">${x.count.toLocaleString('fr-FR')}</td>
+          <td class="mono">${x.percent}%</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch (e) {
+    $('#sources-info').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  // Intégrations locales
   $$('[data-cfg]').forEach(el => {
     const [section, key] = el.dataset.cfg.split('.');
     const saved = JSON.parse(localStorage.getItem('fh.config.'+section) || '{}');
-    if (key in saved) {
-      if (el.type === 'checkbox') el.checked = !!saved[key];
-      else el.value = saved[key];
-    }
+    if (key in saved) el.value = saved[key];
   });
-
-  // save
   document.addEventListener('click', e => {
     const btn = e.target.closest('[data-save]'); if (!btn) return;
     const section = btn.dataset.save;
-    if (section === 'honeypots') {
-      localStorage.setItem('fh.config.honeypots', JSON.stringify(hpState));
-    } else {
-      const obj = {};
-      $$(`[data-cfg^="${section}."]`).forEach(el => {
-        const key = el.dataset.cfg.split('.')[1];
-        obj[key] = el.type === 'checkbox' ? el.checked : el.value;
-      });
-      localStorage.setItem('fh.config.'+section, JSON.stringify(obj));
-    }
-    const old = btn.innerHTML;
-    btn.innerHTML = '✓ Enregistré';
-    btn.classList.remove('btn-gold'); btn.classList.add('btn-out');
-    setTimeout(() => { btn.innerHTML = old; btn.classList.add('btn-gold'); btn.classList.remove('btn-out'); }, 1400);
-  });
-
-  // test connection
-  document.addEventListener('click', e => {
-    const btn = e.target.closest('[data-test]'); if (!btn) return;
-    const kind = btn.dataset.test;
-    const old = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '⟳ Test en cours…';
-    setTimeout(() => {
-      btn.disabled = false; btn.innerHTML = old;
-      const labels = {
-        siem:  '✓ Elasticsearch joignable (cluster status: green · 11.4M docs)',
-        fe:    '✓ Ollama OK · mistral:7b chargé (4.4 GB)',
-        int:   '✓ 3/4 clés valides · MaxMind : clé non renseignée',
-        alert: '✓ Alerte de test envoyée à soc@forenhive.io',
-      };
-      openModal(`<div class="modal-h"><div class="card-t">Résultat du test</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
-        <div class="alert ok">${labels[kind] || '✓ OK'}</div>
-        <div class="flex gap-8" style="justify-content:flex-end;margin-top:12px">
-          <button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button>
-        </div>`);
-    }, 900);
+    const obj = {};
+    $$(`[data-cfg^="${section}."]`).forEach(el => {
+      const key = el.dataset.cfg.split('.')[1];
+      obj[key] = el.value;
+    });
+    localStorage.setItem('fh.config.'+section, JSON.stringify(obj));
+    const old = btn.innerHTML; btn.innerHTML = '✓ Enregistré'; setTimeout(() => { btn.innerHTML = old; }, 1400);
   });
 })();
 </script>

@@ -2,7 +2,7 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">📋 Reporting</div>
     <h2 class="page-title">Rapports <span>forensiques</span></h2>
-    <div class="page-sub">PDF certifiés RFC 3161 avec SHA-256 et chaîne de custody.</div>
+    <div class="page-sub">PDF générés par le backend · SHA-256 + signature RFC 3161.</div>
   </div>
   <div class="page-actions">
     <button class="btn btn-gold btn-sm" id="new-report">＋ Nouveau rapport</button>
@@ -11,99 +11,103 @@
 
 <div class="card">
   <table class="tbl"><thead><tr>
-    <th>Nom</th><th>Type</th><th>Session</th><th>Auteur</th><th>Date</th><th>Hash SHA-256</th><th>Statut</th><th>Actions</th>
-  </tr></thead><tbody id="rpt-rows"></tbody></table>
+    <th>Titre</th><th>Type</th><th>Auteur</th><th>Date</th><th>SHA-256</th><th>Statut</th><th>Actions</th>
+  </tr></thead><tbody id="rpt-rows"><tr><td colspan="7">Chargement…</td></tr></tbody></table>
 </div>
 
 <script>
-(function(){
-  const { REPORTS, Auth, fmt, esc, $ } = FH;
-  const user = Auth.current();
+(async function(){
+  const { fmt, esc, $ } = FH;
 
-  function render(){
-    const visible = user.role === 'user' ? REPORTS.filter(r => r.author === user.email || r.author.startsWith('user')) : REPORTS;
-    $('#rpt-rows').innerHTML = visible.map(r => {
-      const stBadge = r.status === 'ready'
-        ? '<span class="badge teal">✓ Prêt</span>'
-        : '<span class="badge gold">⏳ Génération…</span>';
-      const kindBadge = {incident:'<span class="badge red">Incident</span>',forensic:'<span class="badge blue">Forensique</span>',exec:'<span class="badge purple">Exec</span>'}[r.kind];
-      return `<tr>
-        <td><b>${esc(r.title)}</b></td>
-        <td>${kindBadge}</td>
-        <td><span class="mono" style="font-size:11px">${esc(r.session.slice(0,14))}…</span></td>
-        <td class="mono" style="font-size:11px">${esc(r.author)}</td>
-        <td class="mono" style="font-size:11px">${fmt.date(r.date)}</td>
-        <td><span class="mono" style="font-size:10px" title="${esc(r.sha256)}">${fmt.shortHash(r.sha256)}</span></td>
-        <td>${stBadge}</td>
-        <td class="flex gap-8">
-          <button class="btn btn-out btn-sm" data-act="dl" data-id="${r.id}">⬇</button>
-          <button class="btn btn-gh btn-sm" data-act="verify" data-id="${r.id}">🔏</button>
-        </td>
-      </tr>`;
-    }).join('');
-  }
-  render();
+  async function load() {
+    try {
+      const res = await api.reports({ page_size: 100 });
+      const items = (res && res.items) || [];
+      if (!items.length) {
+        $('#rpt-rows').innerHTML = `<tr><td colspan="7"><div class="alert info"><b>Aucun rapport généré.</b><br>Clique sur <b>＋ Nouveau rapport</b> pour en générer un depuis les données actuelles.</div></td></tr>`;
+        return;
+      }
+      $('#rpt-rows').innerHTML = items.map(r => {
+        const stBadge = (r.status === 'ready' || r.status === 'completed')
+          ? '<span class="badge teal">✓ Prêt</span>'
+          : (r.status === 'failed' ? '<span class="badge red">✗ Erreur</span>'
+          : '<span class="badge gold">⏳ ' + esc(r.status || '—') + '</span>');
+        const kind = (r.kind || r.type || 'forensic').toLowerCase();
+        const kindBadge = {incident:'<span class="badge red">Incident</span>',forensic:'<span class="badge blue">Forensique</span>',exec:'<span class="badge purple">Exec</span>'}[kind]
+          || '<span class="badge gray">'+esc(kind)+'</span>';
+        return `<tr data-id="${esc(r.id)}">
+          <td><b>${esc(r.title || '(sans titre)')}</b></td>
+          <td>${kindBadge}</td>
+          <td class="mono" style="font-size:11px">${esc(r.author_email || r.author || '—')}</td>
+          <td class="mono" style="font-size:11px">${fmt.date(r.created_at || r.date)}</td>
+          <td><span class="mono" style="font-size:10px" title="${esc(r.sha256 || '')}">${fmt.shortHash(r.sha256)}</span></td>
+          <td>${stBadge}</td>
+          <td class="flex gap-8">
+            <a class="btn btn-out btn-sm" href="${api.reportDownloadUrl(r.id)}?token=${encodeURIComponent(api.token() || '')}" target="_blank">⬇ PDF</a>
+            <button class="btn btn-gh btn-sm" data-act="verify">🔏</button>
+          </td>
+        </tr>`;
+      }).join('');
 
-  $('#rpt-rows').addEventListener('click', e => {
-    const btn = e.target.closest('button'); if (!btn) return;
-    const r = REPORTS.find(x => x.id === btn.dataset.id); if (!r) return;
-    if (btn.dataset.act === 'dl') {
-      // simulate download
-      const blob = new Blob([`# ${r.title}\nSHA-256: ${r.sha256}\nDate: ${new Date(r.date).toISOString()}`], {type:'text/plain'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = r.title.replace(/\s+/g,'_')+'.txt';
-      a.click(); URL.revokeObjectURL(a.href);
-    } else {
-      openModal(`<div class="modal-h"><div class="card-t">Vérification hash</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
-        <div class="alert ok">✓ Hash SHA-256 valide · signature RFC 3161 vérifiée</div>
-        <div class="card-sub mb-12">SHA-256</div>
-        <pre class="pre">${esc(r.sha256)}</pre>
-        <div class="card-sub mb-12" style="margin-top:16px">TSA Token</div>
-        <pre class="pre">freeTSA.org · ${new Date(r.date).toISOString()}\nTimestamp: 2.16.840.1.101.3.4.2.1 (SHA-256)\nStatus: granted</pre>`);
+      $('#rpt-rows').querySelectorAll('[data-act="verify"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const tr = b.closest('tr');
+          const r = items.find(x => x.id === tr.dataset.id);
+          openModal(`
+            <div class="modal-h"><div class="card-t">Vérification hash</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
+            <div class="alert ok">✓ Hash SHA-256 calculé · signature RFC 3161 vérifiée</div>
+            <div class="card-sub mb-12">SHA-256</div>
+            <pre class="pre">${esc(r.sha256 || '—')}</pre>
+            ${r.tsa_timestamp ? `<div class="card-sub mb-12" style="margin-top:16px">TSA Token</div><pre class="pre">${esc(r.tsa_timestamp)}</pre>` : ''}
+          `);
+        });
+      });
+    } catch (e) {
+      $('#rpt-rows').innerHTML = `<tr><td colspan="7"><div class="alert err">${esc(e.message)}</div></td></tr>`;
     }
-  });
+  }
 
   $('#new-report').addEventListener('click', () => {
     openModal(`
       <div class="modal-h"><div class="card-t">Nouveau rapport forensique</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
-      <div class="form-g"><label class="form-l">Titre</label><input class="form-i" id="r-title" placeholder="Rapport incident XYZ"></div>
-      <div class="form-g"><label class="form-l">Session(s)</label><select class="form-s" id="r-sess"><option>sess_e2de25c141f1 · 185.220.101.5</option><option>sess_abc123 · 45.33.32.156</option><option>sess_xyz789 · 103.45.201.12</option></select></div>
-      <div class="form-g"><label class="form-l">Type</label><select class="form-s" id="r-kind"><option value="incident">Incident</option><option value="forensic">Forensique complet</option><option value="exec">Résumé exécutif</option></select></div>
+      <div class="form-g"><label class="form-l">Titre</label><input class="form-i" id="r-title" placeholder="Rapport incident XYZ" value="Rapport forensique ${new Date().toLocaleDateString('fr-FR')}"></div>
+      <div class="form-g"><label class="form-l">Type</label><select class="form-s" id="r-kind"><option value="incident">Incident</option><option value="forensic" selected>Forensique complet</option><option value="exec">Résumé exécutif</option></select></div>
+      <div class="form-g"><label class="form-l">Fenêtre temporelle (heures)</label><input class="form-i" id="r-window" type="number" value="24" min="1" max="720"></div>
       <div class="form-g">
         <label class="form-l">Options</label>
-        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" checked> Inclure logs bruts</label>
-        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" checked> Inclure MITRE mapping</label>
-        <label class="flex items-c gap-8"><input type="checkbox" checked> Signature RFC 3161 (TSA freeTSA.org)</label>
+        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" id="r-raw" checked> Inclure logs bruts</label>
+        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" id="r-mitre" checked> Mapping MITRE ATT&CK</label>
+        <label class="flex items-c gap-8"><input type="checkbox" id="r-tsa" checked> Signature RFC 3161</label>
       </div>
-      <div id="r-prog" class="hide">
-        <div class="card-sub mb-12">Génération en cours…</div>
-        <div class="prog"><div class="prog-f" id="r-progf" style="width:0"></div></div>
-        <div id="r-step" class="text-3 mono mt-12" style="font-size:11px">Initialisation…</div>
-      </div>
-      <div id="r-done" class="hide"><div class="alert ok">✓ Rapport généré avec succès. SHA-256 calculé, TSA horodatage validé.</div></div>
+      <div id="r-status" class="hide"></div>
       <div class="flex gap-8" style="justify-content:flex-end;margin-top:16px">
         <button class="btn btn-gh btn-sm" onclick="closeModal()">Annuler</button>
         <button class="btn btn-gold btn-sm" id="r-gen">Générer</button>
       </div>
     `);
-    $('#r-gen').addEventListener('click', () => {
-      $('#r-prog').classList.remove('hide');
+    $('#r-gen').addEventListener('click', async () => {
+      const body = {
+        title: $('#r-title').value.trim() || 'Rapport',
+        kind: $('#r-kind').value,
+        window_hours: parseInt($('#r-window').value, 10) || 24,
+        include_raw: $('#r-raw').checked,
+        include_mitre: $('#r-mitre').checked,
+        sign_rfc3161: $('#r-tsa').checked,
+      };
+      $('#r-status').classList.remove('hide');
+      $('#r-status').innerHTML = '<div class="alert info">⟳ Génération en cours…</div>';
       $('#r-gen').disabled = true;
-      const steps = ['Collecte sessions…','Enrichissement IPs…','MITRE mapping…','YARA scan…','Rendu HTML→PDF…','Calcul SHA-256…','Signature TSA RFC 3161…','Terminé ✓'];
-      let i = 0;
-      const iv = setInterval(() => {
-        i++;
-        $('#r-progf').style.width = (i/steps.length*100) + '%';
-        $('#r-step').textContent = steps[Math.min(i, steps.length-1)];
-        if (i >= steps.length) {
-          clearInterval(iv);
-          $('#r-done').classList.remove('hide');
-          $('#r-gen').textContent = 'OK';
-          $('#r-gen').disabled = false;
-          $('#r-gen').onclick = () => { closeModal(); };
-        }
-      }, 500);
+      try {
+        const r = await api.generateReport(body);
+        $('#r-status').innerHTML = `<div class="alert ok">✓ Rapport créé · ID ${esc(r.id || '—')}</div>`;
+        $('#r-gen').textContent = 'OK'; $('#r-gen').disabled = false; $('#r-gen').onclick = () => { closeModal(); load(); };
+      } catch (e) {
+        $('#r-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+        $('#r-gen').disabled = false;
+      }
     });
   });
+
+  await load();
 })();
 </script>

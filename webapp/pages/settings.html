@@ -2,7 +2,7 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">⚙️ Paramètres</div>
     <h2 class="page-title">Préférences <span>utilisateur</span></h2>
-    <div class="page-sub">Profil, notifications, apparence et clés API.</div>
+    <div class="page-sub">Profil, utilisateurs (admin), sessions.</div>
   </div>
 </div>
 
@@ -10,71 +10,77 @@
   <div class="card">
     <div class="card-h"><div class="card-t">Profil</div></div>
     <div class="flex items-c gap-12 mb-20">
-      <div class="prof-av" style="width:60px;height:60px;font-size:28px" id="s-avatar">👑</div>
+      <div class="prof-av" style="width:60px;height:60px;font-size:28px" id="s-avatar">👤</div>
       <div>
         <div class="card-t" id="s-name">—</div>
         <div class="text-3 mono" style="font-size:11px" id="s-email">—</div>
       </div>
     </div>
-    <div class="form-g"><label class="form-l">Nom complet</label><input class="form-i" id="s-fullname" value="ForenHive User"></div>
     <div class="form-g"><label class="form-l">Email</label><input class="form-i" id="s-email-i" disabled></div>
     <div class="form-g"><label class="form-l">Rôle</label><input class="form-i" id="s-role" disabled></div>
-    <button class="btn btn-out btn-sm">🔑 Changer le mot de passe</button>
-  </div>
-
-  <div class="card">
-    <div class="card-h"><div class="card-t">Notifications</div></div>
-    <div class="flex items-c" style="justify-content:space-between;margin-bottom:14px">
-      <div><b>Événements critiques</b><div class="text-3 mono" style="font-size:11px">Email lors de score ≥ 80</div></div>
-      <label class="toggle"><input type="checkbox" data-k="notif_crit" checked><span class="toggle-slider"></span></label>
-    </div>
-    <div class="flex items-c" style="justify-content:space-between;margin-bottom:14px">
-      <div><b>Nouveaux rapports</b><div class="text-3 mono" style="font-size:11px">Notification UI lors de la génération</div></div>
-      <label class="toggle"><input type="checkbox" data-k="notif_reports" checked><span class="toggle-slider"></span></label>
-    </div>
-    <div class="flex items-c" style="justify-content:space-between">
-      <div><b>Health alerts</b><div class="text-3 mono" style="font-size:11px">Service down / dégradé</div></div>
-      <label class="toggle"><input type="checkbox" data-k="notif_health"><span class="toggle-slider"></span></label>
-    </div>
+    <div class="form-g"><label class="form-l">Créé le</label><input class="form-i" id="s-created" disabled></div>
   </div>
 
   <div class="card">
     <div class="card-h"><div class="card-t">Apparence</div></div>
     <div class="flex items-c" style="justify-content:space-between;margin-bottom:14px">
-      <div><b>Sidebar compacte</b><div class="text-3 mono" style="font-size:11px">Réduit la largeur à 60px</div></div>
+      <div><b>Sidebar compacte</b><div class="text-3 mono" style="font-size:11px">Réduit la largeur</div></div>
       <label class="toggle"><input type="checkbox" data-k="compact"><span class="toggle-slider"></span></label>
     </div>
     <div class="form-g"><label class="form-l">Densité</label>
       <select class="form-s" data-k="density"><option value="normal">Normale</option><option value="compact">Compacte</option><option value="comfortable">Confort</option></select>
     </div>
+    <div class="form-g"><label class="form-l">Rafraîchissement auto (s)</label><input class="form-i" type="number" data-k="refresh" value="30" min="5" max="300"></div>
   </div>
 
-  <div class="card" id="api-card">
-    <div class="card-h"><div class="card-t">API Keys</div><button class="btn btn-gold btn-sm" id="gen-key">＋ Générer</button></div>
-    <table class="tbl"><thead><tr><th>Nom</th><th>Préfixe</th><th>Créée</th><th></th></tr></thead><tbody id="keys-body"></tbody></table>
+  <div class="card" id="users-card" style="grid-column:1/-1">
+    <div class="card-h"><div class="card-t">Utilisateurs</div><div class="card-sub" id="users-sub">admin uniquement</div></div>
+    <div id="users-body"><div class="alert info">Chargement…</div></div>
   </div>
-</div>
-
-<div class="card mt-20">
-  <div class="card-h"><div class="card-t">Sessions actives</div><div class="card-sub">connexions en cours</div></div>
-  <table class="tbl"><thead><tr><th>Appareil</th><th>IP</th><th>Dernière activité</th><th>Actions</th></tr></thead><tbody id="act-body">
-    <tr><td>🖥 Chrome / Linux</td><td class="mono">172.16.1.88</td><td class="mono">à l'instant</td><td><span class="badge teal">courante</span></td></tr>
-    <tr><td>📱 Safari / iOS</td><td class="mono">41.226.11.48</td><td class="mono">il y a 2 jours</td><td><button class="btn btn-red btn-sm">Révoquer</button></td></tr>
-    <tr><td>🖥 Firefox / Windows</td><td class="mono">196.184.x.x</td><td class="mono">il y a 5 jours</td><td><button class="btn btn-red btn-sm">Révoquer</button></td></tr>
-  </tbody></table>
 </div>
 
 <script>
-(function(){
-  const { Auth, ROLES, $ } = FH;
-  const user = Auth.current();
-  $('#s-avatar').textContent = ROLES[user.role].icon;
-  $('#s-name').textContent = user.name;
-  $('#s-email').textContent = user.email;
-  $('#s-email-i').value = user.email;
-  $('#s-role').value = ROLES[user.role].label;
+(async function(){
+  const { ROLES, fmt, esc, $ } = FH;
 
-  // load prefs
+  try {
+    const me = await api.me();
+    const role = ROLES[me.role] || ROLES.viewer;
+    $('#s-avatar').textContent = role.icon;
+    $('#s-name').textContent = me.email.split('@')[0];
+    $('#s-email').textContent = me.email;
+    $('#s-email-i').value = me.email;
+    $('#s-role').value = role.label;
+    $('#s-created').value = me.created_at ? fmt.date(me.created_at) : '—';
+
+    if (me.role === 'admin') {
+      try {
+        const users = await api.users();
+        const list = Array.isArray(users) ? users : (users.items || []);
+        $('#users-sub').textContent = list.length + ' utilisateur' + (list.length>1?'s':'');
+        $('#users-body').innerHTML = list.length ? `
+          <table class="tbl"><thead><tr><th>Email</th><th>Rôle</th><th>Actif</th><th>Créé</th><th>Dernière connexion</th></tr></thead>
+          <tbody>${list.map(u => {
+            const r = ROLES[u.role] || ROLES.viewer;
+            return `<tr>
+              <td class="mono">${esc(u.email)}</td>
+              <td><span class="badge ${r.color}">${r.icon} ${r.label}</span></td>
+              <td>${u.is_active === false ? '<span class="badge red">inactif</span>' : '<span class="badge teal">actif</span>'}</td>
+              <td class="mono" style="font-size:11px">${u.created_at ? fmt.date(u.created_at) : '—'}</td>
+              <td class="mono" style="font-size:11px">${u.last_login_at ? fmt.ago(u.last_login_at)+' ago' : '—'}</td>
+            </tr>`;
+          }).join('')}</tbody></table>` : '<div class="alert info">Aucun utilisateur.</div>';
+      } catch (e) {
+        $('#users-body').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+      }
+    } else {
+      $('#users-card').style.display = 'none';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  // préférences locales
   const prefs = JSON.parse(localStorage.getItem('fh.prefs') || '{}');
   document.querySelectorAll('[data-k]').forEach(el => {
     const k = el.dataset.k;
@@ -86,31 +92,6 @@
       prefs[k] = el.type === 'checkbox' ? el.checked : el.value;
       localStorage.setItem('fh.prefs', JSON.stringify(prefs));
     });
-  });
-
-  // hide API keys for plain users
-  if (user.role === 'user') $('#api-card').style.display = 'none';
-
-  // keys
-  let keys = JSON.parse(localStorage.getItem('fh.keys') || '[]');
-  if (keys.length === 0) keys = [{name:'Production',  prefix:'fh_sk_a3f9...', date: Date.now()-12*86400000}];
-  function renderKeys(){
-    $('#keys-body').innerHTML = keys.map((k,i) => `
-      <tr><td>${k.name}</td><td class="mono" style="font-size:11px">${k.prefix}</td><td class="mono" style="font-size:11px">${new Date(k.date).toLocaleDateString('fr-FR')}</td><td><button class="btn btn-red btn-sm" data-i="${i}">Révoquer</button></td></tr>
-    `).join('');
-  }
-  renderKeys();
-  $('#gen-key').addEventListener('click', () => {
-    const rand = Math.random().toString(36).slice(2,10);
-    keys.push({name:'Nouvelle clé', prefix:'fh_sk_'+rand+'...', date: Date.now()});
-    localStorage.setItem('fh.keys', JSON.stringify(keys));
-    renderKeys();
-  });
-  $('#keys-body').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    keys.splice(+b.dataset.i,1);
-    localStorage.setItem('fh.keys', JSON.stringify(keys));
-    renderKeys();
   });
 })();
 </script>
