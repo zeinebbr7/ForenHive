@@ -2,122 +2,154 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">⬡ Vue d'ensemble</div>
     <h2 class="page-title">Tableau de <span>bord</span></h2>
-    <div class="page-sub">Monitoring en temps réel des 4 honeypots et des événements forensiques.</div>
+    <div class="page-sub">Monitoring temps réel · <span id="dash-src-count">—</span> sources actives.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm">📥 Exporter</button>
-    <button class="btn btn-gold btn-sm">🔄 Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="dash-refresh">🔄 Actualiser</button>
   </div>
 </div>
 
-<!-- KPIs -->
 <div class="kpi-grid">
-  <div class="kpi g"><div class="kpi-label">Sessions totales</div><div class="kpi-val" id="kpi-sessions">0</div><div class="kpi-delta up">▲ +12 ce mois</div></div>
-  <div class="kpi r"><div class="kpi-label">Événements critiques</div><div class="kpi-val" id="kpi-crit">0</div><div class="kpi-delta down">▼ score ≥ 80</div></div>
-  <div class="kpi b"><div class="kpi-label">IPs enrichies</div><div class="kpi-val" id="kpi-ips">0</div><div class="kpi-delta up">▲ 5 nœuds Tor</div></div>
-  <div class="kpi p"><div class="kpi-label">YARA matches</div><div class="kpi-val" id="kpi-yara">0</div><div class="kpi-delta">Mirai · XMRig</div></div>
+  <div class="kpi g"><div class="kpi-label">Événements totaux</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta" id="kpi-total-d">chargement…</div></div>
+  <div class="kpi r"><div class="kpi-label">Dernière heure</div><div class="kpi-val" id="kpi-hour">—</div><div class="kpi-delta" id="kpi-hour-d">—</div></div>
+  <div class="kpi b"><div class="kpi-label">Honeypots actifs</div><div class="kpi-val" id="kpi-hps">—</div><div class="kpi-delta" id="kpi-hps-d">—</div></div>
+  <div class="kpi p"><div class="kpi-label">Capteurs NDR</div><div class="kpi-val" id="kpi-sens">—</div><div class="kpi-delta" id="kpi-sens-d">—</div></div>
 </div>
 
-<!-- Grille -->
-<div class="grid-2" style="margin-bottom:20px">
+<div class="grid-2 mb-20">
   <div class="card">
-    <div class="card-h"><div class="card-t">Sessions par honeypot</div><div class="card-sub">7 derniers jours</div></div>
-    <div id="dash-hpot"></div>
+    <div class="card-h"><div class="card-t">Répartition par source</div><div class="card-sub">🍯 honeypots + 🔬 capteurs</div></div>
+    <div id="dash-hpot"><div class="alert info">Chargement…</div></div>
   </div>
   <div class="card">
-    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>temps réel</div></div>
-    <div id="dash-logs" class="scroll-y maxh-360" style="max-height:320px"></div>
+    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>20 derniers événements</div></div>
+    <div id="dash-logs" class="scroll-y" style="max-height:340px"><div class="alert info">Chargement…</div></div>
   </div>
 </div>
 
-<!-- Sessions récentes -->
 <div class="card">
   <div class="card-h">
-    <div class="card-t">Sessions récentes</div>
+    <div class="card-t">Derniers événements</div>
     <div class="card-sub">cliquer pour voir le détail</div>
   </div>
   <div style="overflow-x:auto">
     <table class="tbl">
-      <thead><tr>
-        <th>Session ID</th><th>Honeypot</th><th>IP Source</th><th>Pays</th><th>Score</th><th>Statut</th><th>Actions</th>
-      </tr></thead>
-      <tbody id="dash-sessions"></tbody>
+      <thead><tr><th>Horodatage</th><th>Source</th><th>IP source</th><th>Port</th><th>Sévérité</th><th>Type</th><th></th></tr></thead>
+      <tbody id="dash-events"><tr><td colspan="7"><div class="alert info">Chargement…</div></td></tr></tbody>
     </table>
   </div>
 </div>
 
 <script>
-(function(){
-  const { SESSIONS, INITIAL_EVENTS, IP_POOL, COUNTRIES, fmt, esc, $ } = FH;
+(async function(){
+  const { SOURCE_META, HONEYPOTS, SENSORS, fmt, esc, $, evNormalize } = FH;
 
-  // KPIs
-  $('#kpi-sessions').textContent = SESSIONS.length;
-  $('#kpi-crit').textContent = SESSIONS.filter(s => s.score >= 80).length;
-  $('#kpi-ips').textContent = IP_POOL.length;
-  $('#kpi-yara').textContent = SESSIONS.filter(s => s.yara).length;
+  async function load() {
+    try {
+      const [split, recent, hourly] = await Promise.all([
+        api.geoSplit(),
+        api.attacks({ limit: 20 }),
+        api.statsHourly(),
+      ]);
 
-  // Bars par honeypot
-  const hpColors = { cowrie:'var(--gold)', dionaea:'var(--red)', galah:'var(--blue)', zeek:'var(--purple)' };
-  const counts = { cowrie:0, dionaea:0, galah:0, zeek:0 };
-  SESSIONS.forEach(s => counts[s.honeypot]++);
-  const max = Math.max(...Object.values(counts), 1);
-  $('#dash-hpot').innerHTML = Object.entries(counts).map(([k,v]) => `
-    <div class="hbar">
-      <div class="hbar-l">${k.charAt(0).toUpperCase()+k.slice(1)}</div>
-      <div class="hbar-t"><div class="hbar-f" style="width:${(v/max*100).toFixed(1)}%;background:${hpColors[k]}"></div></div>
-      <div class="hbar-v">${v}</div>
-    </div>`).join('');
+      // KPIs
+      const total = (recent && recent.total) || 0;
+      $('#kpi-total').textContent = fmt.num(total);
+      $('#kpi-total-d').textContent = `▲ ${total.toLocaleString('fr-FR')} événements indexés`;
+      $('#kpi-total-d').classList.add('up');
 
-  // Live logs
-  $('#dash-logs').innerHTML = INITIAL_EVENTS.slice(0,12).map(ev => `
-    <div class="log-row">
-      <div class="log-t">${fmt.time(ev.t)}</div>
-      <div class="log-s ${ev.honeypot}">${ev.honeypot}</div>
-      <div class="log-ip">${esc(ev.ip)}</div>
-      <div class="log-m">${esc(ev.message)}</div>
-    </div>`).join('');
+      const hourlyArr = Array.isArray(hourly) ? hourly : (hourly.items || []);
+      const last = hourlyArr[hourlyArr.length - 1];
+      $('#kpi-hour').textContent = last ? fmt.num(last.count) : '0';
+      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : 'pas d'activité récente';
 
-  // Sessions récentes
-  const countryName = iso => (COUNTRIES.find(c => c.iso === iso) || {name:iso, flag:'🏳️'});
-  const statusBadge = st => {
-    if (st === 'critical') return '<span class="badge red">⚠ Critique</span>';
-    if (st === 'analyzed') return '<span class="badge blue">✓ Analysé</span>';
-    return '<span class="badge teal">● Actif</span>';
-  };
-  $('#dash-sessions').innerHTML = SESSIONS.slice(0,10).map(s => {
-    const c = countryName(s.country);
-    return `<tr data-id="${s.id}" style="cursor:pointer">
-      <td><span class="mono">${esc(s.id.slice(0,16))}…</span></td>
-      <td><span class="badge gold">${s.honeypot}</span></td>
-      <td class="mono">${esc(s.ip)}</td>
-      <td>${c.flag} ${c.name}</td>
-      <td><span class="score ${fmt.scoreClass(s.score)}">${s.score}</span></td>
-      <td>${statusBadge(s.status)}</td>
-      <td><button class="btn btn-out btn-sm">Voir</button></td>
-    </tr>`;
-  }).join('');
+      const splitArr = (split && split.split) || [];
+      const hpActive = splitArr.filter(x => HONEYPOTS.includes(x.honeypot) && x.count > 0);
+      const sensActive = splitArr.filter(x => SENSORS.includes(x.honeypot) && x.count > 0);
+      $('#kpi-hps').textContent = hpActive.length + '/' + HONEYPOTS.length;
+      $('#kpi-hps-d').textContent = hpActive.map(x => x.honeypot).join(' · ') || 'aucun';
+      $('#kpi-sens').textContent = sensActive.length + '/' + SENSORS.length;
+      $('#kpi-sens-d').textContent = sensActive.map(x => x.honeypot).join(' · ') || 'aucun';
+      $('#dash-src-count').textContent = hpActive.length + sensActive.length;
 
-  // Click → drawer
-  $('#dash-sessions').addEventListener('click', e => {
-    const tr = e.target.closest('tr'); if (!tr) return;
-    const s = SESSIONS.find(x => x.id === tr.dataset.id); if (!s) return;
-    const c = countryName(s.country);
-    openDrawer(`
-      <div class="drawer-h">
-        <div><div class="card-t">${esc(s.id)}</div><div class="card-sub">Session · ${fmt.date(s.timestamp)}</div></div>
-        <button class="drawer-close" onclick="closeDrawer()">✕</button>
-      </div>
-      <div class="drawer-b">
-        <div class="flex gap-8 mb-12"><span class="score ${fmt.scoreClass(s.score)}" style="font-size:15px;padding:6px 14px">${s.score} / 100</span>${s.status==='critical'?'<span class="badge red">⚠ Critique</span>':''}</div>
-        <div class="mb-12"><span class="mono text-m">${esc(s.ip)}</span> · ${c.flag} ${c.name} · <span class="text-3 mono">${esc(s.asn)}</span></div>
-        <div class="flex gap-8 mb-12" style="flex-wrap:wrap">${s.techniques.map(t => `<span class="tag">${esc(t)}</span>`).join('')}${s.yara?`<span class="badge purple">YARA: ${s.yara}</span>`:''}</div>
-        <div class="card-sub mb-12" style="margin-top:18px">Logs bruts</div>
-        <pre class="pre">${esc(s.logs)}</pre>
-        <div class="flex gap-8" style="margin-top:16px">
-          <button class="btn btn-out btn-sm">🧠 Voir profil</button>
-          <button class="btn btn-gold btn-sm">📋 Générer rapport</button>
+      // Bars répartition
+      const max = Math.max(...splitArr.map(x => x.count), 1);
+      $('#dash-hpot').innerHTML = splitArr.map(x => {
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', color: 'var(--text3)', kind: '?' };
+        return `<div class="hbar">
+          <div class="hbar-l">${meta.icon} ${meta.label}</div>
+          <div class="hbar-t"><div class="hbar-f" style="width:${(x.count/max*100).toFixed(1)}%;background:${meta.color}"></div></div>
+          <div class="hbar-v">${x.count.toLocaleString('fr-FR')}<span class="text-3 mono" style="font-size:10px;margin-left:6px">${x.percent}%</span></div>
+        </div>`;
+      }).join('') || '<div class="alert info">Aucune source.</div>';
+
+      // Live logs + table
+      const items = (recent && recent.items) || [];
+      if (!items.length) {
+        $('#dash-logs').innerHTML = '<div class="alert info">Aucun événement.</div>';
+        $('#dash-events').innerHTML = '<tr><td colspan="7"><div class="alert info">Aucun événement.</div></td></tr>';
+      } else {
+        $('#dash-logs').innerHTML = items.map(raw => {
+          const ev = evNormalize(raw);
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '❓' };
+          return `<div class="log-row">
+            <div class="log-t">${fmt.time(ev.timestamp)}</div>
+            <div class="log-s ${ev.honeypot}">${meta.icon} ${meta.label}</div>
+            <div class="log-ip">${esc(ev.source_ip || '—')}</div>
+            <div class="log-m">${esc((ev.command || ev.http_path || ev.protocol || '—')).slice(0,80)}</div>
+          </div>`;
+        }).join('');
+
+        $('#dash-events').innerHTML = items.map(raw => {
+          const ev = evNormalize(raw);
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '❓' };
+          const sevCls = fmt.sevToClass(ev.severity);
+          return `<tr data-id="${esc(ev.id)}" style="cursor:pointer">
+            <td class="mono" style="font-size:11px">${fmt.time(ev.timestamp)}</td>
+            <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.icon} ${meta.label}</span></td>
+            <td class="mono">${esc(ev.source_ip || '—')}</td>
+            <td class="mono">${ev.dest_port || '—'}</td>
+            <td><span class="score ${sevCls}">${esc(ev.severity || 'low')}</span></td>
+            <td class="mono" style="font-size:11px">${esc(ev.protocol || ev.event_type || '—')}</td>
+            <td><button class="btn btn-out btn-sm">Voir</button></td>
+          </tr>`;
+        }).join('');
+      }
+    } catch (e) {
+      console.error(e);
+      $('#dash-events').innerHTML = `<tr><td colspan="7"><div class="alert err">Erreur : ${esc(e.message)}</div></td></tr>`;
+    }
+  }
+
+  // click → drawer avec détail brut
+  $('#dash-events').addEventListener('click', async e => {
+    const tr = e.target.closest('tr'); if (!tr || !tr.dataset.id) return;
+    try {
+      const ev = await api.attack(tr.dataset.id);
+      const n = evNormalize(ev);
+      openDrawer(`
+        <div class="drawer-h">
+          <div><div class="card-t">Événement ${esc(n.id.slice(0,12))}…</div><div class="card-sub">${fmt.date(n.timestamp)}</div></div>
+          <button class="drawer-close" onclick="closeDrawer()">✕</button>
         </div>
-      </div>`);
+        <div class="drawer-b">
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <span class="badge gold">${esc(n.honeypot)}</span>
+            <span class="badge ${fmt.sevToClass(n.severity)==='crit'?'red':(fmt.sevToClass(n.severity)==='hi'?'red':'gold')}">${esc(n.severity)}</span>
+            ${n.source_ip ? `<span class="mono">${esc(n.source_ip)}${n.source_port?':'+n.source_port:''}</span>` : ''}
+            ${n.dest_port ? `<span class="tag">→ port ${n.dest_port}</span>` : ''}
+          </div>
+          ${n.command ? `<div class="card-sub mb-12">Commande</div><pre class="pre">${esc(n.command)}</pre>` : ''}
+          ${n.http_path ? `<div class="card-sub mb-12">HTTP</div><pre class="pre">${esc(n.http_method || 'GET')} ${esc(n.http_path)}</pre>` : ''}
+          <div class="card-sub mb-12" style="margin-top:16px">Document brut</div>
+          <pre class="pre" style="max-height:320px;overflow:auto">${esc(JSON.stringify(n.raw, null, 2))}</pre>
+        </div>`);
+    } catch (ex) {
+      openModal(`<div class="alert err">${esc(ex.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
   });
+
+  $('#dash-refresh').addEventListener('click', load);
+  await load();
 })();
 </script>

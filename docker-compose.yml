@@ -199,6 +199,7 @@ services:
       - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@forenhive.local}
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!}
       - FORENSIC_ENGINE_URL=http://forensic-engine:8001
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100:9000
     ports:
       - "8000:8000"
     volumes:

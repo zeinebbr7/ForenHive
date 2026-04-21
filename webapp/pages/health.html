@@ -1,0 +1,92 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">💊 Monitoring</div>
+    <h2 class="page-title">Health <span>check</span></h2>
+    <div class="page-sub">État des services ForenHive et métriques système du R750.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gold btn-sm" id="refresh-now">🔄 Vérifier maintenant</button>
+  </div>
+</div>
+
+<div class="grid-3 mb-20" id="svc-grid"></div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Uptime 24h</div><div class="card-sub">barres de 10 min</div></div>
+    <div id="uptime-bar" style="display:flex;gap:2px;flex-wrap:wrap"></div>
+    <div class="flex items-c" style="justify-content:space-between;margin-top:10px">
+      <div class="text-3 mono" style="font-size:10px">-24h</div><div class="text-3 mono" style="font-size:10px">maintenant</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Métriques système</div><div class="card-sub">Dell R750</div></div>
+    <div class="flex gap-12" style="justify-content:space-around">
+      <div class="text-c"><div class="circ" id="m-cpu"></div><div class="text-3 mono mt-12" style="font-size:11px">CPU</div></div>
+      <div class="text-c"><div class="circ" id="m-ram"></div><div class="text-3 mono mt-12" style="font-size:11px">RAM</div></div>
+      <div class="text-c"><div class="circ" id="m-disk"></div><div class="text-3 mono mt-12" style="font-size:11px">DISK</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-h"><div class="card-t">Logs système</div><div class="card-sub">journalctl -f</div></div>
+  <pre class="pre" style="max-height:260px;background:var(--bg3)">
+<span style="color:var(--teal)">[2026-04-20 14:32:11]</span> <b>elasticsearch</b>: indexed 1245 events
+<span style="color:var(--teal)">[2026-04-20 14:32:12]</span> <b>logstash</b>: pipeline main OK, 0 dropped
+<span style="color:var(--gold)">[2026-04-20 14:32:15]</span> <b>dionaea</b>: log file rotation triggered (320MB)
+<span style="color:var(--teal)">[2026-04-20 14:32:18]</span> <b>backend</b>: POST /api/auth/login 200 12ms
+<span style="color:var(--red2)">[2026-04-20 14:32:20]</span> <b>redis</b>: ECONNREFUSED — service down
+<span style="color:var(--teal)">[2026-04-20 14:32:22]</span> <b>forensic-engine</b>: YARA scan completed 48 files
+<span style="color:var(--teal)">[2026-04-20 14:32:25]</span> <b>ollama</b>: model mistral:7b ready
+<span style="color:var(--gold)">[2026-04-20 14:32:27]</span> <b>filebeat</b>: harvester started for cowrie.json
+<span style="color:var(--teal)">[2026-04-20 14:32:30]</span> <b>backend</b>: GET /api/attacks 200 45ms (31487 events)
+  </pre>
+</div>
+
+<script>
+(function(){
+  const { SERVICES, $ } = FH;
+  const DOT = {up:'up',warn:'warn',down:'down'};
+  const STLABEL = {up:'OPÉRATIONNEL', warn:'DÉGRADÉ', down:'HORS-LIGNE'};
+  const STCLASS = {up:'teal', warn:'gold', down:'red'};
+  function render(){
+    $('#svc-grid').innerHTML = SERVICES.map(s => `
+      <div class="card">
+        <div class="flex items-c" style="justify-content:space-between;margin-bottom:8px">
+          <div class="card-t">${s.name}</div>
+          <span class="badge ${STCLASS[s.status]}"><span class="dot ${DOT[s.status]}"></span>${STLABEL[s.status]}</span>
+        </div>
+        <div class="text-3 mono" style="font-size:11px">v${s.version} · uptime ${s.uptime}</div>
+      </div>`).join('');
+  }
+  render();
+
+  // uptime 24h (144 * 10min bars)
+  const bars = Array.from({length: 144}, (_,i) => {
+    const r = Math.random();
+    const c = r > 0.97 ? 'var(--red2)' : (r > 0.93 ? 'var(--gold)' : 'var(--teal)');
+    return `<div title="-${Math.floor((144-i)*10/60)}h" style="flex:1;height:22px;background:${c};border-radius:1px;min-width:3px"></div>`;
+  });
+  $('#uptime-bar').innerHTML = bars.join('');
+
+  // circular metrics
+  function circ(id, pct, color){
+    const c = 2 * Math.PI * 38;
+    $('#'+id).innerHTML = `
+      <svg width="90" height="90" viewBox="0 0 90 90">
+        <circle class="circ-bg" cx="45" cy="45" r="38"></circle>
+        <circle class="circ-fg" cx="45" cy="45" r="38" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct/100)}"></circle>
+      </svg>
+      <div class="circ-t"><div class="circ-v" style="color:${color}">${pct}%</div><div class="circ-l">used</div></div>`;
+  }
+  circ('m-cpu', 42, 'var(--gold)');
+  circ('m-ram', 68, 'var(--blue2)');
+  circ('m-disk', 31, 'var(--teal)');
+
+  $('#refresh-now').addEventListener('click', () => {
+    const btn = $('#refresh-now'); btn.disabled = true; btn.textContent = '⟳ Vérification…';
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = '🔄 Vérifier maintenant'; render(); }, 800);
+  });
+})();
+</script>

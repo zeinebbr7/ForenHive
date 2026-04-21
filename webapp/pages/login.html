@@ -6,7 +6,7 @@
 <title>ForenHive — Connexion</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=3">
 </head>
 <body>
 <div class="grid-bg"></div>
@@ -19,12 +19,12 @@
       <div class="login-sub">SOC PLATFORM · v1.0</div>
     </div>
 
-    <div id="err" class="alert err hide">Identifiants invalides</div>
+    <div id="err" class="alert err hide"></div>
 
     <form id="login-form">
       <div class="form-g">
         <label class="form-l">Email</label>
-        <input class="form-i" type="email" id="email" placeholder="admin@forenhive.io" required>
+        <input class="form-i" type="email" id="email" placeholder="admin@forenhive.io" value="admin@forenhive.io" required>
       </div>
       <div class="form-g">
         <label class="form-l">Mot de passe</label>
@@ -33,16 +33,11 @@
           <button type="button" class="pwd-toggle" id="pwd-toggle" aria-label="Afficher">👁</button>
         </div>
       </div>
-      <button type="submit" class="btn btn-gold btn-lg" style="width:100%;justify-content:center;margin-top:6px">Connexion →</button>
+      <button type="submit" class="btn btn-gold btn-lg" id="submit-btn" style="width:100%;justify-content:center;margin-top:6px">Connexion →</button>
     </form>
 
-    <div class="quick">
-      <div class="quick-l">⚡ Quick login (démo)</div>
-      <div class="quick-btns">
-        <button class="quick-btn admin"   data-role="admin"   data-email="admin@forenhive.io">Admin</button>
-        <button class="quick-btn analyst" data-role="analyst" data-email="analyst@forenhive.io">Analyst</button>
-        <button class="quick-btn user"    data-role="user"    data-email="user@forenhive.io">User</button>
-      </div>
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;letter-spacing:1px">
+      Admin initial : <span class="mono" style="color:var(--gold)">admin@forenhive.io</span> / <span class="mono" style="color:var(--gold)">ChangeMe!</span>
     </div>
 
     <div style="text-align:center;margin-top:22px;font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;letter-spacing:1px">
@@ -51,36 +46,33 @@
   </div>
 </div>
 
-<script src="../assets/app.js"></script>
+<script src="../assets/api.js?v=3"></script>
+<script src="../assets/app.js?v=3"></script>
 <script>
-  const $ = s => document.querySelector(s);
-  const err = $('#err');
+  const err = document.getElementById('err');
+  const showErr = (msg) => { err.textContent = msg; err.classList.remove('hide'); };
 
-  // toggle password visibility
-  $('#pwd-toggle').addEventListener('click', () => {
-    const i = $('#pwd'); i.type = i.type === 'password' ? 'text' : 'password';
+  document.getElementById('pwd-toggle').addEventListener('click', () => {
+    const i = document.getElementById('pwd'); i.type = i.type === 'password' ? 'text' : 'password';
   });
 
-  // quick login buttons
-  document.querySelectorAll('.quick-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      Auth.login(b.dataset.email, b.dataset.role);
-      location.href = '../app.html';
-    });
-  });
-
-  // form submit (demo: accepts any non-empty credentials, role based on email)
-  $('#login-form').addEventListener('submit', e => {
+  document.getElementById('login-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const email = $('#email').value.trim();
-    const pwd = $('#pwd').value;
-    if (!email || !pwd) { err.classList.remove('hide'); return; }
-    let role = 'user';
-    if (email.startsWith('admin')) role = 'admin';
-    else if (email.startsWith('analyst')) role = 'analyst';
-    Auth.login(email, role);
-    location.href = '../app.html';
+    err.classList.add('hide');
+    const email = document.getElementById('email').value.trim();
+    const pwd   = document.getElementById('pwd').value;
+    const btn   = document.getElementById('submit-btn');
+    btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = '⟳ Connexion…';
+    try {
+      await Auth.login(email, pwd);
+      location.href = '../app.html';
+    } catch (ex) {
+      showErr(ex.message || 'Échec de la connexion');
+      btn.disabled = false; btn.textContent = oldTxt;
+    }
   });
+
+  if (Auth.current()) location.href = '../app.html';
 </script>
 </body>
 </html>
