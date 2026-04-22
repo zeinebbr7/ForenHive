@@ -68,7 +68,12 @@ const api = {
 
   /* ─── attacks ─── */
   attacks(params = {}) {
-    const qs = new URLSearchParams(params).toString();
+    /* backend uses page_size (real max ~120), not limit — page 2 always empty (backend bug) */
+    const p = Object.assign({}, params);
+    if (p.limit) { p.page_size = Math.min(Number(p.limit), 100); delete p.limit; }
+    if (!p.page_size) p.page_size = 100;
+    else p.page_size = Math.min(Number(p.page_size), 100);
+    const qs = new URLSearchParams(p).toString();
     return this._call('/api/attacks' + (qs ? '?' + qs : ''));
   },
   attack(id)    { return this._call('/api/attacks/' + encodeURIComponent(id)); },

@@ -109,22 +109,39 @@ function evField(ev, ...candidates) {
 }
 function evNormalize(ev) {
   const raw = ev.raw || {};
+  const tags = raw.tags || [];
+  const hp = ev.honeypot && ev.honeypot !== 'unknown'
+    ? ev.honeypot
+    : (raw['honeypot.type'] || tags.find(t => ALL_SOURCES.includes(t)) || 'unknown');
   return {
     id: ev.id,
     timestamp: ev.timestamp || raw['@timestamp'],
-    honeypot: ev.honeypot && ev.honeypot !== 'unknown' ? ev.honeypot : (raw['honeypot.type'] || (raw.tags && raw.tags.find(t => ALL_SOURCES.includes(t))) || 'unknown'),
+    honeypot: hp,
     source_ip: ev.source_ip || raw['source.ip'] || raw.src_ip || raw.remote_host,
+    dest_ip: raw['destination.ip'] || raw.dst_ip,
     dest_port: ev.dest_port || raw['destination.port'] || raw.dst_port,
     source_port: ev.source_port || raw['source.port'],
     protocol: ev.protocol || raw['network.transport'] || raw.service || raw.protocol,
     severity: ev.severity || 'low',
     risk_score: ev.risk_score,
-    session_id: ev.session_id || raw.session,
-    username: ev.username || raw.username,
-    password: ev.password || raw.password,
-    command: ev.command || raw.input || raw.command,
+    session_id: ev.session_id || raw['session.id'] || raw.session,
+    /* auth fields (Cowrie) */
+    username: ev.username || raw['user.name'] || raw.username,
+    password: ev.password || raw['user.password'] || raw.password,
+    /* command (Cowrie shell) */
+    command: ev.command || raw['process.command_line'] || raw.input || raw.command,
+    /* event type */
+    event_action: ev.event_type || raw['event.action'] || raw['event.id'],
+    event_category: raw['event.category'],
+    /* human-readable message */
+    message: raw.message || (raw.event && raw.event.original),
+    /* Dionaea-specific */
+    dionaea_msg: raw['dionaea.msg'],
+    dionaea_module: raw['dionaea.module'],
+    /* HTTP (Galah) */
     http_method: ev.http_method || raw['http.request.method'],
     http_path: ev.http_path || raw.url || (raw.http && raw.http.path),
+    user_agent: ev.user_agent || raw['user_agent.original'] || raw['http.request.headers.user-agent'],
     country: (ev.geo && ev.geo.country_iso) || (raw['source.geo'] && raw['source.geo'].country_iso_code) || null,
     raw,
   };
