@@ -17,9 +17,11 @@ const NAV = [
   { id: 'sessions',   label: 'Sessions',     icon: '🖥️', roles: ['admin','analyst','viewer'] },
   { id: 'geomap',     label: 'Carte Géo',    icon: '🌍', roles: ['admin','analyst','viewer'] },
   { id: 'profiling',  label: 'Profiling',    icon: '🧠', roles: ['admin','analyst'] },
+  { id: 'yara',       label: 'YARA Malware', icon: '🦠', roles: ['admin','analyst'] },
   { id: 'reporting',  label: 'Reporting',    icon: '📋', roles: ['admin','analyst','viewer','user'] },
   { id: 'settings',   label: 'Paramètres',   icon: '⚙️', roles: ['admin','analyst','viewer','user'] },
-  { id: 'health',     label: 'Health Check', icon: '💊', roles: ['admin'], section: 'Système' },
+  { id: 'audit',      label: 'Audit',        icon: '📋', roles: ['admin'], section: 'Système' },
+  { id: 'health',     label: 'Health Check', icon: '💊', roles: ['admin'] },
   { id: 'config',     label: 'Configuration',icon: '🔧', roles: ['admin'] },
 ];
 
@@ -149,7 +151,7 @@ function evNormalize(ev) {
 
 /* ───────── ROUTER ───────── */
 const Router = {
-  pages: ['dashboard','stats','timeline','sessions','geomap','profiling','reporting','settings','health','config'],
+  pages: ['dashboard','stats','timeline','sessions','geomap','profiling','yara','reporting','settings','audit','health','config'],
   current: null,
   async go(page, push = true) {
     if (!this.pages.includes(page)) page = 'dashboard';

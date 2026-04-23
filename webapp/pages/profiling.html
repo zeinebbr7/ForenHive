@@ -102,6 +102,16 @@
             <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">DERNIÈRE ACTIVITÉ</div><div class="mono text-m" style="font-size:11px">${stats.last_seen ? fmt.ago(stats.last_seen)+' ago' : '—'}</div></div>
           </div>
 
+          ${(p.mitre_techniques && p.mitre_techniques.length) ? `
+          <div class="card-sub mb-12">MITRE ATT&CK</div>
+          <div class="flex gap-8 mb-20" style="flex-wrap:wrap">
+            ${p.mitre_techniques.map(t => `<span class="badge red" style="font-family:'Share Tech Mono',monospace;font-size:11px">⚔️ ${esc(t)}</span>`).join('')}
+          </div>` : ''}
+
+          ${p.mistral_analysis ? `
+          <div class="card-sub mb-12">🤖 Analyse Ollama / Mistral 7B</div>
+          <pre class="pre" style="max-height:260px;overflow:auto;white-space:pre-wrap;font-size:12px;line-height:1.6;margin-bottom:20px">${esc(p.mistral_analysis)}</pre>` : ''}
+
           <details>
             <summary style="cursor:pointer;color:var(--text2);font-size:12px;font-family:'Share Tech Mono',monospace">Réponse brute</summary>
             <pre class="pre" style="max-height:300px;overflow:auto;margin-top:10px">${esc(JSON.stringify(p, null, 2))}</pre>
