@@ -1,7 +1,7 @@
 # Guide de démonstration ForenHive — Test end-to-end devant l'encadreur
 
-> Ce guide enchaîne tous les tests : nettoyage → injection → enrichissement → MITRE → timeline → chaîne de garde.
-> Durée totale : ~10 minutes. Tous les blocs sont copier-coller.
+> Ce guide enchaîne tous les tests : nettoyage → injection → enrichissement → MITRE → timeline → chaîne de garde → **profiling**.
+> Durée totale : ~12 minutes. Tous les blocs sont copier-coller.
 
 ---
 
@@ -17,6 +17,22 @@ docker exec forenhive-ollama ollama list
 curl -s http://localhost:8080/ -I | head -3
 ```
 Attendu : `mistral:latest 4.4 GB` + Galah répond `HTTP/1.1 200 OK`.
+
+---
+
+## 0.5. IP publiques vs IP privées — ce qu'on attend à chaque étape
+
+Ce guide injecte **3 IP publiques** (attaquants externes simulés) et **3 IP privées RFC 1918** (attaques internes, menaces latérales depuis le LAN). Chaque phase les traite différemment :
+
+| Phase | IP publique (ex. `185.191.171.12`) | IP privée (ex. `10.0.50.25`) |
+|---|---|---|
+| **Logstash GeoIP** | pays + ville résolus | tag `_geoip_lookup_failure` |
+| **Enricher (`ip_enrichment_cache`)** | ligne écrite : geo + AbuseIPDB + IPLocate | **aucune ligne** — classée `corporate_internal`, quotas non consommés |
+| **Risk score** | signaux externes actifs (abuse, distance géo, ASN hébergeur) | signaux latéraux actifs (`private=true`, `network_class=corporate_internal`) |
+| **MITRE mapping** | techniques Delivery / Initial Access | mêmes techniques, contexte mouvement latéral |
+| **Profiling (Mistral)** | profil FBI-BAU complet avec attribution géo/ASN | profil généré, `detective_narrative` souligne l'origine RFC 1918 interne |
+
+La valeur pédagogique : montrer que le moteur **détecte à la fois** les attaques externes (honeypot exposé) **et** les compromissions internes (menace latérale), avec la même pipeline.
 
 ---
 
@@ -68,7 +84,8 @@ curl -s "http://localhost:9200/_cat/indices?v"
 docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
 SELECT COUNT(*) FROM forensic_sessions;
 SELECT COUNT(*) FROM ip_enrichment_cache;
-SELECT COUNT(*) FROM forensic_chain_of_custody;"
+SELECT COUNT(*) FROM forensic_chain_of_custody;
+SELECT COUNT(*) FROM suspect_profiles;"
 ```
 Attendu : aucun index `honeypot-logs-*`, tous les counts à `0`.
 
@@ -145,17 +162,18 @@ Attendu :
 ## 4. Lancer le moteur forensique complet
 
 ```bash
-docker exec forenhive-forensic-engine-dev python engine.py --hours 2 2>&1 | tail -30
+docker exec forenhive-forensic-engine-dev python engine.py --hours 2 2>&1 | tail -40
 ```
 Étapes attendues dans les logs :
-1. **Phase 1 : IP Enrichment** — `Enriched 6 IPs`
+1. **Phase 1 : IP Enrichment** — `Enriched 3 IPs` (les 3 publiques ; privées zappées)
 2. **Phase 2a : YARA** — pas de binaires (injection synthétique)
 3. **Phase 3 : Session Scoring + MITRE** — `MITRE [...] phase=Delivery|Lateral Movement llm=yes` × 18
-4. **Timeline** — `inserted 24 new events`
-5. **IoC** — `extracted 36 distinct IoCs`
-6. **Chain of custody** — `merkle_root=... TSA status=ok ... sealed 18 records in batch #1`
+4. **Phase 4 : Timeline** — `inserted 24 new events`
+5. **Phase 5 : IoC** — `extracted 36 distinct IoCs`
+6. **Phase 6 : Chain of custody** — `merkle_root=... TSA status=ok ... sealed 18 records in batch #1`
+7. **Phase 7 : Profiling** — `Profiling complete — profiled=6, skipped=0`
 
-Durée : ~5-6 min (Mistral prend ~18 s par session).
+Durée : ~7–8 min (Mistral ~18 s par session + ~18 s par profil).
 
 ---
 
@@ -181,7 +199,7 @@ for line in sys.stdin:
 "
 ```
 Attendu :
-- `185.191.171.12` → Pays-Bas, SEMrush, **score 100/100, 1858 reports**
+- `185.191.171.12` → Pays-Bas, SEMrush, **score 100/100, ~1900 reports**
 - `118.25.6.39` → Chine, Tencent Cloud, score 7
 - `45.155.205.233` → Allemagne, Cloud.ru, score 7
 - Les 3 IPs privées **n'apparaissent pas** dans le cache (normal — l'enricher les classe comme `corporate_internal` sans consommer le quota AbuseIPDB).
@@ -252,6 +270,82 @@ Attendu : **`✓ chain intact — 18 records, 1 batch(es)`** (en vert).
 
 ---
 
+## 8.5. Profiling (Phase 7 — Ollama/Mistral, méthodologie FBI-BAU)
+
+Le profiler agrège toutes les sessions par IP source et demande à Mistral de produire un **profil comportemental** structuré (sophistication, objectifs, traits, MITRE, narratif type « détective »).
+
+**Relancer uniquement le profiling** (si besoin de régénérer) :
+```bash
+docker exec forenhive-forensic-engine-dev python engine.py --profile-only --hours 24 2>&1 | tail -25
+```
+Attendu : `Profiling complete — profiled=6, skipped=0` (1 profil par IP distincte). **Durée : ~8 min** (Mistral sur CPU = 80–90 s par IP × 6 IPs).
+
+> ⚠ Le flag `--hours` doit couvrir l'horodatage des sessions. Si les données datent de plus de 24 h, augmentez la fenêtre (ex. `--hours 168` pour une semaine).
+
+**Liste des profils dans PostgreSQL** :
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c "
+SELECT source_ip,
+       risk_score,
+       profile->>'sophistication' AS sophist,
+       profile->>'confidence' AS conf,
+       profile->>'dominant_tactic' AS tactique,
+       profile->>'kill_chain_phase' AS phase,
+       profile->>'disguise_type' AS disguise
+FROM suspect_profiles ORDER BY risk_score DESC;"
+```
+Attendu : **6 lignes** (3 publiques + 3 privées).
+- `185.191.171.12` doit sortir avec le `risk_score` le plus haut (AbuseIPDB 100/100).
+- `sophist` ∈ {`amateur`,`intermediate`,`expert`,`unknown`}.
+- IPs privées → `disguise=none`, `phase` typiquement `lateral_movement`.
+
+**Profil complet pour une IP publique + une IP privée** :
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -t -c \
+  "SELECT source_ip, profile FROM suspect_profiles
+   WHERE source_ip IN ('185.191.171.12','10.0.50.25');" | python3 -c "
+import sys, json
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    ip, _, rest = line.partition('|')
+    try: d = json.loads(rest.strip())
+    except: continue
+    print(f'=== {ip.strip()} ===')
+    print(f'  sophistication    : {d.get(\"sophistication\")} (confiance {d.get(\"confidence\")})')
+    print(f'  objectif primaire : {d.get(\"primary_objective\")}')
+    print(f'  objectif secondaire: {d.get(\"secondary_objective\")}')
+    print(f'  traits            : {d.get(\"behavioral_traits\")}')
+    print(f'  organisé          : {d.get(\"organized_score\")} | escalade={d.get(\"escalation_detected\")}')
+    print(f'  disguise          : {d.get(\"disguise_type\")} (used={d.get(\"disguise_used\")})')
+    print(f'  MITRE             : {d.get(\"mitre_techniques\")}')
+    print(f'  tactique dominante: {d.get(\"dominant_tactic\")} | phase: {d.get(\"kill_chain_phase\")}')
+    print(f'  cas similaires    : {d.get(\"similar_past_cases\")}')
+    print(f'  récit détective   : {d.get(\"detective_narrative\")}')
+    print()
+"
+```
+Attendu :
+- IP publique : `disguise` peut être `none`/`vpn`/`proxy` selon IPLocate ; narratif mentionne le pays et l'ISP.
+- IP privée `10.0.50.25` : narratif souligne l'**origine interne RFC 1918** / hypothèse de poste compromis ou insider.
+
+**Mémoire des profils indexée dans Elasticsearch** :
+```bash
+curl -s "http://localhost:9200/forenhive-suspect-profiles/_count" | python3 -m json.tool
+curl -s "http://localhost:9200/forenhive-suspect-profiles/_search?size=1&pretty" | head -50
+```
+Attendu : `count.value = 6`. Cet index sert de **mémoire à long terme** (le profiler compare chaque nouvelle IP aux cas passés → section « SIMILAR PAST CASES » du prompt).
+
+**Test d'idempotence** (relancer → pas de doublons, mise à jour) :
+```bash
+docker exec forenhive-forensic-engine-dev python engine.py --profile-only 2>&1 | tail -5
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
+  "SELECT COUNT(*) AS profils, COUNT(DISTINCT source_ip) AS ips_uniques FROM suspect_profiles;"
+```
+Attendu : `profils = 6`, `ips_uniques = 6` (aucune duplication grâce à l'index unique sur `source_ip`), et `updated_at` rafraîchi.
+
+---
+
 ## 9. Tableau récapitulatif à montrer à l'encadreur
 
 | Composant | Test | Résultat attendu |
@@ -264,6 +358,7 @@ Attendu : **`✓ chain intact — 18 records, 1 batch(es)`** (en vert).
 | **MITRE (Mistral)** | Techniques ATT&CK + narratif | T1190 (cowrie/galah), T1021.002 (dionaea), `llm=yes` |
 | **Timeline** | Précision ms multi-sources | 24 events, triés sur `ts` |
 | **Chain of custody** | Hash + Merkle + TSA | `verify_coc.py` : chain intact |
+| **Profiler (Mistral)** | 6 profils FBI-BAU générés | `suspect_profiles` = 6 lignes, index ES `forenhive-suspect-profiles` = 6 docs, idempotent |
 
 ---
 
@@ -281,4 +376,11 @@ docker exec forenhive-forensic-engine-dev python engine.py --quota-status
 
 # Scanner seulement YARA (sans brûler quota VT)
 docker exec forenhive-forensic-engine-dev python engine.py --yara-only
+
+# Relancer uniquement le profiler (sans refaire MITRE/CoC)
+docker exec forenhive-forensic-engine-dev python engine.py --profile-only
+
+# Regarder un profil particulier en JSON brut
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
+  "SELECT jsonb_pretty(profile) FROM suspect_profiles WHERE source_ip='185.191.171.12';"
 ```

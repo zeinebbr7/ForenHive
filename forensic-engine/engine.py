@@ -42,6 +42,7 @@ from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
 from chain_of_custody import ChainOfCustody
+from profiler import AttackerProfiler
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -74,6 +75,28 @@ def _build_es_client() -> Elasticsearch:
         [{"host": config.ES_HOST, "port": config.ES_PORT, "scheme": "http"}],
         request_timeout=30
     )
+
+
+def _query_distinct_scored_ips(hours_back: int) -> list:
+    """Get distinct IPs that were scored in the time window from PG."""
+    try:
+        conn = _pg_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
+            cur.execute(
+                """
+                SELECT DISTINCT source_ip FROM forensic_sessions
+                WHERE created_at >= %s AND source_ip IS NOT NULL
+                ORDER BY source_ip
+                """,
+                (since,),
+            )
+            rows = cur.fetchall()
+        conn.close()
+        return [row["source_ip"] for row in rows] if rows else []
+    except Exception as e:
+        log.warning(f"Query distinct scored IPs failed: {e}")
+        return []
 
 
 def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
@@ -491,6 +514,7 @@ class ForensicEngine:
         self.timeline = TimelineBuilder(self.es, _pg_conn)
         self.ioc      = IOCExtractor(_pg_conn)
         self.coc      = ChainOfCustody(_pg_conn)
+        self.profiler = AttackerProfiler(self.es, _pg_conn)
 
     # ── Timeline build ────────────────────────────────────────────────────────
 
@@ -502,6 +526,30 @@ class ForensicEngine:
 
     def run_chain_of_custody(self):
         return self.coc.run()
+
+    # ── Phase 5: Attacker Profiling (LLM-powered) ────────────────────────────
+
+    def run_profiling(self, hours_back: int = 24):
+        log.info("=== Phase 5: Attacker Profiling (LLM-powered) ===")
+        ips = _query_distinct_scored_ips(hours_back)
+        if not ips:
+            log.info("No scored IPs found")
+            return {"profiled": 0, "skipped": 0}
+
+        profiled, skipped = 0, 0
+        for ip in ips:
+            try:
+                result = self.profiler.profile_ip(ip)
+                if result.get("confidence", 0) > 0:
+                    profiled += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                log.error(f"Profiling failed for {ip}: {e}")
+                skipped += 1
+
+        log.info(f"Profiling complete — profiled={profiled}, skipped={skipped}")
+        return {"profiled": profiled, "skipped": skipped}
 
     # ── SMB profile query ─────────────────────────────────────────────────────
 
@@ -793,6 +841,9 @@ class ForensicEngine:
         # Phase 6 — Seal new forensic_sessions (SHA-256 + hash chain + RFC 3161)
         coc_stats = self.run_chain_of_custody()
 
+        # Phase 7 — Attacker profiling (LLM-powered behavioral analysis)
+        profile_stats = self.run_profiling(hours_back)
+
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
         log.info(f"{'='*60}")
@@ -822,6 +873,8 @@ class ForensicEngine:
         log.info(f"  Custody sealed : {coc_stats['sealed']} session(s), "
                  f"batch=#{coc_stats.get('batch_id')}, "
                  f"TSA={coc_stats.get('tsa_status')}")
+        log.info(f"  Profiles built : {profile_stats.get('profiled', 0)} "
+                 f"(skipped: {profile_stats.get('skipped', 0)})")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
@@ -836,6 +889,7 @@ def main():
     parser.add_argument("--timeline-only", action="store_true", help="Build per-IP timeline only")
     parser.add_argument("--ioc-only",      action="store_true", help="Extract IoCs from existing timeline only")
     parser.add_argument("--coc-only",      action="store_true", help="Seal unsealed sessions (chain of custody) only")
+    parser.add_argument("--profile-only",  action="store_true", help="Attacker profiling (LLM) only")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
     parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
     parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
@@ -873,6 +927,8 @@ def main():
         engine.run_ioc_extraction(args.hours)
     elif args.coc_only:
         engine.run_chain_of_custody()
+    elif args.profile_only:
+        engine.run_profiling(args.hours)
     else:
         engine.run_full_analysis(args.hours)
 
