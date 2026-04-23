@@ -24,7 +24,11 @@
     </div>
     <div class="flex items-c gap-8" style="margin-bottom:4px">
       <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(250,185,5,.8)" stroke="#fab905" stroke-width="1.5"/></svg>
-      Cowrie / Galah
+      Cowrie
+    </div>
+    <div class="flex items-c gap-8" style="margin-bottom:4px">
+      <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(180,100,255,.8)" stroke="#b464ff" stroke-width="1.5"/></svg>
+      Galah
     </div>
     <div class="flex items-c gap-8">
       <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(80,160,255,.8)" stroke="#50a0ff" stroke-width="1.5"/></svg>
@@ -54,6 +58,9 @@
     zoom: 2,
     zoomControl: true,
     attributionControl: false,
+    worldCopyJump: false,
+    maxBounds: [[-90, -200], [90, 200]],
+    maxBoundsViscosity: 0.8,
   });
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -64,37 +71,15 @@
   /* Force Leaflet to recalculate tile coverage after the div is fully rendered */
   setTimeout(() => map.invalidateSize(), 100);
 
-  /* ── Fetch geo events: use date_from to get today's data, fetch last pages
-       (ASC sort → newest events are on last pages, avoiding page 2 bug) ── */
+  /* ── Fetch geo events by querying each honeypot type directly.
+       This bypasses the Zeek flood: cowrie/dionaea/galah events are always
+       on page 1 of their own filtered results regardless of Zeek volume. ── */
   async function fetchGeoEvents() {
-    const dfStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
-
-    /* Step 1: probe for total count */
-    let total = 0;
-    try {
-      const probe = await api.attacks({ page_size: 100, page: 1, date_from: dfStr });
-      total = probe.total || 0;
-    } catch(e) { /* fall back to unfiltered */ }
-
-    let pages;
-    if (total > 100) {
-      /* Compute the last 10 pages (most recent events in ASC window) */
-      const lastPage = Math.ceil(total / 100);
-      pages = [];
-      for (let p = Math.max(1, lastPage - 9); p <= lastPage; p++) {
-        if (p !== 2) pages.push(p);  // skip page 2 backend bug
-      }
-    } else {
-      /* Fallback: first few pages without date filter (DESC) */
-      pages = [1, 3, 4, 5, 6, 7];
-    }
-
-    const results = await Promise.allSettled(
-      pages.map(p => total > 100
-        ? api.attacks({ page_size: 100, page: p, date_from: dfStr })
-        : api.attacks({ page_size: 100, page: p })
-      )
-    );
+    const results = await Promise.allSettled([
+      api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie'  }),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'galah'   }),
+    ]);
     const seen = new Set();
     const all = [];
     for (const r of results) {
@@ -200,7 +185,9 @@
     });
 
     if (bounds.length) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 7 });
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 7, minZoom: 2 });
+      /* Prevent world-wrap repeating at low zoom */
+      if (map.getZoom() < 2) map.setZoom(2);
     }
 
     /* ── Country table ── */

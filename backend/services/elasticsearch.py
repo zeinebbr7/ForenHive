@@ -217,14 +217,7 @@ class ESClient:
             filt.append({"term": {"severity": f.severity.value}})
         if f.honeypot:
             filt.append(
-                {
-                    "bool": {
-                        "should": [
-                            {"term": {"honeypot": f.honeypot.value}},
-                            {"wildcard": {"_index": f"*{f.honeypot.value}*"}},
-                        ]
-                    }
-                }
+                {"term": {"honeypot.type.keyword": f.honeypot.value}}
             )
         if f.date_from or f.date_to:
             rng: Dict[str, str] = {}

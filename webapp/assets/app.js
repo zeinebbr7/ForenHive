@@ -140,9 +140,9 @@ function evNormalize(ev) {
     dionaea_module: raw['dionaea.module'],
     /* HTTP (Galah) */
     http_method: ev.http_method || raw['http.request.method'],
-    http_path: ev.http_path || raw.url || (raw.http && raw.http.path),
-    user_agent: ev.user_agent || raw['user_agent.original'] || raw['http.request.headers.user-agent'],
-    country: (ev.geo && ev.geo.country_iso) || (raw['source.geo'] && raw['source.geo'].country_iso_code) || null,
+    http_path: ev.http_path || raw['http.request.uri'] || raw['http.request.path'] || raw.url || (raw.http && raw.http.path),
+    user_agent: ev.user_agent || raw['http.request.user_agent'] || raw['user_agent.original'] || raw['http.request.headers.user-agent'],
+    country: (ev.geo && ev.geo.country_iso) || (raw['source.geo'] && (raw['source.geo'].country_iso_code || (raw['source.geo'].geo && raw['source.geo'].geo.country_iso_code))) || null,
     raw,
   };
 }

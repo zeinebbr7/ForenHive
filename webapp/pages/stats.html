@@ -1,122 +1,378 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">📈 Analytics</div>
+    <div class="section-tag" style="margin-bottom:8px">📊 Analytics</div>
     <h2 class="page-title">Statistiques <span>détaillées</span></h2>
-    <div class="page-sub">Données issues d'Elasticsearch (<span id="stats-total">—</span> événements).</div>
+    <div class="page-sub">Données issues d'Elasticsearch · <span id="stats-total">—</span> événements au total.</div>
+  </div>
+  <div class="page-actions">
+    <span id="stats-badge" class="badge blue" style="font-size:12px">Chargement…</span>
   </div>
 </div>
 
+<!-- Row 1 : Évolution horaire + Répartition source -->
 <div class="grid-2 mb-20">
   <div class="card">
-    <div class="card-h"><div class="card-t">Évolution horaire</div><div class="card-sub">24 dernières heures</div></div>
-    <div id="hourly-bars" style="display:flex;align-items:flex-end;gap:3px;min-height:160px;margin-top:10px"><div class="alert info">Chargement…</div></div>
-    <div id="hourly-legend" class="flex gap-12 mt-12" style="flex-wrap:wrap;justify-content:center;font-size:11px"></div>
+    <div class="card-h">
+      <div class="card-t">Évolution horaire</div>
+      <div class="card-sub">24 dernières heures</div>
+    </div>
+    <div style="position:relative;height:220px;margin-top:12px">
+      <canvas id="chart-hourly"></canvas>
+    </div>
   </div>
   <div class="card">
-    <div class="card-h"><div class="card-t">Répartition par source</div><div class="card-sub">honeypots + capteurs</div></div>
-    <div id="stats-split"><div class="alert info">Chargement…</div></div>
+    <div class="card-h">
+      <div class="card-t">Répartition par source</div>
+      <div class="card-sub">Honeypots + capteurs</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:24px;margin-top:12px">
+      <div style="position:relative;width:180px;height:180px;flex-shrink:0">
+        <canvas id="chart-split"></canvas>
+      </div>
+      <div id="split-legend" style="flex:1;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
   </div>
 </div>
 
+<!-- Row 2 : Top IPs + Top ports -->
 <div class="grid-2 mb-20">
   <div class="card">
-    <div class="card-h"><div class="card-t">Top 10 IPs sources</div><div class="card-sub">sur 500 derniers événements</div></div>
-    <table class="tbl"><thead><tr><th>#</th><th>IP</th><th>Hits</th><th>Pays</th></tr></thead><tbody id="top-ips"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
+    <div class="card-h">
+      <div class="card-t">Top IPs sources</div>
+      <div class="card-sub" id="ips-sub">Cowrie · Dionaea · Galah</div>
+    </div>
+    <div style="position:relative;height:220px;margin-top:12px">
+      <canvas id="chart-ips"></canvas>
+    </div>
   </div>
   <div class="card">
-    <div class="card-h"><div class="card-t">Top ports ciblés</div><div class="card-sub">destination</div></div>
-    <table class="tbl"><thead><tr><th>Port</th><th>Protocole</th><th>Hits</th><th>%</th></tr></thead><tbody id="top-ports"><tr><td colspan="4">Chargement…</td></tr></tbody></table>
+    <div class="card-h">
+      <div class="card-t">Top ports ciblés</div>
+      <div class="card-sub">ports ciblés · Cowrie · Dionaea · Galah</div>
+    </div>
+    <div style="position:relative;height:220px;margin-top:12px">
+      <canvas id="chart-ports"></canvas>
+    </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-h"><div class="card-t">Sévérité</div><div class="card-sub">classification moteur forensique</div></div>
-  <div id="sev-breakdown" class="flex gap-12 mt-12" style="flex-wrap:wrap"><div class="alert info">Chargement…</div></div>
+<!-- Row 3 : Sévérité -->
+<div class="card mb-20">
+  <div class="card-h">
+    <div class="card-t">Distribution par sévérité</div>
+    <div class="card-sub">classification moteur forensique</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:24px;margin-top:12px;flex-wrap:wrap">
+    <div style="position:relative;width:160px;height:160px;flex-shrink:0">
+      <canvas id="chart-sev"></canvas>
+    </div>
+    <div id="sev-kpis" style="display:flex;gap:12px;flex-wrap:wrap;flex:1"></div>
+  </div>
 </div>
 
 <script>
 (async function(){
   const { SOURCE_META, flag, fmt, esc, $, evNormalize } = FH;
 
+  /* ── Chart.js global defaults (dark theme) ── */
+  Chart.defaults.color = '#8892a4';
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+  Chart.defaults.font.family = "'Share Tech Mono', monospace";
+  Chart.defaults.font.size = 11;
+
+  const COLORS = {
+    cowrie:   '#fab905',
+    dionaea:  '#ff5050',
+    galah:    '#b464ff',
+    zeek:     '#50a0ff',
+    critical: '#ff5050',
+    high:     '#ff7070',
+    medium:   '#fab905',
+    low:      '#2dd4bf',
+  };
+
+  /* ── helper: destroy old chart if canvas reused ── */
+  function mkChart(id, cfg) {
+    const old = Chart.getChart(id);
+    if (old) old.destroy();
+    return new Chart(document.getElementById(id), cfg);
+  }
+
+  /* ── filter public IPs (exclude RFC-1918 / link-local) ── */
+  function isPublic(ip) {
+    if (!ip) return false;
+    if (ip.includes(':')) return false; // IPv6 link-local
+    const [a, b] = ip.split('.').map(Number);
+    if (a === 10) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 127) return false;
+    return true;
+  }
+
+  const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
+
   try {
-    const [hourly, split, sample] = await Promise.all([
+    /* ── Fetch honeypot events only (3 parallel filtered requests) ── */
+    const [hourly, split, ...hpResults] = await Promise.all([
       api.statsHourly(),
       api.geoSplit(),
-      api.attacks({ limit: 500 }),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie'  }),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'galah'   }),
     ]);
 
-    const total = (sample && sample.total) || 0;
-    $('#stats-total').textContent = total.toLocaleString('fr-FR');
+    /* ── Totals per honeypot ── */
+    const hpTotals = {
+      cowrie:  hpResults[0]?.total || 0,
+      dionaea: hpResults[1]?.total || 0,
+      galah:   hpResults[2]?.total || 0,
+    };
+    const grandTotal = Object.values(hpTotals).reduce((a,b) => a+b, 0);
+    $('#stats-total').textContent = grandTotal.toLocaleString('fr-FR');
+    $('#stats-badge').textContent = `${grandTotal.toLocaleString('fr-FR')} événements honeypots`;
 
+    /* ── Flatten all honeypot events ── */
+    const seen = new Set();
+    const allItems = [];
+    for (const r of hpResults) {
+      for (const item of (r?.items || [])) {
+        if (!seen.has(item.id)) { seen.add(item.id); allItems.push(evNormalize(item)); }
+      }
+    }
+
+    /* ════════════════════════════════════════════
+       1. ÉVOLUTION HORAIRE — honeypots only
+    ════════════════════════════════════════════ */
     const hourlyArr = Array.isArray(hourly) ? hourly : [];
-    const last24 = hourlyArr.slice(-24);
-    const max = Math.max(...last24.map(h => h.count), 1);
-    const sources = Array.from(new Set(last24.flatMap(h => Object.keys(h.by_honeypot || {}))));
-    $('#hourly-bars').innerHTML = last24.map(h => {
-      const segs = sources.map(src => {
-        const v = (h.by_honeypot || {})[src] || 0;
-        const hpx = (v / max) * 150;
-        const meta = SOURCE_META[src] || { color: 'var(--text3)' };
-        return v ? `<div style="background:${meta.color};height:${hpx}px" title="${src}: ${v}"></div>` : '';
-      }).join('');
-      return `<div style="flex:1;display:flex;flex-direction:column-reverse;min-width:10px" title="${fmt.time(h.hour)} · ${h.count}">${segs}</div>`;
-    }).join('') || '<div class="alert info">Aucune donnée horaire.</div>';
-    $('#hourly-legend').innerHTML = sources.map(src => {
-      const meta = SOURCE_META[src] || { label: src, icon: '❓', color: 'var(--text3)' };
-      return `<div class="flex items-c gap-8"><span style="width:10px;height:10px;background:${meta.color};border-radius:2px"></span>${meta.icon} ${meta.label}</div>`;
-    }).join('');
-
-    const splitArr = (split && split.split) || [];
-    $('#stats-split').innerHTML = splitArr.map(x => {
-      const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', color: 'var(--text3)', kind: '?' };
-      return `<div class="hbar">
-        <div class="hbar-l">${meta.icon} ${meta.label}<span class="text-3 mono" style="font-size:10px;margin-left:4px">${meta.kind==='sensor'?'NDR':'HP'}</span></div>
-        <div class="hbar-t"><div class="hbar-f" style="width:${x.percent}%;background:${meta.color}"></div></div>
-        <div class="hbar-v">${x.percent}%</div>
-      </div>`;
-    }).join('') || '<div class="alert info">Aucune source.</div>';
-
-    const items = (sample && sample.items) || [];
-    const byIp = {}; const byPort = {}; const bySev = { critical:0, high:0, medium:0, low:0 };
-    items.forEach(raw => {
-      const n = evNormalize(raw);
-      if (n.source_ip) {
-        byIp[n.source_ip] = byIp[n.source_ip] || { count: 0, country: n.country };
-        byIp[n.source_ip].count++;
-        if (n.country && !byIp[n.source_ip].country) byIp[n.source_ip].country = n.country;
-      }
-      if (n.dest_port) {
-        byPort[n.dest_port] = byPort[n.dest_port] || { count: 0, proto: n.protocol };
-        byPort[n.dest_port].count++;
-      }
-      const sev = (n.severity || 'low').toLowerCase();
-      if (sev in bySev) bySev[sev]++;
+    const last24    = hourlyArr.slice(-24);
+    const labels    = last24.map(h => {
+      const d = new Date(h.hour);
+      return d.getUTCHours().toString().padStart(2,'0') + 'h';
     });
-    const topIps = Object.entries(byIp).sort((a,b)=>b[1].count-a[1].count).slice(0,10);
-    $('#top-ips').innerHTML = topIps.length ? topIps.map(([ip,d],i) => `
-      <tr><td class="mono">${i+1}</td><td class="mono">${esc(ip)}</td><td><b>${d.count}</b></td><td>${d.country ? flag(d.country)+' '+d.country : '—'}</td></tr>
-    `).join('') : '<tr><td colspan="4"><div class="alert info">Aucune IP source.</div></td></tr>';
 
-    const topPorts = Object.entries(byPort).sort((a,b)=>b[1].count-a[1].count).slice(0,10);
-    const totalPorts = topPorts.reduce((s,[_,d])=>s+d.count,0) || 1;
-    $('#top-ports').innerHTML = topPorts.length ? topPorts.map(([port,d]) => `
-      <tr><td class="mono"><b>${port}</b></td><td class="mono" style="font-size:11px">${esc(d.proto || '—')}</td><td>${d.count}</td><td class="mono">${((d.count/totalPorts)*100).toFixed(1)}%</td></tr>
-    `).join('') : '<tr><td colspan="4"><div class="alert info">Aucun port.</div></td></tr>';
+    mkChart('chart-hourly', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: HONEYPOTS.map(src => ({
+          label: SOURCE_META[src]?.label || src,
+          data: last24.map(h => (h.by_honeypot || {})[src] || 0),
+          backgroundColor: COLORS[src] + 'cc',
+          borderColor: COLORS[src],
+          borderWidth: 1,
+          borderRadius: 2,
+        })),
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } },
+          tooltip: { mode: 'index', intersect: false },
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0 } },
+          y: { stacked: true, beginAtZero: true,
+               ticks: { precision: 0 },
+               grid: { color: 'rgba(255,255,255,0.05)' } },
+        },
+      },
+    });
 
-    const totalSev = Object.values(bySev).reduce((a,b)=>a+b,0) || 1;
-    const sevMeta = { critical:{c:'red2',l:'Critique'}, high:{c:'red2',l:'Élevé'}, medium:{c:'gold',l:'Moyen'}, low:{c:'teal',l:'Faible'} };
-    $('#sev-breakdown').innerHTML = Object.entries(bySev).map(([k,v]) => {
-      const m = sevMeta[k];
-      return `<div class="card" style="padding:14px;flex:1;min-width:140px">
-        <div class="text-3 mono" style="font-size:10px">${m.l.toUpperCase()}</div>
-        <div class="kpi-val" style="font-size:28px;color:var(--${m.c})">${v}</div>
-        <div class="text-3 mono" style="font-size:11px">${((v/totalSev)*100).toFixed(1)}%</div>
+    /* ════════════════════════════════════════════
+       2. RÉPARTITION SOURCE — honeypots only
+    ════════════════════════════════════════════ */
+    const splitArr = (split?.split || [])
+      .filter(x => HONEYPOTS.includes(x.honeypot))
+      .sort((a,b) => b.count - a.count);
+
+    /* Recalculate percent excluding Zeek */
+    const hpTotal = splitArr.reduce((s,x) => s + x.count, 0) || 1;
+    splitArr.forEach(x => { x.hpPercent = ((x.count / hpTotal) * 100).toFixed(1); });
+
+    const splitColors = splitArr.map(x => COLORS[x.honeypot] || '#8892a4');
+
+    mkChart('chart-split', {
+      type: 'doughnut',
+      data: {
+        labels: splitArr.map(x => SOURCE_META[x.honeypot]?.label || x.honeypot),
+        datasets: [{ data: splitArr.map(x => x.count),
+                     backgroundColor: splitColors.map(c => c+'cc'),
+                     borderColor: splitColors, borderWidth: 2, hoverOffset: 6 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '68%',
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()} (${splitArr[ctx.dataIndex]?.hpPercent}%)` }
+        }},
+      },
+    });
+
+    /* Custom legend */
+    $('#split-legend').innerHTML = splitArr.map((x,i) => {
+      const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓' };
+      return `<div style="display:flex;align-items:center;gap:10px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${splitColors[i]};flex-shrink:0"></span>
+        <span style="flex:1;font-size:12px">${meta.icon} <b>${meta.label}</b></span>
+        <span class="mono" style="font-size:12px;color:var(--text2)">${x.hpPercent}%</span>
       </div>`;
     }).join('');
 
-  } catch (e) {
-    console.error(e);
-    $('#hourly-bars').innerHTML = `<div class="alert err">Erreur : ${esc(e.message)}</div>`;
+    /* ════════════════════════════════════════════
+       3. TOP IPs SOURCES — honeypot attackers
+    ════════════════════════════════════════════ */
+    const byIp = {};
+    allItems.forEach(n => {
+      const ip = n.source_ip;
+      if (!ip) return;
+      if (!byIp[ip]) byIp[ip] = { count: 0, country: n.country, hp: n.honeypot };
+      byIp[ip].count++;
+      if (!byIp[ip].country && n.country) byIp[ip].country = n.country;
+    });
+
+    const topIps = Object.entries(byIp).sort((a,b) => b[1].count - a[1].count).slice(0, 10);
+
+    if (topIps.length) {
+      const ipLabels = topIps.map(([ip, d]) => {
+        const f = d.country ? flag(d.country) + ' ' : '';
+        return f + ip;
+      });
+      const ipColors = topIps.map(([,d]) => COLORS[d.hp] || '#8892a4');
+
+      mkChart('chart-ips', {
+        type: 'bar',
+        data: {
+          labels: ipLabels,
+          datasets: [{
+            label: 'Événements',
+            data: topIps.map(([,d]) => d.count),
+            backgroundColor: ipColors.map(c => c + 'bb'),
+            borderColor: ipColors,
+            borderWidth: 1,
+            borderRadius: 3,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: {
+              label: ctx => ` ${ctx.raw} événement${ctx.raw > 1 ? 's' : ''}`,
+              title: ctx => topIps[ctx[0].dataIndex][0],
+            }},
+          },
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 },
+                 grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { grid: { display: false },
+                 ticks: { font: { size: 11 } } },
+          },
+        },
+      });
+    } else {
+      document.getElementById('chart-ips').parentElement.innerHTML =
+        '<div class="alert info" style="margin-top:12px">Aucune IP source dans les événements honeypots récents.</div>';
+    }
+
+    /* ════════════════════════════════════════════
+       4. TOP PORTS — horizontal bar
+    ════════════════════════════════════════════ */
+    const byPort = {};
+    allItems.forEach(n => {
+      if (!n.dest_port) return;
+      const k = `${n.dest_port}`;
+      if (!byPort[k]) byPort[k] = { count: 0, proto: n.protocol || '—', hp: n.honeypot };
+      byPort[k].count++;
+    });
+
+    const topPorts = Object.entries(byPort).sort((a,b) => b[1].count - a[1].count).slice(0, 10);
+    const portLabels = topPorts.map(([p, d]) => `${p}/${d.proto}`);
+    const portColors = topPorts.map(([,d]) => COLORS[d.hp] || '#50a0ff');
+
+    mkChart('chart-ports', {
+      type: 'bar',
+      data: {
+        labels: portLabels,
+        datasets: [{
+          label: 'Hits',
+          data: topPorts.map(([,d]) => d.count),
+          backgroundColor: portColors.map(c => c + 'bb'),
+          borderColor: portColors,
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.raw} hits` } },
+        },
+        scales: {
+          x: { beginAtZero: true, ticks: { precision: 0 },
+               grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { grid: { display: false } },
+        },
+      },
+    });
+
+    /* ════════════════════════════════════════════
+       5. SÉVÉRITÉ — doughnut + KPIs
+    ════════════════════════════════════════════ */
+    const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
+    allItems.forEach(n => {
+      const s = (n.severity || 'low').toLowerCase();
+      if (s in bySev) bySev[s]++;
+    });
+
+    const sevOrder  = ['critical','high','medium','low'];
+    const sevLabels = ['Critique','Élevé','Moyen','Faible'];
+    const sevData   = sevOrder.map(k => bySev[k]);
+    const sevColors = sevOrder.map(k => COLORS[k]);
+    const totalSev  = sevData.reduce((a,b) => a+b, 0) || 1;
+
+    mkChart('chart-sev', {
+      type: 'doughnut',
+      data: {
+        labels: sevLabels,
+        datasets: [{ data: sevData, backgroundColor: sevColors.map(c => c+'cc'),
+                     borderColor: sevColors, borderWidth: 2, hoverOffset: 6 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '65%',
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    const sevMeta = { critical: '⛔', high: '🔴', medium: '🟡', low: '🟢' };
+    $('#sev-kpis').innerHTML = sevOrder.map((k, i) => `
+      <div class="card" style="padding:14px 18px;flex:1;min-width:120px;border-color:${sevColors[i]}33">
+        <div style="font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">
+          ${sevMeta[k]} ${sevLabels[i].toUpperCase()}
+        </div>
+        <div style="font-size:32px;font-weight:700;color:${sevColors[i]};font-family:'Rajdhani',sans-serif">
+          ${bySev[k]}
+        </div>
+        <div style="font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-top:2px">
+          ${((bySev[k]/totalSev)*100).toFixed(1)}%
+        </div>
+      </div>`).join('');
+
+  } catch(e) {
+    console.error('Stats error:', e);
+    $('#stats-badge').textContent = 'Erreur';
+    $('#stats-badge').className = 'badge red';
+    document.querySelector('.page-sub').insertAdjacentHTML('afterend',
+      `<div class="alert err" style="margin-top:12px">${esc(e.message)}</div>`);
   }
+
+  /* cleanup charts when page changes */
+  window.__pageCleanup = () => {
+    ['chart-hourly','chart-split','chart-ips','chart-ports','chart-sev'].forEach(id => {
+      const c = Chart.getChart(id); if (c) c.destroy();
+    });
+  };
 })();
 </script>

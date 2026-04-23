@@ -61,7 +61,7 @@
       const hourlyArr = Array.isArray(hourly) ? hourly : (hourly.items || []);
       const last = hourlyArr[hourlyArr.length - 1];
       $('#kpi-hour').textContent = last ? fmt.num(last.count) : '0';
-      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : 'pas d'activité récente';
+      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : "pas d'activité récente";
 
       const splitArr = (split && split.split) || [];
       const hpActive = splitArr.filter(x => HONEYPOTS.includes(x.honeypot) && x.count > 0);
@@ -110,7 +110,7 @@
             <td class="mono">${esc(ev.source_ip || '—')}</td>
             <td class="mono">${ev.dest_port || '—'}</td>
             <td><span class="score ${sevCls}">${esc(ev.severity || 'low')}</span></td>
-            <td class="mono" style="font-size:11px">${esc(ev.protocol || ev.event_type || '—')}</td>
+            <td class="mono" style="font-size:11px">${esc(ev.protocol || ev.event_action || '—')}</td>
             <td><button class="btn btn-out btn-sm">Voir</button></td>
           </tr>`;
         }).join('');
