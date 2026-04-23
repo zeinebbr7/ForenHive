@@ -9,15 +9,28 @@ const API_BASE = (location.hostname === 'localhost' || location.hostname === '12
 const TOKEN_KEY = 'forenhive.token';
 const USER_KEY  = 'forenhive.user';
 
+/* ═════════ AUTH BYPASS — fake admin user injected on load ═════════ */
+const FAKE_USER = {
+  id: '00000000-0000-0000-0000-000000000000',
+  email: 'admin@forenhive.io',
+  full_name: 'Admin (auth disabled)',
+  role: 'admin',
+  is_active: true,
+  created_at: new Date().toISOString(),
+};
+if (!localStorage.getItem(USER_KEY)) {
+  localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER));
+}
+
 const api = {
   base: API_BASE,
   token() { return localStorage.getItem(TOKEN_KEY); },
-  user()  { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch(e){ return null; } },
+  user()  { try { return JSON.parse(localStorage.getItem(USER_KEY)) || FAKE_USER; } catch(e){ return FAKE_USER; } },
   setSession(token, user) {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     if (user)  localStorage.setItem(USER_KEY, JSON.stringify(user));
   },
-  clear() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); },
+  clear() { /* auth disabled — keep fake user */ localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER)); },
 
   async _call(path, opts = {}) {
     const headers = Object.assign({}, opts.headers || {});
@@ -29,9 +42,7 @@ const api = {
     }
     const res = await fetch(this.base + path, Object.assign({}, opts, { headers }));
     if (res.status === 401) {
-      this.clear();
-      const onLogin = /login\.html$/.test(location.pathname);
-      if (!onLogin) location.href = (location.pathname.includes('/pages/') ? '' : 'pages/') + 'login.html';
+      /* auth disabled — ignore 401, do not redirect */
       throw new Error('unauthorized');
     }
     const ct = res.headers.get('content-type') || '';
@@ -44,25 +55,12 @@ const api = {
     return data;
   },
 
-  /* ─── auth ─── */
+  /* ─── auth (BYPASSED — always returns fake admin) ─── */
   async login(email, password) {
-    const body = new URLSearchParams({ username: email, password });
-    const res = await fetch(this.base + '/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    if (!res.ok) {
-      const d = await res.json().catch(() => null);
-      throw new Error((d && (d.detail || d.title)) || 'Identifiants invalides');
-    }
-    const data = await res.json();
-    this.setSession(data.access_token, null);
-    const me = await this.me();
-    this.setSession(null, me);
-    return me;
+    this.setSession('fake-token-auth-disabled', FAKE_USER);
+    return FAKE_USER;
   },
-  me()      { return this._call('/api/auth/me'); },
+  me()      { return Promise.resolve(FAKE_USER); },
   refresh() { return this._call('/api/auth/refresh', { method: 'POST' }); },
   users()   { return this._call('/api/auth/users'); },
 
