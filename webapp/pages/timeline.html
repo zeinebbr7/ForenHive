@@ -1,0 +1,216 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">⏱️ Timeline</div>
+    <h2 class="page-title">Attaques <span>en direct</span></h2>
+    <div class="page-sub">Flux live · rafraîchissement auto toutes les 5s.</div>
+  </div>
+  <div class="page-actions" style="gap:8px">
+    <select class="form-s" id="f-source" style="min-width:130px">
+      <option value="">Toutes les sources</option>
+      <option value="cowrie">🐚 Cowrie</option>
+      <option value="dionaea">🕷️ Dionaea</option>
+      <option value="galah">🦜 Galah</option>
+      <option value="zeek">🔍 Zeek</option>
+    </select>
+    <select class="form-s" id="f-sev" style="min-width:120px">
+      <option value="">Toutes sévérités</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <button class="btn btn-gh btn-sm" id="tl-pause">⏸ Pause</button>
+  </div>
+</div>
+
+<div id="tl-stats" class="flex gap-8 mb-16" style="flex-wrap:wrap"></div>
+
+<div class="card" style="padding:0;overflow:hidden">
+  <div id="tl-feed" style="max-height:calc(100vh - 260px);overflow-y:auto"></div>
+</div>
+
+<style>
+.ev-row {
+  display: grid;
+  grid-template-columns: 56px 100px 140px 1fr auto;
+  align-items: start;
+  gap: 0 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  transition: background .15s;
+}
+.ev-row:hover { background: rgba(255,255,255,.03); }
+.ev-row.ev-new { animation: ev-flash .6s ease; }
+@keyframes ev-flash { from { background: rgba(250,185,5,.12); } to { background: transparent; } }
+.ev-time { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text3); padding-top:3px; }
+.ev-src  { display:flex; align-items:center; gap:5px; padding-top:2px; }
+.ev-src-icon { font-size:14px; }
+.ev-src-label { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text2); }
+.ev-ip   { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text1); padding-top:2px; }
+.ev-detail { min-width:0; }
+.ev-action { font-size: 13px; font-weight: 600; color: var(--text1); margin-bottom: 3px; }
+.ev-cmd  { font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--gold); background: rgba(250,185,5,.08); border-left: 2px solid var(--gold); padding: 3px 8px; margin-top: 4px; border-radius: 0 4px 4px 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ev-cred { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--red2); background: rgba(255,80,80,.07); border-left: 2px solid var(--red2); padding: 2px 8px; margin-top: 4px; border-radius: 0 4px 4px 0; }
+.ev-meta { font-size: 11px; color: var(--text3); margin-top:3px; font-family: 'Share Tech Mono', monospace; }
+.ev-badges { display:flex; gap:4px; flex-direction: column; align-items: flex-end; padding-top:2px; white-space:nowrap; }
+.tl-empty { padding: 48px; text-align: center; color: var(--text3); font-family: 'Share Tech Mono', monospace; font-size: 13px; }
+</style>
+
+<script>
+(async function(){
+  const { SOURCE_META, fmt, esc, $, $$, evNormalize } = FH;
+  let paused = false;
+  let timer = null;
+  let seen = new Set();
+
+  const SEV_COLOR = { critical:'red', high:'red', medium:'gold', low:'teal' };
+  const SEV_LABEL = { critical:'⛔ CRIT', high:'🔴 HIGH', medium:'🟡 MED', low:'🟢 LOW' };
+
+  function evActionLabel(n) {
+    const a = (n.event_action || '').toLowerCase();
+    if (a.includes('login.success'))
+      return `✅ Login réussi`;
+    if (a.includes('login.fail') || a.includes('auth.fail'))
+      return `❌ Échec auth`;
+    if (a.includes('login.attempt') || a.includes('login'))
+      return `🔑 Tentative login`;
+    if (a.includes('command.input') || a.includes('cmd'))
+      return `💻 Commande shell`;
+    if (a.includes('session.connect') || a.includes('connect'))
+      return `🔌 Connexion`;
+    if (a.includes('session.closed') || a.includes('closed'))
+      return `🔒 Session fermée`;
+    if (a.includes('file') || a.includes('malware'))
+      return `☠️ Fichier malveillant`;
+    if (n.http_method)
+      return `🌐 ${esc(n.http_method)}`;
+    if (n.dionaea_module)
+      return `🕷️ ${esc(n.dionaea_module)}`;
+    if (n.honeypot === 'zeek') {
+      const svc = n.protocol ? esc(n.protocol.toUpperCase()) : 'TCP';
+      return `🔍 Trafic ${svc}`;
+    }
+    if (n.message) return esc(n.message.slice(0, 70));
+    return `📡 Événement`;
+  }
+
+  function evDetail(n) {
+    const parts = [];
+
+    /* Cowrie credentials */
+    if (n.username || n.password) {
+      parts.push(`<div class="ev-cred">👤 ${esc(n.username || '?')} / 🔑 ${esc(n.password || '?')}</div>`);
+    }
+
+    /* Shell command */
+    if (n.command) {
+      parts.push(`<div class="ev-cmd">$ ${esc(n.command)}</div>`);
+    }
+
+    /* Dionaea detail */
+    if (n.dionaea_msg && !n.command && !n.username) {
+      parts.push(`<div class="ev-cmd">${esc(n.dionaea_msg)}</div>`);
+    }
+
+    /* HTTP path */
+    if (n.http_path) {
+      parts.push(`<div class="ev-cmd">${esc(n.http_method || 'GET')} ${esc(n.http_path)}</div>`);
+    }
+
+    /* Meta line */
+    const meta = [];
+    if (n.protocol) meta.push(esc(n.protocol.toUpperCase()));
+    if (n.dest_port) meta.push(`port ${n.dest_port}`);
+    if (n.dest_ip && n.honeypot === 'zeek') meta.push(`→ ${esc(n.dest_ip)}`);
+    if (n.session_id) meta.push(`sess: ${esc(String(n.session_id).slice(-8))}`);
+    if (meta.length) parts.push(`<div class="ev-meta">${meta.join(' · ')}</div>`);
+
+    return parts.join('');
+  }
+
+  function renderRow(n, isNew) {
+    const meta = SOURCE_META[n.honeypot] || { label: n.honeypot || '?', icon: '❓' };
+    const sev = (n.severity || 'low').toLowerCase();
+    return `<div class="ev-row${isNew ? ' ev-new' : ''}">
+      <div class="ev-time">${fmt.time(n.timestamp)}</div>
+      <div class="ev-src">
+        <span class="ev-src-icon">${meta.icon}</span>
+        <span class="ev-src-label">${esc(meta.label)}</span>
+      </div>
+      <div class="ev-ip">${esc(n.source_ip || '—')}</div>
+      <div class="ev-detail">
+        <div class="ev-action">${evActionLabel(n)}</div>
+        ${evDetail(n)}
+      </div>
+      <div class="ev-badges">
+        <span class="badge ${SEV_COLOR[sev] || 'teal'}" style="font-size:10px">${SEV_LABEL[sev] || esc(sev)}</span>
+      </div>
+    </div>`;
+  }
+
+  function updateStats(items) {
+    const counts = {};
+    items.forEach(n => { counts[n.honeypot] = (counts[n.honeypot]||0)+1; });
+    $('#tl-stats').innerHTML = Object.entries(counts)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([hp, c]) => {
+        const m = SOURCE_META[hp] || { icon:'❓', label: hp };
+        return `<span class="badge ${hp==='zeek'?'blue':'gold'}">${m.icon} ${m.label} · <b>${c}</b></span>`;
+      }).join('');
+  }
+
+  async function load(isRefresh) {
+    const srcFilter = $('#f-source').value;
+    const sevFilter = $('#f-sev').value;
+    try {
+      const res = await api.attacks({ page_size: 100, page: 1 });
+      const all = (res && res.items) || [];
+      const normalized = all.map(evNormalize);
+
+      let filtered = normalized;
+      if (srcFilter) filtered = filtered.filter(n => n.honeypot === srcFilter);
+      if (sevFilter) filtered = filtered.filter(n => (n.severity||'low').toLowerCase() === sevFilter);
+
+      updateStats(normalized);
+
+      if (!isRefresh) {
+        seen.clear();
+        filtered.forEach(n => seen.add(n.id));
+        if (!filtered.length) {
+          $('#tl-feed').innerHTML = `<div class="tl-empty">Aucun événement${srcFilter||sevFilter ? ' pour ce filtre' : ''}.</div>`;
+          return;
+        }
+        $('#tl-feed').innerHTML = filtered.map(n => renderRow(n, false)).join('');
+        return;
+      }
+
+      const newItems = filtered.filter(n => !seen.has(n.id));
+      if (!newItems.length) return;
+      newItems.forEach(n => seen.add(n.id));
+      const feed = $('#tl-feed');
+      feed.insertAdjacentHTML('afterbegin', newItems.map(n => renderRow(n, true)).join(''));
+      const rows = feed.querySelectorAll('.ev-row');
+      if (rows.length > 200) Array.from(rows).slice(200).forEach(r => r.remove());
+    } catch (e) {
+      if (!isRefresh) $('#tl-feed').innerHTML = `<div class="alert err" style="margin:16px">${esc(e.message)}</div>`;
+    }
+  }
+
+  function startTimer() {
+    timer = setInterval(() => { if (!paused) load(true); }, 5000);
+  }
+
+  $('#tl-pause').addEventListener('click', () => {
+    paused = !paused;
+    $('#tl-pause').innerHTML = paused ? '▶ Reprendre' : '⏸ Pause';
+    $('#tl-pause').className = paused ? 'btn btn-gold btn-sm' : 'btn btn-gh btn-sm';
+  });
+
+  ['#f-source','#f-sev'].forEach(id => $(id).addEventListener('change', () => load(false)));
+
+  window.__pageCleanup = () => { clearInterval(timer); };
+
+  await load(false);
+  startTimer();
+})();
+</script>

@@ -1,0 +1,126 @@
+/* ═══════════════════════════════════════════════════════════════
+   ForenHive API client — real backend integration (FastAPI :8000)
+═══════════════════════════════════════════════════════════════ */
+
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:8000'
+  : `http://${location.hostname}:8000`;
+
+const TOKEN_KEY = 'forenhive.token';
+const USER_KEY  = 'forenhive.user';
+
+/* ═════════ AUTH BYPASS — fake admin user injected on load ═════════ */
+const FAKE_USER = {
+  id: '00000000-0000-0000-0000-000000000000',
+  email: 'admin@forenhive.io',
+  full_name: 'Admin (auth disabled)',
+  role: 'admin',
+  is_active: true,
+  created_at: new Date().toISOString(),
+};
+if (!localStorage.getItem(USER_KEY)) {
+  localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER));
+}
+
+const api = {
+  base: API_BASE,
+  token() { return localStorage.getItem(TOKEN_KEY); },
+  user()  { try { return JSON.parse(localStorage.getItem(USER_KEY)) || FAKE_USER; } catch(e){ return FAKE_USER; } },
+  setSession(token, user) {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (user)  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  },
+  clear() { /* auth disabled — keep fake user */ localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER)); },
+
+  async _call(path, opts = {}) {
+    const headers = Object.assign({}, opts.headers || {});
+    const tok = this.token();
+    if (tok) headers['Authorization'] = 'Bearer ' + tok;
+    if (opts.body && !(opts.body instanceof FormData) && typeof opts.body !== 'string') {
+      headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    const res = await fetch(this.base + path, Object.assign({}, opts, { headers }));
+    if (res.status === 401) {
+      /* auth disabled — ignore 401, do not redirect */
+      throw new Error('unauthorized');
+    }
+    const ct = res.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await res.json().catch(() => null) : await res.text();
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.title)) || res.statusText || ('HTTP ' + res.status);
+      const err = new Error(msg); err.status = res.status; err.data = data;
+      throw err;
+    }
+    return data;
+  },
+
+  /* ─── auth (BYPASSED — always returns fake admin) ─── */
+  async login(email, password) {
+    this.setSession('fake-token-auth-disabled', FAKE_USER);
+    return FAKE_USER;
+  },
+  me()      { return Promise.resolve(FAKE_USER); },
+  refresh() { return this._call('/api/auth/refresh', { method: 'POST' }); },
+  users()   { return this._call('/api/auth/users'); },
+
+  /* ─── attacks ─── */
+  attacks(params = {}) {
+    /* backend uses page_size (real max ~120), not limit — page 2 always empty (backend bug) */
+    const p = Object.assign({}, params);
+    if (p.limit) { p.page_size = Math.min(Number(p.limit), 100); delete p.limit; }
+    if (!p.page_size) p.page_size = 100;
+    else p.page_size = Math.min(Number(p.page_size), 100);
+    const qs = new URLSearchParams(p).toString();
+    return this._call('/api/attacks' + (qs ? '?' + qs : ''));
+  },
+  attack(id)    { return this._call('/api/attacks/' + encodeURIComponent(id)); },
+  statsHourly() { return this._call('/api/attacks/stats/hourly'); },
+  statsLive(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/attacks/stats/live' + (qs ? '?' + qs : ''));
+  },
+
+  /* ─── sessions ─── */
+  sessions(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/sessions' + (qs ? '?' + qs : ''));
+  },
+  session(id) { return this._call('/api/sessions/' + encodeURIComponent(id)); },
+
+  /* ─── geo / profiling ─── */
+  geoSplit()    { return this._call('/api/geo/honeypot-split'); },
+  geoBreakdown(){ return this._call('/api/geo/breakdown'); },
+  profile(ip)   { return this._call('/api/profiling/' + encodeURIComponent(ip)); },
+
+  /* ─── forensics ─── */
+  forensicsTimeline(params) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/forensics/timeline?' + qs);
+  },
+  yaraHits(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/forensics/yara' + (qs ? '?' + qs : ''));
+  },
+
+  /* ─── reports ─── */
+  reports(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/reports' + (qs ? '?' + qs : ''));
+  },
+  generateReport(body) { return this._call('/api/reports/generate', { method: 'POST', body }); },
+  reportDownloadUrl(id){ return this.base + '/api/reports/' + encodeURIComponent(id) + '/download'; },
+  reportStixUrl(id)    { return this.base + '/api/reports/' + encodeURIComponent(id) + '/stix'; },
+
+  /* ─── alerts ─── */
+  alertConfig()           { return this._call('/api/alerts/config'); },
+  setAlertConfig(body)    { return this._call('/api/alerts/config', { method: 'PUT', body }); },
+  alertHistory(params={}) { const qs = new URLSearchParams(params).toString(); return this._call('/api/alerts/history' + (qs?'?'+qs:'')); },
+  alertTest(body)         { return this._call('/api/alerts/test', { method: 'POST', body }); },
+
+  /* ─── audit / health ─── */
+  audit(params={}) { const qs = new URLSearchParams(params).toString(); return this._call('/api/audit' + (qs?'?'+qs:'')); },
+  health()         { return fetch(this.base + '/health').then(r => r.json()).catch(() => ({ status:'down' })); },
+};
+
+window.api = api;

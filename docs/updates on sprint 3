@@ -1,0 +1,311 @@
+# ForenHive — Sprint 3 Updates
+**Forensic Engine Overhaul: Multi-Honeypot · 18-Signal Scorer · Hybrid MITRE Mapper**
+*Branch: zeineb | Date: 2026-04-12*
+
+---
+
+## 1. Summary of Changes
+
+| File | Change type | Lines +/- |
+|---|---|---|
+| `forensic-engine/mitre_mapper.py` | NEW | +423 |
+| `forensic-engine/ollama_mitre.py` | NEW (legacy reference) | +305 |
+| `forensic-engine/engine.py` | Major rewrite | +548 / -28 |
+| `forensic-engine/risk_score.py` | Complete rewrite | +925 / -50 |
+| `forensic-engine/enricher.py` | Feature addition | +42 / -1 |
+| `forensic-engine/virustotal.py` | Bug fix + feature | +27 / -13 |
+| `forensic-engine/config.py` | Addition | +3 |
+| `forensic-engine/db/schema.sql` | Schema extension | +10 |
+
+---
+
+## 2. New Files
+
+### `forensic-engine/mitre_mapper.py` — Hybrid MITRE ATT&CK Mapper
+
+Replaces the full-LLM approach of `ollama_mitre.py` which invented non-existent technique IDs.
+
+**Design: deterministic IDs + LLM narrative only**
+
+| Component | Method | Notes |
+|---|---|---|
+| Technique IDs | Deterministic rule engine | Zero hallucination, confidence = 1.0 |
+| Kill chain phase | Derived from technique metadata | No LLM involved |
+| Forensic narrative | Mistral 7B via Ollama (80 tokens) | Graceful fallback on timeout |
+
+**15 validated ATT&CK Enterprise technique IDs:**
+
+| ID | Name | Tactic | Kill Chain Stage |
+|---|---|---|---|
+| T1110.001 | Brute Force: Password Guessing | Credential Access | exploitation |
+| T1110.003 | Brute Force: Password Spraying | Credential Access | exploitation |
+| T1078 | Valid Accounts | Initial Access | exploitation |
+| T1059.004 | Unix Shell | Execution | installation |
+| T1105 | Ingress Tool Transfer | C2 | command_and_control |
+| T1552.001 | Credentials In Files | Credential Access | actions_on_objectives |
+| T1210 | Exploitation of Remote Services | Lateral Movement | exploitation |
+| T1190 | Exploit Public-Facing Application | Initial Access | delivery |
+| T1595.002 | Active Scanning: Vulnerability Scanning | Reconnaissance | reconnaissance |
+| T1046 | Network Service Discovery | Discovery | reconnaissance |
+| T1021.002 | SMB/Windows Admin Shares | Lateral Movement | lateral_movement |
+| T1486 | Data Encrypted for Impact | Impact | actions_on_objectives |
+| T1496 | Resource Hijacking | Impact | actions_on_objectives |
+| T1071.001 | Application Layer Protocol: Web | C2 | command_and_control |
+| T1592 | Gather Victim Host Information | Reconnaissance | reconnaissance |
+
+**Deterministic rule logic per honeypot:**
+
+| Honeypot | Condition | Technique mapped |
+|---|---|---|
+| cowrie | login_attempts > 1 | T1110.001 |
+| cowrie | login_attempts > 100 | T1110.003 |
+| cowrie | success_count > 0 | T1078 |
+| cowrie | command_count > 0 | T1059.004 |
+| cowrie | exfil_bytes > 0 | T1105 |
+| cowrie | credential file in commands | T1552.001 |
+| cowrie | XMRig / CryptoMiner YARA | T1496 |
+| cowrie | WannaCry / LockBit YARA | T1486 |
+| dionaea | port 445 (SMB) | T1021.002 + T1210 |
+| dionaea | port 3306/1433/27017/5432/6379 (DB) | T1190 |
+| dionaea | Mirai YARA | T1105 |
+| dionaea | Emotet YARA | T1071.001 |
+| galah | always | T1190 |
+| galah | scan paths (/wp-admin, /.env, ...) | T1595.002 |
+| zeek | always | T1046 + T1592 |
+
+**`map_session()` return dict:**
+```python
+{
+  "technique_ids":        ["T1110.001", "T1078", ...],  # deduplicated
+  "techniques":           [{"id", "name", "tactic", "url"}, ...],
+  "primary_technique":    "T1110.001",
+  "kill_chain_phase":     "installation",
+  "kill_chain_label":     "Installation",
+  "kill_chain_stage":     5,                # 1-based, 1=reconnaissance … 8=actions_on_objectives
+  "kill_chain_completed": True,             # True when stage >= 5
+  "forensic_narrative":   "Attacker performed ...",
+  "llm_used":             True,             # True ONLY if Ollama returned non-empty text
+  "mapping_source":       "deterministic + llm_narrative",
+  "confidence":           1.0,
+}
+```
+
+**Performance:** ~30s/session (80-token output) vs ~60s/session previously (512-token full JSON).
+Ollama timeout set to 60s. On timeout, graceful fallback to deterministic narrative. Technique IDs unaffected.
+
+---
+
+### `forensic-engine/ollama_mitre.py` — Superseded (kept for reference)
+
+Previous full-LLM implementation using `/api/chat` with few-shot examples and 512-token output.
+Hallucinated technique IDs under Mistral 7B. Not used by `engine.py` anymore.
+
+---
+
+## 3. Modified Files
+
+### `forensic-engine/engine.py` — Major Rewrite
+
+**New Elasticsearch query functions:**
+
+| Function | What it does |
+|---|---|
+| `_query_cowrie_sessions()` | Renamed from `_query_sessions()`. Added `success_count` + `failed_count` sub-aggs |
+| `_query_dionaea_sessions()` | NEW — aggregates Dionaea events by source IP + destination port |
+| `_query_galah_sessions()` | NEW — aggregates Galah HTTP events, extracts top-20 `http_paths` per IP |
+| `_query_cowrie_commands()` | NEW — fetches up to 50 shell commands per Cowrie session from ES |
+
+**`run_session_scoring()` changes:**
+- Queries all 3 honeypots (Cowrie + Dionaea + Galah) and merges into `all_sessions`
+- Builds rich `session_data` dict (30+ fields): reputation, privacy, geo, Shodan, malware, time metrics, SMB profiles, multi-honeypot correlation
+- Replaces old `OllamaMitreMapper.map_session(session_data, commands=..., http_paths=...)` with new `MitreMapper.map_session(session_data)` — commands/http_paths now passed inside `session_data`
+- Extracts and stores 4 new fields per session: `kill_chain_phase`, `kill_chain_stage`, `primary_technique`, `forensic_narrative`
+
+**`_save_session()` — 4 new columns added to INSERT:**
+```sql
+kill_chain_phase, kill_chain_stage, primary_technique, forensic_narrative
+```
+Also added to `ON CONFLICT DO UPDATE` clause.
+
+**Import change:** `from mitre_mapper import MitreMapper`
+**New CLI flag:** `--score-only` (skips enrichment + YARA, runs scoring immediately)
+
+---
+
+### `forensic-engine/risk_score.py` — Complete Rewrite (8 → 18 signals)
+
+| Version | Lines | Signals | Return type |
+|---|---|---|---|
+| Before (April 4) | ~73 | 8 | `int` (score only) |
+| After (April 12) | ~950 | 18 | `dict` (13 keys) |
+
+**18 signals:**
+
+| # | Signal | Source | Max pts |
+|---|---|---|---|
+| 1 | AbuseIPDB confidence score | AbuseIPDB | 40 |
+| 2 | AbuseIPDB total reports | AbuseIPDB | 10 |
+| 3 | Login volume (tiered: >10 / >50 / >200) | Cowrie/Dionaea | 25 |
+| 4 | **Login success / actual compromise** | Cowrie | **25** |
+| 5 | Shell commands executed | Cowrie | 10 |
+| 6 | File download (exfil_bytes > 0) | Cowrie/Dionaea | 15 |
+| 7 | YARA match — malware family (severity-tiered) | YARA | 30 |
+| 8 | VirusTotal malicious count | VirusTotal | 30 |
+| 9 | Tor exit node | IPLocate | 15 |
+| 10 | VPN / proxy / hosting | IPLocate | 5 |
+| 11 | Critical port targeted | Port | 10 |
+| 12 | Shodan vulns on attacker IP (botnet zombie) | Shodan | 10 |
+| 13 | **Exploit CVE probe (EternalBlue etc.)** | Dionaea/SMB | **40** |
+| 14 | SMB share enumeration | Dionaea | 30 |
+| 15 | EPMapper prescan | Dionaea | 15 |
+| 16 | Multi-honeypot correlation (same IP seen on >1 honeypot) | Cross-source | 10 |
+| 17 | Attack velocity (>2 attempts/second) | Time metrics | 5 |
+| 18 | Recidivism (previously seen in PostgreSQL) | PostgreSQL | 10 |
+
+**Private IPs:** reputation signals skipped, behavioral signals ×2.
+**Score cap:** `min(raw_score, 100)`.
+
+**Return dict (13 keys):**
+
+| Key | Content |
+|---|---|
+| `score` | 0–100 composite score |
+| `level` | CRITICAL / HIGH / MEDIUM / LOW / INFO |
+| `confidence` | 0.3–1.0 data quality factor |
+| `signal_breakdown` | Per-signal points + explanation text (for charts) |
+| `attack_types` | Classified categories (brute_force, malware, lateral_movement…) |
+| `mitre_techniques` | Deterministic ATT&CK technique objects |
+| `lateral_movement` | Bool — True if SMB + credential access detected |
+| `data_quality` | Available sources + warnings |
+| `notes` | Terse technical flags |
+| `narrative` | Human-readable paragraph (for reports) |
+| `recommended_actions` | SOC playbook steps |
+| `iocs` | IP, hashes, commands, malware families |
+| `attribution` | Geo, ASN, attacker profile |
+
+---
+
+### `forensic-engine/enricher.py` — Private IP Classification
+
+Added `_classify_private_ip(ip)`:
+
+| IP range | network_class | private_risk_level |
+|---|---|---|
+| 127.x.x.x | loopback | **ignore** (skipped entirely) |
+| 172.17–19.x | docker_bridge | **ignore** (skipped entirely) |
+| 10.212.0.0/16 (PRIVATE_VPN_RANGES) | vpn_tunnel | investigate |
+| 10.0.0.0/8, 172.16.0.0/12 | corporate_internal | investigate |
+| 192.168.0.0/16 | corporate_internal | monitor |
+
+Engine skips scoring for IPs with `private_risk_level == "ignore"` (Docker containers, loopback).
+`enrich()` now returns `{ip, private, network_class, is_docker, private_risk_level}` for private IPs.
+
+---
+
+### `forensic-engine/virustotal.py` — Quota Handling Fix
+
+| Change | Detail |
+|---|---|
+| `_quota_exhausted` flag | Set True after 3 consecutive 429s — all further calls skipped for the run |
+| `_rate_limit_retries` | Global counter (not per-hash) — correctly tracks cumulative rate limit hits |
+| `is_quota_exhausted()` | New method — used by engine to log a VT warning per session if quota was hit |
+| Backoff | Linear: 60s → 120s → 180s (fixed recursive retry bug in previous version) |
+| Early exit | `{"vt_available": False, "reason": "quota_exhausted"}` when quota hit |
+
+---
+
+### `forensic-engine/config.py`
+
+Added:
+```python
+PRIVATE_VPN_RANGES = os.environ.get("PRIVATE_VPN_RANGES", "10.212.0.0/16")
+```
+Comma-separated CIDRs treated as internal VPN (default: lab Kali subnet). Overridable via `.env`.
+
+---
+
+### `forensic-engine/db/schema.sql`
+
+4 new columns added to `forensic_sessions`:
+
+```sql
+kill_chain_phase    VARCHAR(50),   -- e.g. "lateral_movement"
+kill_chain_stage    INTEGER,       -- 1-8 (Cyber Kill Chain position)
+primary_technique   VARCHAR(20),   -- e.g. "T1021.002"
+forensic_narrative  TEXT           -- 2-sentence forensic summary
+```
+
+Migration block for existing deployments included:
+```sql
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase   VARCHAR(50);
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_stage   INTEGER;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS primary_technique  VARCHAR(20);
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS forensic_narrative TEXT;
+```
+
+---
+
+## 4. Live PostgreSQL Migration
+
+Applied to `forenhive-postgresql` on 2026-04-12:
+```bash
+docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
+  "ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase VARCHAR(50);"
+# (repeated for all 4 columns)
+```
+Result: `forensic_sessions` now has 13 columns. ✅
+
+**Recurring issue:** PostgreSQL container restart resets the user password (Docker volume behavior).
+Fix required after each container recreate:
+```bash
+docker exec forenhive-postgresql psql -U forenhive -c \
+  "ALTER USER forenhive PASSWORD 'forenhive2026';"
+```
+
+---
+
+## 5. Test Results (2026-04-12, 24h window)
+
+**Sessions processed: 24 — Cowrie=12 · Dionaea=6 · Galah=6**
+
+| Kill Chain Phase | Stage | Primary Technique | Honeypot | Sessions | Max Score |
+|---|---|---|---|---|---|
+| actions_on_objectives | 8 | T1078 | cowrie | 2 | 30 |
+| lateral_movement | 7 | T1021.002 | dionaea | 4 | 7 |
+| installation | 5 | T1110.001 | cowrie | 6 | 57 |
+| exploitation | 4 | T1110.001 / T1210 | cowrie / dionaea | 11 | 17 |
+| delivery | 3 | T1190 | all honeypots | 13 | 55 |
+
+All 24 sessions persisted to PostgreSQL with all 4 new columns populated. ✅
+
+**Smoke tests:**
+
+| Test | Expected | Result |
+|---|---|---|
+| Cowrie brute-force + login success + commands | T1110.001, T1078, T1059.004 → installation stage 5 | ✅ |
+| Dionaea port 445 (SMB) | T1021.002 + T1210 → lateral_movement stage 7 | ✅ |
+| Galah `/wp-admin` + `/.env` + `/phpinfo.php` | T1190 + T1595.002 → delivery stage 3 | ✅ |
+| All imports | `import engine, mitre_mapper, risk_score` | ✅ |
+
+---
+
+## 6. Architecture Decisions
+
+| Decision | Rationale |
+|---|---|
+| Hybrid MITRE (deterministic IDs + LLM narrative) | Full LLM invented invalid technique IDs under Mistral 7B |
+| 80-token narrative prompt | 4× faster on CPU-only server (Dell R750, no GPU) |
+| `llm_used = True` only on actual LLM success | Previously flagged True even on timeout — misleading logs |
+| `kill_chain_completed = stage >= 5` | Stage 5+ means attacker achieved persistence or beyond |
+| `PRIVATE_VPN_RANGES` via env var | 10.212.0.0/16 is the lab Kali VPN subnet, not Docker |
+| Single forensic-engine run at a time | Two concurrent containers compete for Ollama CPU → timeouts |
+
+---
+
+## 7. Known Issues
+
+| Issue | Impact | Workaround |
+|---|---|---|
+| Mistral 7B CPU inference sometimes >60s | Narrative falls back to deterministic template; technique IDs unaffected | Run one forensic-engine at a time |
+| PostgreSQL password reset on container recreate | `_save_session()` fails auth | `ALTER USER forenhive PASSWORD 'forenhive2026'` after each recreate |
+| `kill_chain_phase` NULL for rows scored before migration | Old rows have NULL in new columns | Rows backfill on next `ON CONFLICT DO UPDATE` run |

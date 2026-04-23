@@ -1,14 +1,7 @@
 """
-ForenHive — Enrichissement des adresses IP
-Pour chaque IP attaquante, on collecte :
-  - Localisation géographique (pays, ville, coordonnées)  ← MaxMind GeoLite2
-  - Détection anonymisation (Tor, VPN, Proxy)             ← IPLocate (gratuit)
-  - Réputation / signalements                             ← AbuseIPDB
-  - Ports ouverts / vulnérabilités connues                ← Shodan InternetDB (gratuit)
-  - Informations réseau / organisation                    ← Whois / RDAP
-
-Les résultats sont mis en cache dans PostgreSQL (24h) pour éviter
-de re-contacter les APIs à chaque analyse.
+ForenHive Forensic Engine — IP Enrichment
+Enriches IPs with GeoIP, privacy detection, AbuseIPDB, Shodan, and Whois.
+Results are cached in PostgreSQL (24h TTL).
 """
 
 import ipaddress
@@ -24,68 +17,88 @@ import psycopg2.extras
 import requests
 
 import config
+from quota_tracker import get_tracker
 
 log = logging.getLogger("enricher")
+_tracker = get_tracker()
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FONCTIONS UTILITAIRES
-# ══════════════════════════════════════════════════════════════════════════════
-
-def est_ip_privee(ip: str) -> bool:
-    """Retourne True si l'IP appartient à un réseau privé (10.x, 192.168.x, 172.16.x...)."""
+def _is_private(ip: str) -> bool:
     try:
         return ipaddress.ip_address(ip).is_private
     except ValueError:
-        return True  # IP invalide → traiter comme privée par sécurité
+        return True
 
+def _classify_private_ip(ip: str) -> dict:
+    """Classify a private IP into a risk category for behavioral scoring."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return {"network_class": "private_unknown", "is_docker": False, "private_risk_level": "monitor"}
 
-def maintenant_utc() -> datetime:
-    """Retourne l'heure actuelle en UTC."""
+    if addr.is_loopback:
+        return {"network_class": "loopback", "is_docker": False, "private_risk_level": "ignore"}
+
+    docker_nets = [
+        ipaddress.ip_network("172.17.0.0/16"),
+        ipaddress.ip_network("172.18.0.0/16"),
+        ipaddress.ip_network("172.19.0.0/16"),
+    ]
+    if any(addr in net for net in docker_nets):
+        return {"network_class": "docker_bridge", "is_docker": True, "private_risk_level": "ignore"}
+
+    try:
+        vpn_ranges = [
+            ipaddress.ip_network(r.strip())
+            for r in config.PRIVATE_VPN_RANGES.split(",") if r.strip()
+        ]
+    except Exception:
+        vpn_ranges = []
+    if any(addr in net for net in vpn_ranges):
+        return {"network_class": "vpn_tunnel", "is_docker": False, "private_risk_level": "investigate"}
+
+    if addr in ipaddress.ip_network("10.0.0.0/8"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+    if addr in ipaddress.ip_network("172.16.0.0/12"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+    if addr in ipaddress.ip_network("192.168.0.0/16"):
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "monitor"}
+
+    return {"network_class": "private_unknown", "is_docker": False, "private_risk_level": "monitor"}
+
+def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
+# ── PostgreSQL cache ───────────────────────────────────────────────────────────
 
-def connexion_postgres():
-    """Ouvre une connexion à la base PostgreSQL."""
+def _pg_conn():
     return psycopg2.connect(
-        host=config.PG_HOST,
-        port=config.PG_PORT,
-        dbname=config.PG_DB,
-        user=config.PG_USER,
+        host=config.PG_HOST, port=config.PG_PORT,
+        dbname=config.PG_DB, user=config.PG_USER,
         password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
     )
 
+# ── GeoIP (offline MaxMind) ────────────────────────────────────────────────────
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. GÉOLOCALISATION — MaxMind GeoLite2 (base locale, pas d'appel réseau)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _charger_geoip():
-    """Charge les bases MaxMind au démarrage. Retourne (None, None) si absentes."""
+def _load_geoip():
     try:
         import geoip2.database
-        reader_ville = geoip2.database.Reader(config.GEOIP_CITY_DB)
-        reader_asn   = geoip2.database.Reader(config.GEOIP_ASN_DB)
-        return reader_ville, reader_asn
+        city_reader = geoip2.database.Reader(config.GEOIP_CITY_DB)
+        asn_reader  = geoip2.database.Reader(config.GEOIP_ASN_DB)
+        return city_reader, asn_reader
     except Exception as e:
-        log.warning(f"Bases GeoIP non disponibles : {e}")
+        log.warning(f"GeoIP databases not available: {e}")
         return None, None
 
-_reader_ville, _reader_asn = _charger_geoip()
+_city_reader, _asn_reader = _load_geoip()
 
-
-def geoip_lookup(ip: str) -> dict:
-    """
-    Retourne la localisation géographique d'une IP.
-    Exemple : {"country": "Russia", "city": "Moscow", "lat": 55.7, "lon": 37.6, "asn": 12345}
-    """
-    resultat = {}
-
-    # Localisation (pays, ville, coordonnées GPS)
-    if _reader_ville:
+def _geoip_lookup(ip: str) -> dict:
+    result = {}
+    if _city_reader:
         try:
-            r = _reader_ville.city(ip)
-            resultat.update({
+            r = _city_reader.city(ip)
+            result.update({
                 "country":      r.country.name,
                 "country_code": r.country.iso_code,
                 "city":         r.city.name,
@@ -93,347 +106,246 @@ def geoip_lookup(ip: str) -> dict:
                 "lon":          r.location.longitude,
             })
         except Exception:
-            pass  # IP non trouvée dans la base (ex: IP privée)
-
-    # Numéro ASN et opérateur
-    if _reader_asn:
+            pass
+    if _asn_reader:
         try:
-            r = _reader_asn.asn(ip)
-            resultat.update({
+            r = _asn_reader.asn(ip)
+            result.update({
                 "asn": r.autonomous_system_number,
                 "org": r.autonomous_system_organization,
             })
         except Exception:
             pass
+    return result
 
-    return resultat
+# ── IPLocate (free, no key) ────────────────────────────────────────────────────
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. DÉTECTION ANONYMISATION — IPLocate (gratuit, sans clé)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def iplocate_lookup(ip: str) -> dict:
-    """
-    Vérifie si l'IP utilise Tor, un VPN, un proxy ou un hébergeur.
-    Exemple : {"is_tor": True, "is_vpn": False, "is_proxy": False}
-    """
+def _iplocate_lookup(ip: str) -> dict:
+    if _tracker.is_exhausted("iplocate"):
+        return {}
     try:
-        reponse = requests.get(
+        resp = requests.get(
             f"https://www.iplocate.io/api/lookup/{ip}",
             timeout=10
         )
-        if reponse.status_code == 200:
-            data = reponse.json()
+        if resp.status_code == 200:
+            data = resp.json()
             return {
-                "is_tor":     data.get("is_tor",     False),
-                "is_vpn":     data.get("is_vpn",     False),
-                "is_proxy":   data.get("is_proxy",   False),
+                "is_tor":     data.get("is_tor", False),
+                "is_vpn":     data.get("is_vpn", False),
+                "is_proxy":   data.get("is_proxy", False),
                 "is_hosting": data.get("is_hosting", False),
             }
+        if resp.status_code in (429, 403):
+            _tracker.mark_exhausted("iplocate", reason=f"HTTP {resp.status_code}")
+        else:
+            log.warning(f"IPLocate returned {resp.status_code} for {ip}")
     except Exception as e:
-        log.warning(f"IPLocate échoué pour {ip} : {e}")
+        log.warning(f"IPLocate lookup failed for {ip}: {e}")
     return {}
 
+# ── AbuseIPDB ─────────────────────────────────────────────────────────────────
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. RÉPUTATION — AbuseIPDB (nécessite une clé API gratuite)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def abuseipdb_lookup(ip: str) -> dict:
-    """
-    Interroge AbuseIPDB pour obtenir le score de réputation de l'IP.
-    Score 0 = propre, 100 = très malveillante.
-    Exemple : {"abuse_score": 87, "total_reports": 42, "isp": "Hetzner Online"}
-    """
+def _abuseipdb_lookup(ip: str) -> dict:
     if not config.ABUSEIPDB_KEY:
-        return {}  # clé non configurée → on passe
-
+        return {}
+    if _tracker.is_exhausted("abuseipdb"):
+        return {}
     try:
-        reponse = requests.get(
+        resp = requests.get(
             "https://api.abuseipdb.com/api/v2/check",
-            headers={
-                "Key":    config.ABUSEIPDB_KEY,
-                "Accept": "application/json"
-            },
-            params={
-                "ipAddress":    ip,
-                "maxAgeInDays": 90,
-                "verbose":      "true"
-            },
+            headers={"Key": config.ABUSEIPDB_KEY, "Accept": "application/json"},
+            params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": "true"},
             timeout=10
         )
-        if reponse.status_code == 200:
-            data = reponse.json().get("data", {})
+        if resp.status_code == 200:
+            d = resp.json().get("data", {})
             return {
-                "abuse_score":   data.get("abuseConfidenceScore", 0),
-                "total_reports": data.get("totalReports", 0),
-                "isp":           data.get("isp", ""),
-                "is_tor":        data.get("isTor", False),
-                "country_code":  data.get("countryCode", ""),
+                "abuse_score":   d.get("abuseConfidenceScore", 0),
+                "total_reports": d.get("totalReports", 0),
+                "isp":           d.get("isp", ""),
+                "is_tor":        d.get("isTor", False),
+                "country_code":  d.get("countryCode", ""),
             }
-        log.warning(f"AbuseIPDB a retourné {reponse.status_code} pour {ip}")
+        if resp.status_code == 429:
+            _tracker.mark_exhausted("abuseipdb", reason="HTTP 429")
+        elif resp.status_code == 401:
+            _tracker.mark_exhausted("abuseipdb", reason="HTTP 401 (invalid key)")
+        else:
+            log.warning(f"AbuseIPDB returned {resp.status_code} for {ip}")
     except Exception as e:
-        log.warning(f"AbuseIPDB échoué pour {ip} : {e}")
+        log.warning(f"AbuseIPDB lookup failed for {ip}: {e}")
     return {}
 
+# ── InternetDB (Shodan free — no key required) ────────────────────────────────
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. INFRASTRUCTURE — Shodan InternetDB (gratuit, sans clé)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Organisations connues comme fournisseurs de serveurs cloud/VPS
-_ORGS_VPS = {
-    "digitalocean", "linode", "vultr", "hetzner", "ovh", "scaleway",
-    "amazon", "amazonaws", "google", "microsoft", "azure", "alibaba",
-    "upcloud", "contabo", "hostinger", "ionos", "leaseweb",
-}
-
-# Tags qui indiquent un appareil IoT
-_TAGS_IOT = {"iot", "embedded", "webcam", "router", "printer", "scada", "dvr", "camera"}
-
-
-def classifier_machine(host: dict) -> str:
-    """
-    Détermine le type de machine de l'attaquant.
-    Retourne : 'iot_device' | 'vps' | 'dedicated_server' | 'unknown'
-    """
-    tags = {t.lower() for t in host.get("tags", [])}
-
-    if tags & _TAGS_IOT:
-        return "iot_device"
-
-    org = (host.get("org") or "").lower()
-    isp = (host.get("isp") or "").lower()
-    if any(v in org or v in isp for v in _ORGS_VPS):
-        return "vps"
-
-    if host.get("os"):
-        return "dedicated_server"
-
-    return "unknown"
-
-
-def shodan_lookup(ip: str) -> dict:
-    """
-    Récupère les ports ouverts et vulnérabilités connues via Shodan InternetDB.
-    Gratuit, sans clé API.
-    Exemple : {"open_ports": [22, 80, 443], "vulns": ["CVE-2021-44228"]}
-    """
+def _shodan_lookup(ip: str) -> dict:
+    """Uses Shodan InternetDB — free, no API key needed."""
+    if _tracker.is_exhausted("shodan"):
+        return {}
     try:
-        reponse = requests.get(
+        resp = requests.get(
             f"https://internetdb.shodan.io/{ip}",
             timeout=10
         )
-        if reponse.status_code == 200:
-            data = reponse.json()
+        if resp.status_code == 200:
+            data = resp.json()
             if "detail" in data:
-                return {}  # IP inconnue de Shodan
+                return {}
             return {
-                "open_ports": data.get("ports",     []),
-                "vulns":      data.get("vulns",     []),
+                "open_ports": data.get("ports", []),
+                "vulns":      data.get("vulns", []),
                 "hostnames":  data.get("hostnames", []),
-                "cpes":       data.get("cpes",      []),
-                "tags":       data.get("tags",      []),
+                "cpes":       data.get("cpes", []),
+                "tags":       data.get("tags", []),
             }
-        log.warning(f"InternetDB a retourné {reponse.status_code} pour {ip}")
+        if resp.status_code == 429:
+            _tracker.mark_exhausted("shodan", reason="HTTP 429")
+        elif resp.status_code != 404:
+            log.warning(f"InternetDB returned {resp.status_code} for {ip}")
     except Exception as e:
-        log.warning(f"InternetDB échoué pour {ip} : {e}")
+        log.warning(f"InternetDB lookup failed for {ip}: {e}")
     return {}
 
+# ── Whois / RDAP ──────────────────────────────────────────────────────────────
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. WHOIS / RDAP — informations réseau et organisation
-# ══════════════════════════════════════════════════════════════════════════════
-
-def whois_lookup(ip: str) -> dict:
-    """
-    Récupère les informations réseau de l'IP via RDAP (successeur de Whois).
-    Exemple : {"org": "CHINANET jiangsu", "cidr": "222.186.0.0/16"}
-    """
+def _whois_lookup(ip: str) -> dict:
     try:
         from ipwhois import IPWhois
-        resultat = IPWhois(ip).lookup_rdap(depth=1)
-        reseau = resultat.get("network", {})
+        result = IPWhois(ip).lookup_rdap(depth=1)
+        network = result.get("network", {})
         return {
-            "network": reseau.get("name", ""),
-            "org":     resultat.get("asn_description", ""),
-            "cidr":    reseau.get("cidr", ""),
+            "network": network.get("name", ""),
+            "org":     result.get("asn_description", ""),
+            "cidr":    network.get("cidr", ""),
         }
     except Exception as e:
-        log.warning(f"Whois échoué pour {ip} : {e}")
+        log.warning(f"Whois lookup failed for {ip}: {e}")
     return {}
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CLASSE PRINCIPALE — IPEnricher
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Main enrichment class ─────────────────────────────────────────────────────
 
 class IPEnricher:
-    """
-    Orchestre l'enrichissement complet d'une adresse IP.
-    Gère le cache PostgreSQL pour éviter les appels API redondants.
-    """
 
-    # ── Cache PostgreSQL ───────────────────────────────────────────────────────
-
-    def lire_cache(self, ip: str) -> Optional[dict]:
-        """Retourne les données en cache si elles sont encore valides (< 24h)."""
+    def check_cache(self, ip: str) -> Optional[dict]:
         try:
-            with connexion_postgres() as conn:
+            with _pg_conn() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                     cur.execute(
-                        "SELECT data FROM ip_enrichment_cache "
-                        "WHERE ip = %s AND expires_at > NOW()",
+                        "SELECT data FROM ip_enrichment_cache WHERE ip = %s AND expires_at > NOW()",
                         (ip,)
                     )
-                    ligne = cur.fetchone()
-                    if ligne:
-                        return ligne["data"]
+                    row = cur.fetchone()
+                    if row:
+                        return row["data"]
         except Exception as e:
-            log.warning(f"Lecture cache échouée pour {ip} : {e}")
+            log.warning(f"Cache read failed for {ip}: {e}")
         return None
 
-    def ecrire_cache(self, ip: str, data: dict):
-        """Sauvegarde les données enrichies dans le cache PostgreSQL."""
-        expiration = maintenant_utc() + timedelta(hours=config.ENRICHMENT_CACHE_TTL_HOURS)
+    def save_cache(self, ip: str, data: dict):
+        expires = _now_utc() + timedelta(hours=config.ENRICHMENT_CACHE_TTL_HOURS)
         try:
-            with connexion_postgres() as conn:
+            with _pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
                         INSERT INTO ip_enrichment_cache (ip, data, cached_at, expires_at)
                         VALUES (%s, %s, NOW(), %s)
                         ON CONFLICT (ip) DO UPDATE
-                            SET data       = EXCLUDED.data,
-                                cached_at  = NOW(),
+                            SET data = EXCLUDED.data,
+                                cached_at = NOW(),
                                 expires_at = EXCLUDED.expires_at
                         """,
-                        (ip, json.dumps(data), expiration)
+                        (ip, json.dumps(data), expires)
                     )
                 conn.commit()
         except Exception as e:
-            log.warning(f"Écriture cache échouée pour {ip} : {e}")
+            log.warning(f"Cache write failed for {ip}: {e}")
 
-    # ── Enrichissement d'une seule IP ──────────────────────────────────────────
+    def enrich(self, ip: str) -> dict:
+        """Full enrichment pipeline for a single IP."""
+        # Return classification record for private IPs
+        if _is_private(ip):
+            classification = _classify_private_ip(ip)
+            return {"ip": ip, "private": True, **classification}
 
-    def enrichir(self, ip: str) -> dict:
-        """
-        Pipeline complet d'enrichissement pour une IP.
+        # Check cache first
+        cached = self.check_cache(ip)
+        if cached:
+            log.debug(f"Cache hit for {ip}")
+            return cached
 
-        Si l'IP est PRIVÉE → attaque interne, pas d'enrichissement externe.
-        Si l'IP est PUBLIQUE → 5 sources d'enrichissement + mise en cache.
-        """
-        # ── Cas 1 : IP privée = attaque depuis l'intérieur du réseau ──────────
-        if est_ip_privee(ip):
-            log.warning(
-                f"[MENACE INTERNE] L'attaque provient de l'intérieur du réseau "
-                f"— IP source {ip} est privée"
-            )
-            return {
-                "ip":           ip,
-                "private":      True,
-                "threat_origin": "internal",
-                "note":         f"Attaque depuis l'intérieur du réseau (IP privée : {ip})",
-            }
+        log.info(f"Enriching {ip} ...")
 
-        # ── Cas 2 : IP publique — vérifier le cache d'abord ───────────────────
-        cache = self.lire_cache(ip)
-        if cache:
-            log.debug(f"Cache hit pour {ip}")
-            return cache
+        # 1 — GeoIP (offline, no rate limit)
+        geo = _geoip_lookup(ip)
 
-        log.info(f"Enrichissement de {ip} ...")
+        # 2 — IPLocate (free, no key)
+        privacy = _iplocate_lookup(ip)
 
-        # ── Pipeline d'enrichissement (5 sources) ─────────────────────────────
-        geo            = geoip_lookup(ip)         # 1. Localisation (offline)
-        anonymisation  = iplocate_lookup(ip)      # 2. Tor / VPN / Proxy
-        reputation     = abuseipdb_lookup(ip)     # 3. Score AbuseIPDB
-        infrastructure = shodan_lookup(ip)        # 4. Ports / vulns Shodan
-        whois          = whois_lookup(ip)         # 5. Organisation / CIDR
+        # 3 — AbuseIPDB
+        reputation = _abuseipdb_lookup(ip)
 
-        resultat = {
+        # 4 — InternetDB (Shodan free, no key)
+        infrastructure = _shodan_lookup(ip)
+
+        # 5 — Whois/RDAP
+        whois = _whois_lookup(ip)
+
+        result = {
             "ip":             ip,
             "geo":            geo,
-            "privacy":        anonymisation,
+            "privacy":        privacy,
             "reputation":     reputation,
             "infrastructure": infrastructure,
             "whois":          whois,
-            "enriched_at":    maintenant_utc().isoformat(),
+            "enriched_at":    _now_utc().isoformat(),
         }
 
-        # Sauvegarder en cache pour les prochains appels
-        self.ecrire_cache(ip, resultat)
-        return resultat
-
-    # ── Enrichissement par lot ─────────────────────────────────────────────────
-
-    def enrichir_lot(self, liste_ips: list) -> dict:
-        """
-        Enrichit une liste d'IPs. Ignore les doublons.
-        Retourne un dictionnaire {ip: résultat}.
-        """
-        resultats = {}
-        ips_uniques = list({ip for ip in liste_ips if ip})
-        log.info(f"Enrichissement de {len(ips_uniques)} IPs uniques ...")
-        for ip in ips_uniques:
-            resultats[ip] = self.enrichir(ip)
-        return resultats
-
-    # ── Enrichissement depuis Elasticsearch ───────────────────────────────────
-
-    # ── Alias (compatibilite avec l'ancien code et les tests) ─────────────────
-    def enrich(self, ip: str) -> dict:
-        return self.enrichir(ip)
+        self.save_cache(ip, result)
+        return result
 
     def enrich_batch(self, ips: list) -> dict:
-        return self.enrichir_lot(ips)
-
-    def check_cache(self, ip: str) -> Optional[dict]:
-        return self.lire_cache(ip)
-
-    def save_cache(self, ip: str, data: dict):
-        return self.ecrire_cache(ip, data)
+        """Enrich a list of IPs, skipping private and cached ones."""
+        results = {}
+        unique = list({ip for ip in ips if ip})
+        log.info(f"Enriching batch of {len(unique)} unique IPs ...")
+        for ip in unique:
+            results[ip] = self.enrich(ip)
+        return results
 
     def enrich_from_es(self, es_client, hours_back: int = 24) -> dict:
-        return self.enrichir_depuis_es(es_client, hours_back)
-
-    def enrichir_depuis_es(self, client_es, heures: int = 24) -> dict:
         """
-        Récupère toutes les IPs source distinctes depuis Elasticsearch
-        sur les N dernières heures, puis les enrichit.
+        Query ES for distinct source.ip values in the last N hours,
+        then enrich each one (skips private IPs and cache hits).
         """
-        depuis = (maintenant_utc() - timedelta(hours=heures)).isoformat()
-
-        # Agrégation ES pour obtenir les IPs distinctes
-        requete = {
+        since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
+        query = {
             "size": 0,
             "query": {
                 "bool": {
                     "filter": [
-                        {"range":  {"@timestamp": {"gte": depuis}}},
+                        {"range": {"@timestamp": {"gte": since}}},
                         {"exists": {"field": "source.ip"}}
                     ]
                 }
             },
             "aggs": {
-                "ips_distinctes": {
+                "unique_ips": {
                     "terms": {"field": "source.ip.keyword", "size": 10000}
                 }
             }
         }
-
-        reponse = client_es.search(index=config.ES_INDEX, body=requete)
-        ips = [b["key"] for b in reponse["aggregations"]["ips_distinctes"]["buckets"]]
-        log.info(f"Trouvé {len(ips)} IPs source dans les dernières {heures}h")
-        return self.enrichir_lot(ips)
-
-
-# ── Alias publics (compatibilité avec les tests) ───────────────────────────────
-_is_private      = est_ip_privee
-_geoip_lookup    = geoip_lookup
-_iplocate_lookup = iplocate_lookup
-_abuseipdb_lookup = abuseipdb_lookup
-_shodan_lookup   = shodan_lookup
-_whois_lookup    = whois_lookup
-_classify_machine = classifier_machine
+        try:
+            resp = es_client.search(index=config.ES_INDEX, body=query)
+        except Exception as e:
+            log.warning(f"ES search failed (no honeypot indices yet?): {e}")
+            return {}
+        buckets = (
+            resp.get("aggregations", {})
+                .get("unique_ips", {})
+                .get("buckets", [])
+        )
+        ips = [b["key"] for b in buckets]
+        log.info(f"Found {len(ips)} unique source IPs in the last {hours_back}h")
+        return self.enrich_batch(ips)

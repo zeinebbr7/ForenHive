@@ -1,0 +1,176 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">🛠 Configuration</div>
+    <h2 class="page-title">Paramètres <span>système</span></h2>
+    <div class="page-sub">Alerting backend · config honeypots locale.</div>
+  </div>
+  <div class="page-actions">
+    <span class="badge gold">👑 Admin uniquement</span>
+  </div>
+</div>
+
+<div id="cfg-gate"></div>
+
+<div id="cfg-body" class="hide">
+
+  <!-- Alerting (backend) -->
+  <div class="acc open" data-acc>
+    <div class="acc-h"><div class="acc-t">🔔 Alerting (backend)</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="alert-status"><div class="alert info">Chargement…</div></div>
+      <div class="grid-2">
+        <div class="form-g"><label class="form-l">Seuil score critique</label><input class="form-i" type="number" min="0" max="100" id="a-threshold"></div>
+        <div class="form-g"><label class="form-l">Email destinataire</label><input class="form-i" type="email" id="a-email"></div>
+        <div class="form-g" style="grid-column:1/-1"><label class="form-l">Webhook Slack</label><input class="form-i" id="a-slack" placeholder="https://hooks.slack.com/services/…"></div>
+      </div>
+      <div class="flex items-c" style="justify-content:space-between;margin-top:14px">
+        <div><b>Activer alerting</b><div class="text-3 mono" style="font-size:11px">déclenche les notifications backend</div></div>
+        <label class="toggle"><input type="checkbox" id="a-enabled"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gh btn-sm" id="a-test">✉ Envoyer alerte test</button>
+        <button class="btn btn-gold btn-sm" id="a-save">💾 Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historique alertes -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">📜 Historique alertes</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="alert-history"><div class="alert info">Chargement…</div></div>
+    </div>
+  </div>
+
+  <!-- Honeypots (info read-only depuis split) -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">🍯 Sources actives</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="sources-info"><div class="alert info">Chargement…</div></div>
+    </div>
+  </div>
+
+  <!-- Intégrations (locale) -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t">🔗 Intégrations API (préférences locales)</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div class="alert info">Ces clés sont stockées localement uniquement (la configuration réelle se fait côté serveur via <span class="mono">.env</span>).</div>
+      <div class="grid-2">
+        <div class="form-g"><label class="form-l">AbuseIPDB API Key</label><input class="form-i" type="password" data-cfg="int.abuseipdb"></div>
+        <div class="form-g"><label class="form-l">VirusTotal API Key</label><input class="form-i" type="password" data-cfg="int.virustotal"></div>
+        <div class="form-g"><label class="form-l">Shodan API Key</label><input class="form-i" type="password" data-cfg="int.shodan"></div>
+        <div class="form-g"><label class="form-l">MaxMind licence key</label><input class="form-i" type="password" data-cfg="int.maxmind"></div>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gold btn-sm" data-save="int">💾 Sauvegarder localement</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(async function(){
+  const { SOURCE_META, fmt, esc, $, $$ } = FH;
+  const user = FH.Auth.current();
+
+  if (!user || user.role !== 'admin') {
+    $('#cfg-gate').innerHTML = `<div class="alert err">⛔ Accès refusé. Cette page est réservée aux administrateurs.</div>`;
+    return;
+  }
+  $('#cfg-body').classList.remove('hide');
+
+  $$('[data-acc] .acc-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+
+  // Alerting config
+  try {
+    const cfg = await api.alertConfig();
+    $('#alert-status').innerHTML = `<div class="alert ok">✓ Config alerting chargée depuis backend</div>`;
+    $('#a-threshold').value = cfg.threshold ?? cfg.critical_threshold ?? 80;
+    $('#a-email').value = cfg.email || cfg.notify_email || '';
+    $('#a-slack').value = cfg.slack_webhook || cfg.webhook || '';
+    $('#a-enabled').checked = cfg.enabled !== false;
+  } catch (e) {
+    $('#alert-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  $('#a-save').addEventListener('click', async () => {
+    const btn = $('#a-save'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '⟳ Enregistrement…';
+    try {
+      await api.setAlertConfig({
+        threshold: parseInt($('#a-threshold').value, 10),
+        email: $('#a-email').value.trim(),
+        slack_webhook: $('#a-slack').value.trim(),
+        enabled: $('#a-enabled').checked,
+      });
+      btn.innerHTML = '✓ Sauvegardé'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+      btn.innerHTML = old; btn.disabled = false;
+    }
+  });
+
+  $('#a-test').addEventListener('click', async () => {
+    try {
+      await api.alertTest({ message: 'Test depuis ForenHive UI' });
+      openModal(`<div class="alert ok">✓ Alerte de test envoyée.</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+
+  // Alert history
+  try {
+    const res = await api.alertHistory({ limit: 20 });
+    const items = (res && res.items) || [];
+    $('#alert-history').innerHTML = items.length ? `
+      <table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Cible</th><th>Statut</th></tr></thead>
+      <tbody>${items.map(a => `
+        <tr><td class="mono" style="font-size:11px">${fmt.date(a.timestamp || a.created_at)}</td>
+        <td>${esc(a.type || a.kind || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc(a.target || a.recipient || '—')}</td>
+        <td>${a.status === 'sent' ? '<span class="badge teal">✓ envoyé</span>' : (a.status === 'failed' ? '<span class="badge red">✗ erreur</span>' : '<span class="badge gold">'+esc(a.status || '—')+'</span>')}</td>
+        </tr>`).join('')}</tbody></table>` : '<div class="alert info">Aucune alerte dans l\'historique.</div>';
+  } catch (e) {
+    $('#alert-history').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  // Sources info
+  try {
+    const split = await api.geoSplit();
+    const arr = (split && split.split) || [];
+    $('#sources-info').innerHTML = `
+      <table class="tbl"><thead><tr><th>Source</th><th>Type</th><th>Description</th><th>Événements</th><th>Part</th></tr></thead>
+      <tbody>${arr.map(x => {
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', kind: '?', desc: '—' };
+        return `<tr>
+          <td><b>${meta.icon} ${meta.label}</b></td>
+          <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.kind === 'sensor' ? 'Capteur NDR' : 'Honeypot'}</span></td>
+          <td class="mono" style="font-size:11px">${esc(meta.desc)}</td>
+          <td class="mono">${x.count.toLocaleString('fr-FR')}</td>
+          <td class="mono">${x.percent}%</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch (e) {
+    $('#sources-info').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  // Intégrations locales
+  $$('[data-cfg]').forEach(el => {
+    const [section, key] = el.dataset.cfg.split('.');
+    const saved = JSON.parse(localStorage.getItem('fh.config.'+section) || '{}');
+    if (key in saved) el.value = saved[key];
+  });
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-save]'); if (!btn) return;
+    const section = btn.dataset.save;
+    const obj = {};
+    $$(`[data-cfg^="${section}."]`).forEach(el => {
+      const key = el.dataset.cfg.split('.')[1];
+      obj[key] = el.value;
+    });
+    localStorage.setItem('fh.config.'+section, JSON.stringify(obj));
+    const old = btn.innerHTML; btn.innerHTML = '✓ Enregistré'; setTimeout(() => { btn.innerHTML = old; }, 1400);
+  });
+})();
+</script>
