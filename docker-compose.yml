@@ -180,6 +180,14 @@ services:
       - PG_PASSWORD=${POSTGRES_PASSWORD}
       - ABUSEIPDB_KEY=${ABUSEIPDB_API_KEY}
       - VIRUSTOTAL_KEY=${VIRUSTOTAL_API_KEY}
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     depends_on:
       - elasticsearch
       - postgresql
@@ -222,6 +230,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # ── FRONTEND ─────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: forenhive-frontend
+    restart: unless-stopped
+    ports:
+      - "9000:80"
+    networks:
+      - backend-net
+    depends_on:
+      - backend
 
   # ── LLM ──────────────────────────────────────────────
   ollama:
