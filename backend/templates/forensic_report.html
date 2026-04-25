@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>ForenHive — Rapport forensique {{ ref }}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap');
+
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  font-family: 'Rajdhani', Helvetica, Arial, sans-serif;
+  color: #1a1008;
+  background: #faf7f2;
+}
+
+.a4-page {
+  background: #faf7f2;
+  width: 210mm;
+  min-height: 297mm;
+  position: relative;
+  font-family: 'Source Serif 4', Georgia, serif;
+  color: #1a1008;
+  overflow: hidden;
+  page-break-after: always;
+}
+.a4-page:last-child { page-break-after: auto; }
+
+.a4-page.with-mark::before {
+  content: 'CONFIDENTIEL';
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%) rotate(-35deg);
+  font-size: 72pt; font-weight: 700; font-family: 'Rajdhani', sans-serif;
+  color: rgba(198,40,40,0.05); letter-spacing: 8pt;
+  pointer-events: none; white-space: nowrap; z-index: 0;
+}
+
+.page-header {
+  background: linear-gradient(135deg,#1a0505,#2d1200,#0a1a3d);
+  padding: 6mm 12mm;
+  position: relative;
+  color: #FFF8E1;
+}
+.page-header::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1mm;
+  background: linear-gradient(90deg,#C62828,#F9A825,#1565C0);
+}
+.hdr-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3mm; }
+.hdr-logo { font-size: 15pt; font-weight: 700; color: #F9A825; font-family: 'Rajdhani', sans-serif; letter-spacing: 1.5pt; }
+.hdr-badge { background: rgba(198,40,40,0.3); border: 1pt solid #C62828; border-radius: 2mm; padding: 1.5mm 3mm; text-align: center; }
+.hdr-badge-score { font-size: 18pt; font-weight: 700; color: #EF9A9A; font-family: 'Rajdhani', sans-serif; line-height: 1; }
+.hdr-badge-label { font-size: 7pt; color: #EF9A9A; letter-spacing: 1.5pt; font-family: 'Share Tech Mono', monospace; }
+.hdr-title { font-size: 12pt; font-weight: 700; color: #FFF8E1; font-family: 'Rajdhani', sans-serif; letter-spacing: 1pt; margin-bottom: 1.5mm; }
+.hdr-meta { display: flex; gap: 6mm; flex-wrap: wrap; }
+.hdr-meta-item { font-size: 7.5pt; font-family: 'Share Tech Mono', monospace; color: rgba(255,248,225,0.6); }
+.hdr-meta-item strong { color: rgba(255,248,225,0.9); }
+
+.page-header.slim { padding: 3mm 12mm; display: flex; align-items: center; justify-content: space-between; }
+.page-header.slim .hdr-title { font-size: 10pt; font-weight: 700; color: #F9A825; font-family: 'Rajdhani', sans-serif; letter-spacing: 1pt; margin: 0; }
+.page-header.slim .hdr-sub { font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: rgba(255,248,225,0.55); }
+
+.page-footer {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: #f0ebe0; border-top: 0.3pt solid #c8b89a;
+  padding: 2mm 12mm;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.page-footer .ftxt {
+  font-size: 7pt; font-family: 'Share Tech Mono', monospace; color: #8a7a60;
+}
+
+.page-body { padding: 6mm 12mm 16mm 12mm; position: relative; z-index: 1; }
+
+.exec-box {
+  background: linear-gradient(135deg,rgba(198,40,40,0.06),rgba(249,168,37,0.04));
+  border: 0.5pt solid rgba(198,40,40,0.25);
+  border-left: 1.5mm solid #C62828;
+  border-radius: 1.5mm;
+  padding: 4mm 5mm; margin-bottom: 5mm;
+}
+.exec-title { font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: #C62828; letter-spacing: 1pt; text-transform: uppercase; margin-bottom: 2mm; }
+.exec-text { font-size: 9.5pt; line-height: 1.55; color: #2a1a08; }
+.exec-text p { margin-bottom: 1.5mm; }
+
+.section { margin-bottom: 5mm; page-break-inside: avoid; }
+.section-header {
+  display: flex; align-items: center; gap: 3mm;
+  margin-bottom: 2.5mm; padding-bottom: 1.2mm;
+  border-bottom: 0.3pt solid #d4c8b4;
+}
+.section-num {
+  font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: #C62828;
+  background: rgba(198,40,40,0.1); border: 0.3pt solid rgba(198,40,40,0.2);
+  border-radius: 1mm; padding: 1mm 2mm; font-weight: 700;
+}
+.section-title { font-size: 10.5pt; font-weight: 700; color: #1a0a00; font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5pt; text-transform: uppercase; }
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 3mm; }
+.info-block { background: #f5f0e8; border: 0.3pt solid #ddd4c0; border-radius: 1.5mm; padding: 3mm; }
+.info-block-title { font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: #8a6a40; letter-spacing: 1pt; text-transform: uppercase; margin-bottom: 2mm; border-bottom: 0.3pt solid #e0d4bc; padding-bottom: 1mm; }
+.info-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2mm; }
+.info-key { font-size: 8.5pt; color: #6a5a40; font-family: 'Share Tech Mono', monospace; }
+.info-val { font-size: 8.5pt; font-weight: 600; color: #1a0a00; font-family: 'Rajdhani', sans-serif; text-align: right; }
+.info-val.warn { color: #C62828; }
+.info-val.ok { color: #2e7d32; }
+.info-val.mono { font-family: 'Share Tech Mono', monospace; font-size: 8pt; }
+
+.tl-item { display: flex; gap: 3mm; margin-bottom: 2mm; align-items: flex-start; page-break-inside: avoid; }
+.tl-time { font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: #8a6a40; min-width: 22mm; padding-top: 0.5mm; flex-shrink: 0; }
+.tl-line { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.tl-dot { width: 2.5mm; height: 2.5mm; border-radius: 50%; flex-shrink: 0; }
+.tl-connector { width: 0.3pt; background: #d4c8b4; flex: 1; margin: 0.5mm 0; min-height: 3mm; }
+.tl-content { flex: 1; padding-bottom: 1mm; }
+.tl-source { font-size: 7pt; font-family: 'Share Tech Mono', monospace; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 0.5mm; }
+.tl-msg { font-size: 9pt; color: #1a0a00; font-weight: 500; }
+.tl-sub { font-size: 8pt; color: #8a6a40; font-family: 'Share Tech Mono', monospace; }
+.tl-warn { font-size: 8pt; color: #C62828; font-family: 'Share Tech Mono', monospace; font-weight: 700; margin-top: 0.5mm; }
+
+.mitre-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.mitre-table th { text-align: left; padding: 1.5mm 2.5mm; background: #f0ebe0; border: 0.3pt solid #d4c8b4; font-family: 'Share Tech Mono', monospace; font-size: 7.5pt; color: #6a5a40; letter-spacing: 0.5pt; text-transform: uppercase; }
+.mitre-table td { padding: 1.5mm 2.5mm; border: 0.3pt solid #e0d4bc; vertical-align: top; }
+.mitre-table tr:nth-child(even) td { background: #faf7f0; }
+.mitre-id { font-family: 'Share Tech Mono', monospace; font-size: 8.5pt; color: #1565C0; font-weight: 700; }
+.mitre-name { font-weight: 600; color: #1a0a00; }
+.mitre-tactic { font-size: 8pt; color: #6a5a40; font-style: italic; }
+.mitre-conf { font-family: 'Share Tech Mono', monospace; font-size: 8pt; color: #2e7d32; }
+.mitre-ev { font-size: 8pt; color: #4a3a20; }
+
+.kc-wrap { margin: 2mm 0 3mm; }
+.kc-steps { display: flex; gap: 1mm; margin-bottom: 1mm; }
+.kc-step { flex: 1; height: 4mm; border-radius: 0.8mm; }
+.kc-step-label { display: flex; justify-content: space-between; margin-top: 1mm; }
+.kc-step-l { font-size: 6.5pt; font-family: 'Share Tech Mono', monospace; color: #8a6a40; text-align: center; flex: 1; }
+.kc-step-l.active { color: #C62828; font-weight: 700; }
+
+.malware-box { background: #fff8f8; border: 0.3pt solid rgba(198,40,40,0.3); border-left: 1.5mm solid #C62828; border-radius: 1.5mm; padding: 3.5mm; margin-bottom: 3mm; }
+.malware-title { font-size: 8.5pt; font-family: 'Share Tech Mono', monospace; color: #C62828; font-weight: 700; text-transform: uppercase; letter-spacing: 1pt; margin-bottom: 2mm; }
+.malware-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; }
+
+.score-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.score-table th { text-align: left; padding: 1.2mm 2.5mm; background: #f0ebe0; border: 0.3pt solid #d4c8b4; font-family: 'Share Tech Mono', monospace; font-size: 7pt; color: #6a5a40; letter-spacing: 0.5pt; text-transform: uppercase; }
+.score-table td { padding: 1.2mm 2.5mm; border: 0.3pt solid #e8e0cc; }
+.score-bar-wrap { display: flex; align-items: center; gap: 2mm; }
+.score-bar-track { flex: 1; background: #e8e0cc; border-radius: 0.5mm; height: 1.5mm; overflow: hidden; }
+.score-bar-fill { height: 100%; border-radius: 0.5mm; }
+.score-val { font-family: 'Share Tech Mono', monospace; font-size: 8pt; font-weight: 700; min-width: 12mm; text-align: right; }
+.score-total { background: linear-gradient(135deg,rgba(198,40,40,0.08),rgba(249,168,37,0.05)); font-weight: 700; }
+
+.profile-box { background: linear-gradient(135deg,#fff8f0,#f8f0e8); border: 0.3pt solid #d4c0a0; border-radius: 1.5mm; padding: 3.5mm; }
+.profile-header { display: flex; align-items: center; gap: 4mm; margin-bottom: 2.5mm; padding-bottom: 2mm; border-bottom: 0.3pt solid #d4c8b4; }
+.wanted-badge { background: linear-gradient(135deg,#1a0505,#2d1200); border: 0.6pt solid #C62828; border-radius: 1.5mm; padding: 2mm 2.5mm; text-align: center; flex-shrink: 0; }
+.wanted-text { font-size: 5.5pt; font-family: 'Share Tech Mono', monospace; color: #EF9A9A; letter-spacing: 1.5pt; display: block; }
+.wanted-score { font-size: 16pt; font-weight: 700; color: #EF9A9A; font-family: 'Rajdhani', sans-serif; line-height: 1.1; }
+.profile-id { font-size: 8pt; font-family: 'Share Tech Mono', monospace; color: #6a5a40; }
+.profile-ip { font-size: 11pt; font-weight: 700; color: #1a0a00; font-family: 'Rajdhani', sans-serif; }
+.profile-tags { display: flex; gap: 2mm; margin-top: 1.5mm; flex-wrap: wrap; }
+.profile-tag { font-size: 7pt; padding: 0.5mm 2mm; border-radius: 1mm; font-family: 'Share Tech Mono', monospace; }
+.tag-crit { background: rgba(198,40,40,0.12); color: #C62828; border: 0.3pt solid rgba(198,40,40,0.25); }
+.tag-mid { background: rgba(249,168,37,0.12); color: #8a5a00; border: 0.3pt solid rgba(249,168,37,0.3); }
+.tag-info { background: rgba(21,101,192,0.1); color: #1565C0; border: 0.3pt solid rgba(21,101,192,0.25); }
+
+.organised-bar { margin: 2mm 0; }
+.org-labels { display: flex; justify-content: space-between; font-size: 7pt; font-family: 'Share Tech Mono', monospace; color: #8a6a40; margin-bottom: 1mm; }
+.org-track { background: #e8e0cc; border-radius: 1mm; height: 2.2mm; overflow: hidden; }
+.org-fill { height: 100%; border-radius: 1mm; background: linear-gradient(90deg,#1565C0,#C62828); }
+.profile-traits { margin-top: 2mm; }
+.trait-item { display: flex; align-items: flex-start; gap: 1.5mm; margin-bottom: 1mm; font-size: 8.5pt; color: #2a1a08; }
+.trait-bullet { color: #C62828; flex-shrink: 0; font-size: 6pt; margin-top: 1mm; }
+
+.narrative-box {
+  background: #f0ebe0; border-left: 1mm solid #F9A825;
+  padding: 2.5mm 3.5mm; margin-top: 2.5mm;
+  font-style: italic; font-size: 8.5pt; line-height: 1.5; color: #3a2808;
+}
+.narrative-label {
+  font-style: normal; font-size: 6.5pt; font-family: 'Share Tech Mono', monospace;
+  color: #8a6a40; letter-spacing: 1pt; text-transform: uppercase;
+  display: block; margin-bottom: 1mm;
+}
+
+.coc-box { background: #f0f8f0; border: 0.3pt solid rgba(46,125,50,0.3); border-left: 1.5mm solid #2e7d32; border-radius: 1.5mm; padding: 3mm; }
+.coc-title { font-size: 7.5pt; font-family: 'Share Tech Mono', monospace; color: #2e7d32; font-weight: 700; letter-spacing: 1pt; text-transform: uppercase; margin-bottom: 2mm; }
+.coc-hash { font-family: 'Share Tech Mono', monospace; font-size: 7.5pt; color: #1a0a00; word-break: break-all; margin-bottom: 1mm; }
+.coc-valid { font-size: 8.5pt; font-weight: 600; color: #2e7d32; margin-top: 2mm; }
+
+.ioc-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.ioc-table th { padding: 1.2mm 2.5mm; background: #f0ebe0; border: 0.3pt solid #d4c8b4; font-family: 'Share Tech Mono', monospace; font-size: 7pt; color: #6a5a40; letter-spacing: 0.5pt; text-transform: uppercase; text-align: left; }
+.ioc-table td { padding: 1.5mm 2.5mm; border: 0.3pt solid #e8e0cc; font-family: 'Share Tech Mono', monospace; font-size: 7.5pt; }
+.ioc-type { color: #8a6a40; }
+.ioc-val { color: #1565C0; font-weight: 700; word-break: break-all; }
+.ioc-ctx { color: #6a5a40; font-size: 7.5pt; }
+
+.rec-box { background: linear-gradient(135deg,rgba(21,101,192,0.06),rgba(249,168,37,0.04)); border: 0.3pt solid rgba(21,101,192,0.25); border-left: 1.5mm solid #1565C0; border-radius: 1.5mm; padding: 3mm; }
+.rec-title { font-size: 7.5pt; font-family: 'Share Tech Mono', monospace; color: #1565C0; font-weight: 700; letter-spacing: 1pt; text-transform: uppercase; margin-bottom: 2mm; }
+.rec-item { display: flex; align-items: flex-start; gap: 1.5mm; margin-bottom: 1mm; font-size: 9pt; color: #1a0a00; }
+.rec-n { font-family: 'Share Tech Mono', monospace; color: #C62828; font-size: 8pt; font-weight: 700; flex-shrink: 0; min-width: 6mm; }
+
+.legend-row { display: flex; gap: 4mm; flex-wrap: wrap; margin-top: 2mm; }
+.legend-item { display: flex; align-items: center; gap: 1.5mm; font-size: 7.5pt; font-family: 'Share Tech Mono', monospace; color: #6a5a40; }
+.legend-dot { width: 3mm; height: 3mm; border-radius: 0.5mm; }
+</style>
+</head>
+<body>
+
+{# ============================ PAGE 1 — COVER ============================ #}
+<div class="a4-page" style="display:flex;flex-direction:column">
+  <div style="height:2mm;background:linear-gradient(90deg,#C62828,#F9A825,#1565C0)"></div>
+
+  <div style="padding:18mm 18mm 0">
+    <div style="font-size:24pt;font-weight:700;font-family:'Rajdhani',sans-serif;color:#C62828;letter-spacing:2.5pt">⬡ ForenHive</div>
+    <div style="font-size:8pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:1.5pt;margin-top:1mm">Plateforme d'analyse forensique automatisée</div>
+  </div>
+
+  <div style="margin:8mm 18mm;height:0.3pt;background:linear-gradient(90deg,#C62828,rgba(198,40,40,0.1))"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4mm 18mm;text-align:center">
+    <div style="background:linear-gradient(135deg,rgba(198,40,40,0.08),rgba(249,168,37,0.05));border:0.3pt solid rgba(198,40,40,0.2);border-radius:3mm;padding:14mm 18mm;width:100%">
+
+      <div style="font-size:8pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:2.5pt;text-transform:uppercase;margin-bottom:5mm">Rapport d'analyse</div>
+
+      <div style="font-size:22pt;font-weight:700;font-family:'Rajdhani',sans-serif;color:#1a0a00;letter-spacing:0.5pt;line-height:1.2;margin-bottom:3mm">
+        RAPPORT D'ANALYSE<br>FORENSIQUE
+      </div>
+      <div style="font-size:10pt;font-family:'Source Serif 4',Georgia,serif;color:#4a3a20;font-style:italic;margin-bottom:8mm">
+        Détection, analyse comportementale et profilage<br>d'attaquants capturés par honeypots
+      </div>
+
+      <div style="display:inline-flex;align-items:center;gap:3mm;background:#1a0505;border:0.6pt solid #C62828;border-radius:2mm;padding:3mm 6mm;margin-bottom:6mm">
+        <div style="text-align:center">
+          <div style="font-size:28pt;font-weight:700;font-family:'Rajdhani',sans-serif;color:#EF9A9A;line-height:1">{{ risk_score }}</div>
+          <div style="font-size:7pt;font-family:'Share Tech Mono',monospace;color:#EF9A9A;letter-spacing:1.5pt">/ 100</div>
+        </div>
+        <div style="width:0.3pt;height:14mm;background:rgba(198,40,40,0.4)"></div>
+        <div>
+          <div style="font-size:14pt;font-weight:700;font-family:'Rajdhani',sans-serif;color:#C62828;letter-spacing:1.5pt">{{ risk_level }}</div>
+          <div style="font-size:7.5pt;font-family:'Share Tech Mono',monospace;color:rgba(239,154,154,0.65)">Niveau de risque</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2mm;text-align:left">
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">Référence</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#1a0a00;font-weight:700">{{ ref }}</div>
+        </div>
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">Date de génération</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#1a0a00">{{ generated_at }}</div>
+        </div>
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">Session ID</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#1a0a00">{{ session_id }}</div>
+        </div>
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">Classification</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#C62828;font-weight:700">{{ classification }}</div>
+        </div>
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">IP source</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#1a0a00">{{ source_ip }}</div>
+        </div>
+        <div style="background:#f5f0e8;border-radius:1mm;padding:2mm 3mm">
+          <div style="font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:0.5mm">Honeypot</div>
+          <div style="font-size:8.5pt;font-family:'Share Tech Mono',monospace;color:#1a0a00">{{ honeypot_type }}</div>
+        </div>
+      </div>
+
+      <div style="margin-top:6mm;padding:3mm;background:#f5f0e8;border-radius:1mm">
+        <div style="font-size:7pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:1pt;text-transform:uppercase;margin-bottom:2mm">Légende — Niveaux de risque</div>
+        <div class="legend-row" style="justify-content:center;margin-top:0">
+          <div class="legend-item"><div class="legend-dot" style="background:#C62828"></div>CRITIQUE 80–100</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div>ÉLEVÉ 60–79</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#d4a017"></div>MOYEN 40–59</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#5a8dd6"></div>FAIBLE 20–39</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#6b7a90"></div>INFO 0–19</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:2mm;background:linear-gradient(90deg,#1565C0,#F9A825,#C62828)"></div>
+</div>
+
+{# ============================ PAGE 2 — EXEC + IDENTITY + TIMELINE ============================ #}
+<div class="a4-page with-mark">
+  <div class="page-header">
+    <div class="hdr-top">
+      <div class="hdr-logo">⬡ ForenHive</div>
+      <div class="hdr-badge">
+        <div class="hdr-badge-score">{{ risk_score }}</div>
+        <div class="hdr-badge-label">{{ risk_level }}</div>
+      </div>
+    </div>
+    <div class="hdr-title">RAPPORT D'ANALYSE FORENSIQUE</div>
+    <div class="hdr-meta">
+      <div class="hdr-meta-item">Réf : <strong>{{ ref }}</strong></div>
+      <div class="hdr-meta-item">Date : <strong>{{ generated_at }}</strong></div>
+      <div class="hdr-meta-item">Session : <strong>{{ session_id }}</strong></div>
+      <div class="hdr-meta-item">Honeypot : <strong>{{ honeypot_type }}</strong></div>
+    </div>
+  </div>
+
+  <div class="page-body">
+
+    <div class="exec-box">
+      <div class="exec-title">01 — Résumé exécutif</div>
+      <div class="exec-text">{{ forensic_narrative|safe }}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">02</div>
+        <div class="section-title">Identité de l'attaquant</div>
+      </div>
+      <div class="info-grid">
+        <div class="info-block">
+          <div class="info-block-title">Géolocalisation &amp; Infrastructure</div>
+          <div class="info-row"><span class="info-key">IP source</span><span class="info-val mono">{{ source_ip }}</span></div>
+          <div class="info-row"><span class="info-key">Localisation</span><span class="info-val">{{ geo_city }}{% if geo_city %}, {% endif %}{{ geo_country }}</span></div>
+          <div class="info-row"><span class="info-key">ASN</span><span class="info-val mono">AS{{ asn }}</span></div>
+          <div class="info-row"><span class="info-key">Organisation</span><span class="info-val">{{ asn_org }}</span></div>
+          <div class="info-row"><span class="info-key">CIDR</span><span class="info-val mono">{{ cidr }}</span></div>
+          <div class="info-row"><span class="info-key">Ports ouverts</span><span class="info-val mono">{{ open_ports }}</span></div>
+        </div>
+        <div class="info-block">
+          <div class="info-block-title">Réputation &amp; Anonymisation</div>
+          <div class="info-row"><span class="info-key">AbuseIPDB</span><span class="info-val {% if abuse_score >= 50 %}warn{% endif %}">{{ abuse_display }}</span></div>
+          <div class="info-row"><span class="info-key">Signalements</span><span class="info-val {% if total_reports > 100 %}warn{% endif %}">{{ total_reports }} rapport(s)</span></div>
+          <div class="info-row"><span class="info-key">Nœud Tor</span><span class="info-val {% if is_tor %}warn{% else %}ok{% endif %}">{% if is_tor %}OUI — exit node{% else %}NON{% endif %}</span></div>
+          <div class="info-row"><span class="info-key">VPN</span><span class="info-val {% if is_vpn %}warn{% else %}ok{% endif %}">{% if is_vpn %}OUI{% else %}NON{% endif %}</span></div>
+          <div class="info-row"><span class="info-key">Proxy</span><span class="info-val {% if is_proxy %}warn{% else %}ok{% endif %}">{% if is_proxy %}OUI{% else %}NON{% endif %}</span></div>
+          <div class="info-row"><span class="info-key">Confiance enrichissement</span><span class="info-val">{{ confidence_pct }}%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">03</div>
+        <div class="section-title">Timeline forensique · Précision ms</div>
+      </div>
+      <div>
+        {% for event in timeline %}
+        <div class="tl-item">
+          <div class="tl-time">{{ event.time }}</div>
+          <div class="tl-line"><div class="tl-dot" style="background:{{ event.source_color }}"></div>{% if not loop.last %}<div class="tl-connector"></div>{% endif %}</div>
+          <div class="tl-content">
+            <div class="tl-source" style="color:{{ event.source_color }}">{{ event.source }}</div>
+            <div class="tl-msg">{{ event.message }}</div>
+            {% if event.sub %}<div class="tl-sub">{{ event.sub }}</div>{% endif %}
+            {% if event.warning %}<div class="tl-warn">⚠ {{ event.warning }}</div>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+  <div class="page-footer">
+    <div class="ftxt">ForenHive · Plateforme indépendante</div>
+    <div class="ftxt">Page 2 / 5 · {{ classification }}</div>
+  </div>
+</div>
+
+{# ============================ PAGE 3 — MITRE + KILL CHAIN + SCORE ============================ #}
+<div class="a4-page with-mark">
+  <div class="page-header slim">
+    <div class="hdr-title">⬡ ForenHive · {{ ref }}</div>
+    <div class="hdr-sub">{{ source_ip }} · {{ risk_level }} {{ risk_score }}/100</div>
+  </div>
+
+  <div class="page-body">
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">04</div>
+        <div class="section-title">Analyse MITRE ATT&amp;CK · Kill Chain</div>
+      </div>
+
+      <div class="kc-wrap">
+        <div style="font-size:7.5pt;font-family:'Share Tech Mono',monospace;color:#6a5a40;margin-bottom:1mm">KILL CHAIN — ÉTAPE {{ kill_chain_stage }}/8 · {{ kill_chain_phase|upper }}</div>
+        <div class="kc-steps">
+          {% for step in kc_steps %}
+          <div class="kc-step" style="background:{% if step.active %}#C62828{% elif step.done %}#1565C0{% else %}#e8e0cc{% endif %}{% if step.active %};outline:0.6pt solid #EF9A9A{% endif %}"></div>
+          {% endfor %}
+        </div>
+        <div class="kc-step-label">
+          {% for step in kc_steps %}
+          <div class="kc-step-l {% if step.active %}active{% endif %}">{{ step.label }}{% if step.active %} ▼{% endif %}</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if mitre_techniques %}
+      <table class="mitre-table" style="margin-top:3mm">
+        <thead>
+          <tr><th>ID ATT&amp;CK</th><th>Technique</th><th>Tactique</th><th>Confiance</th><th>Évidence</th></tr>
+        </thead>
+        <tbody>
+          {% for t in mitre_techniques %}
+          <tr>
+            <td><div class="mitre-id">{{ t.id }}</div></td>
+            <td><div class="mitre-name">{{ t.name }}</div>{% if t.description %}<div style="font-size:7.5pt;color:#6a5a40;margin-top:0.5mm">{{ t.description }}</div>{% endif %}</td>
+            <td><div class="mitre-tactic">{{ t.tactic }}</div></td>
+            <td><div class="mitre-conf">{{ t.confidence }}</div></td>
+            <td><div class="mitre-ev">{{ t.evidence }}</div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="font-size:7pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;margin-top:1.5mm">Mapping déterministe via signatures honeypot · narratif enrichi par LLM Mistral 7B local.</div>
+      {% else %}
+      <div style="font-size:9pt;color:#6a5a40;font-style:italic">Aucune technique MITRE corrélée pour cette session.</div>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">05</div>
+        <div class="section-title">Score de risque · Décomposition</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:4mm;margin-bottom:3mm">
+        <div style="background:linear-gradient(135deg,rgba(198,40,40,0.1),rgba(249,168,37,0.06));border:0.6pt solid {{ risk_level_color }};border-radius:2mm;padding:3mm 5mm;text-align:center;flex-shrink:0">
+          <div style="font-size:24pt;font-weight:700;color:{{ risk_level_color }};font-family:'Rajdhani',sans-serif;line-height:1">{{ risk_score }}</div>
+          <div style="font-size:8pt;color:{{ risk_level_color }};font-family:'Share Tech Mono',monospace;letter-spacing:1pt">/ 100 · {{ risk_level }}</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:8.5pt;color:#4a3a20;margin-bottom:1.5mm">Confiance du score : <strong>{{ confidence_pct }}%</strong></div>
+          <div style="background:#e8e0cc;border-radius:1mm;height:3mm;overflow:hidden">
+            <div style="width:{{ risk_score }}%;height:100%;background:linear-gradient(90deg,#C62828,#F9A825);border-radius:1mm"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:6.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;margin-top:1mm">
+            <span>0</span><span>INFO</span><span>FAIBLE</span><span>MOYEN</span><span>ÉLEVÉ</span><span style="color:#C62828;font-weight:700">CRITIQUE</span>
+          </div>
+        </div>
+      </div>
+
+      {% if score_signals %}
+      <table class="score-table">
+        <thead>
+          <tr><th>#</th><th>Signal</th><th>Source</th><th>Points</th><th>Visualisation</th></tr>
+        </thead>
+        <tbody>
+          {% for sig in score_signals %}
+          <tr>
+            <td style="font-family:'Share Tech Mono',monospace;font-size:7.5pt;color:#8a6a40">{{ sig.num }}</td>
+            <td>{{ sig.name }}</td>
+            <td style="font-family:'Share Tech Mono',monospace;font-size:7.5pt">{{ sig.source }}</td>
+            <td style="font-family:'Share Tech Mono',monospace;font-weight:700;color:{{ sig.color }}">{{ sig.pts }}</td>
+            <td>
+              <div class="score-bar-wrap">
+                <div class="score-bar-track"><div class="score-bar-fill" style="width:{{ sig.pct }}%;background:{{ sig.color }}"></div></div>
+                <span class="score-val" style="color:{{ sig.color }}">{{ sig.pts }}/{{ sig.max }}</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+          <tr class="score-total">
+            <td colspan="3" style="font-weight:700;font-family:'Share Tech Mono',monospace;font-size:8.5pt">TOTAL (plafonné à 100)</td>
+            <td style="font-family:'Share Tech Mono',monospace;font-weight:700;color:{{ risk_level_color }};font-size:11pt">{{ score_total }}</td>
+            <td>
+              <div class="score-bar-wrap">
+                <div class="score-bar-track" style="height:2.2mm"><div class="score-bar-fill" style="width:{{ score_total }}%;background:linear-gradient(90deg,#C62828,#F9A825)"></div></div>
+                <span class="score-val" style="color:{{ risk_level_color }};font-size:9pt">{{ score_total }}/100</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:7pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;margin-top:1mm">Score déterministe et auditable — chaque point est justifié par une évidence concrète dans les logs.</div>
+      {% endif %}
+    </div>
+
+  </div>
+  <div class="page-footer">
+    <div class="ftxt">ForenHive · Plateforme indépendante</div>
+    <div class="ftxt">Page 3 / 5 · {{ classification }}</div>
+  </div>
+</div>
+
+{# ============================ PAGE 4 — PROFIL + MALWARE ============================ #}
+<div class="a4-page with-mark">
+  <div class="page-header slim">
+    <div class="hdr-title">⬡ ForenHive · {{ ref }}</div>
+    <div class="hdr-sub">{{ source_ip }} · {{ risk_level }} {{ risk_score }}/100</div>
+  </div>
+
+  <div class="page-body">
+
+    {% if has_profile %}
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">06</div>
+        <div class="section-title">Profil comportemental · FBI BAU</div>
+      </div>
+      <div class="profile-box">
+        <div class="profile-header">
+          <div class="wanted-badge">
+            <span class="wanted-text">WANTED</span>
+            <div class="wanted-score">{{ risk_score }}</div>
+            <span class="wanted-text">{{ risk_level }}</span>
+          </div>
+          <div style="flex:1">
+            <div class="profile-ip">{{ source_ip }}</div>
+            <div class="profile-id">{{ geo_city }}{% if geo_city %}, {% endif %}{{ geo_country }} · AS{{ asn }} {% if is_tor %}· Tor exit node{% endif %}</div>
+            <div class="profile-tags">
+              <span class="profile-tag tag-crit">{{ actor_type }}</span>
+              <span class="profile-tag tag-mid">{{ sophistication }}</span>
+              <span class="profile-tag tag-info">CONFIANCE {{ profile_confidence }}%</span>
+              {% if is_recidivist %}<span class="profile-tag tag-crit">RÉCIDIVISTE — {{ previous_sessions }}×</span>{% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="organised-bar">
+          <div class="org-labels">
+            <span>DÉSORGANISÉ</span>
+            <span style="font-weight:700;color:#1a0a00">Score organisé : {{ (organised_score * 100)|round|int }}%</span>
+            <span>ORGANISÉ</span>
+          </div>
+          <div class="org-track"><div class="org-fill" style="width:{{ (organised_score * 100)|round|int }}%"></div></div>
+        </div>
+
+        <div class="info-grid" style="margin-top:2.5mm">
+          <div>
+            <div style="font-size:7.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:1.5mm">Modus Operandi</div>
+            <div class="profile-traits">
+              {% for tr in behavioral_traits %}
+              <div class="trait-item"><span class="trait-bullet">●</span><span>{{ tr }}</span></div>
+              {% else %}
+              <div class="trait-item"><span class="trait-bullet">●</span><span style="font-style:italic;color:#6a5a40">Aucun trait extrait</span></div>
+              {% endfor %}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:7.5pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;letter-spacing:0.5pt;text-transform:uppercase;margin-bottom:1.5mm">Signature (Locard)</div>
+            <div class="profile-traits">
+              {% for sg in signature_behaviors %}
+              <div class="trait-item"><span class="trait-bullet">●</span><span>{{ sg }}</span></div>
+              {% else %}
+              <div class="trait-item"><span class="trait-bullet">●</span><span style="font-style:italic;color:#6a5a40">Pas de signature détectée</span></div>
+              {% endfor %}
+              {% if is_recidivist %}<div class="trait-item"><span class="trait-bullet" style="color:#C62828">⚠</span><span style="color:#C62828">Récidiviste — {{ previous_sessions }} session(s) antérieure(s)</span></div>{% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if detective_narrative %}
+        <div class="narrative-box">
+          <span class="narrative-label">Analyse narrative · Mistral 7B local</span>
+          {{ detective_narrative }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">07</div>
+        <div class="section-title">Analyse malware · YARA + VirusTotal</div>
+      </div>
+      {% if has_malware %}
+      <div class="malware-box">
+        <div class="malware-title">⚠ {{ malware.yara_family }} — Famille détectée</div>
+        <div class="malware-grid">
+          <div>
+            <div class="info-row"><span class="info-key">Fichier</span><span class="info-val">{{ malware.filename }}</span></div>
+            <div class="info-row"><span class="info-key">Taille</span><span class="info-val">{{ malware.size }}</span></div>
+            <div class="info-row"><span class="info-key">Architecture</span><span class="info-val">{{ malware.arch }}</span></div>
+            <div class="info-row"><span class="info-key">SHA-256</span><span class="info-val mono" style="font-size:7pt">{{ malware.sha256[:24] }}…</span></div>
+            <div class="info-row"><span class="info-key">Règle YARA</span><span class="info-val warn">{{ malware.yara_rule }}</span></div>
+          </div>
+          <div>
+            <div class="info-row"><span class="info-key">VirusTotal</span><span class="info-val warn">{{ malware.vt_ratio }}</span></div>
+            <div class="info-row"><span class="info-key">Famille</span><span class="info-val warn">{{ malware.vt_family }}</span></div>
+            <div class="info-row"><span class="info-key">Tags</span><span class="info-val">{{ malware.vt_tags }}</span></div>
+            <div class="info-row"><span class="info-key">First seen</span><span class="info-val">{{ malware.vt_first_seen }}</span></div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div style="font-size:9pt;color:#6a5a40;font-style:italic;padding:3mm;background:#f5f0e8;border:0.3pt solid #ddd4c0;border-radius:1.5mm">
+        Aucun binaire malveillant capturé pour cette session — l'analyse YARA + VirusTotal n'a renvoyé aucun résultat propre à cet incident.
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+  <div class="page-footer">
+    <div class="ftxt">ForenHive · Plateforme indépendante</div>
+    <div class="ftxt">Page 4 / 5 · {{ classification }}</div>
+  </div>
+</div>
+
+{# ============================ PAGE 5 — IOCs + CoC + RECOS ============================ #}
+<div class="a4-page with-mark">
+  <div class="page-header slim">
+    <div class="hdr-title">⬡ ForenHive · {{ ref }}</div>
+    <div class="hdr-sub">IOCs · Chaîne de custody · Recommandations</div>
+  </div>
+
+  <div class="page-body">
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">08</div>
+        <div class="section-title">Chaîne de custody · RFC 3161</div>
+      </div>
+      <div class="info-grid">
+        <div class="coc-box">
+          <div class="coc-title">✓ Intégrité des preuves certifiée</div>
+          <div class="coc-hash">SHA-256 (log) :<br>{{ log_sha256 }}</div>
+          <div class="info-row" style="margin-top:1.5mm"><span class="info-key">TSA</span><span class="info-val mono" style="font-size:7.5pt">freeTSA.org · RFC 3161</span></div>
+          <div class="info-row"><span class="info-key">Horodatage</span><span class="info-val mono" style="font-size:7.5pt">{{ certified_at }}</span></div>
+          <div class="info-row"><span class="info-key">Token TSA</span><span class="info-val mono" style="font-size:7pt">{{ tsa_token[:32] }}…</span></div>
+          <div class="coc-valid">✓ Intégrité vérifiée · Admissible</div>
+        </div>
+        <div class="rec-box">
+          <div class="rec-title">Recommandations SOC — actions immédiates</div>
+          {% for r in recommendations %}
+          <div class="rec-item"><span class="rec-n">{{ loop.index }}.</span><span>{{ r }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">09</div>
+        <div class="section-title">Indicateurs de compromission (IOCs)</div>
+      </div>
+      {% if iocs %}
+      <table class="ioc-table">
+        <thead>
+          <tr><th>Type IOC</th><th>Valeur</th><th>Contexte</th><th>Confiance</th></tr>
+        </thead>
+        <tbody>
+          {% for ioc in iocs %}
+          <tr>
+            <td class="ioc-type">{{ ioc.type }}</td>
+            <td class="ioc-val">{{ ioc.value }}</td>
+            <td class="ioc-ctx">{{ ioc.context }}</td>
+            <td style="font-family:'Share Tech Mono',monospace;font-size:7.5pt;color:{{ ioc.confidence_color }}">{{ ioc.confidence }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="font-size:7pt;font-family:'Share Tech Mono',monospace;color:#8a6a40;margin-top:1.5mm">Confiance dérivée du nombre d'occurrences cross-honeypot et de la corroboration enrichissement.</div>
+      {% else %}
+      <div style="font-size:9pt;color:#6a5a40;font-style:italic">Aucun IOC extractible pour cette session.</div>
+      {% endif %}
+    </div>
+
+    <div style="margin-top:4mm;padding:3mm;background:linear-gradient(135deg,rgba(198,40,40,0.04),rgba(249,168,37,0.03));border:0.3pt solid #d4c8b4;border-radius:1.5mm;font-size:8pt;color:#6a5a40;line-height:1.5;font-family:'Source Serif 4',Georgia,serif">
+      <strong>Avertissement légal :</strong> Ce rapport est produit automatiquement par ForenHive à des fins d'analyse forensique. La chaîne de custody est garantie par horodatage RFC 3161 (freeTSA.org). Ce document peut être utilisé comme pièce justificative sous réserve de validation par un expert forensique certifié.
+    </div>
+
+  </div>
+  <div class="page-footer">
+    <div class="ftxt">ForenHive · Plateforme indépendante</div>
+    <div class="ftxt">Page 5 / 5 · FIN DU RAPPORT</div>
+  </div>
+</div>
+
+</body>
+</html>

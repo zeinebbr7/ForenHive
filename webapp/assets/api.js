@@ -9,28 +9,18 @@ const API_BASE = (location.hostname === 'localhost' || location.hostname === '12
 const TOKEN_KEY = 'forenhive.token';
 const USER_KEY  = 'forenhive.user';
 
-/* ═════════ AUTH BYPASS — fake admin user injected on load ═════════ */
-const FAKE_USER = {
-  id: '00000000-0000-0000-0000-000000000000',
-  email: 'admin@forenhive.io',
-  full_name: 'Admin (auth disabled)',
-  role: 'admin',
-  is_active: true,
-  created_at: new Date().toISOString(),
-};
-if (!localStorage.getItem(USER_KEY)) {
-  localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER));
-}
-
 const api = {
   base: API_BASE,
   token() { return localStorage.getItem(TOKEN_KEY); },
-  user()  { try { return JSON.parse(localStorage.getItem(USER_KEY)) || FAKE_USER; } catch(e){ return FAKE_USER; } },
+  user()  { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch(e){ return null; } },
   setSession(token, user) {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     if (user)  localStorage.setItem(USER_KEY, JSON.stringify(user));
   },
-  clear() { /* auth disabled — keep fake user */ localStorage.setItem(USER_KEY, JSON.stringify(FAKE_USER)); },
+  clear() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
 
   async _call(path, opts = {}) {
     const headers = Object.assign({}, opts.headers || {});
@@ -41,9 +31,11 @@ const api = {
       opts.body = JSON.stringify(opts.body);
     }
     const res = await fetch(this.base + path, Object.assign({}, opts, { headers }));
-    if (res.status === 401) {
-      /* auth disabled — ignore 401, do not redirect */
-      throw new Error('unauthorized');
+    if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/me')) {
+      this.clear();
+      const loginUrl = location.pathname.includes('/pages/') ? 'login.html' : 'pages/login.html';
+      window.location.href = loginUrl;
+      throw new Error('session expired');
     }
     const ct = res.headers.get('content-type') || '';
     const data = ct.includes('application/json') ? await res.json().catch(() => null) : await res.text();
@@ -55,12 +47,21 @@ const api = {
     return data;
   },
 
-  /* ─── auth (BYPASSED — always returns fake admin) ─── */
+  /* ─── auth ─── */
   async login(email, password) {
-    this.setSession('fake-token-auth-disabled', FAKE_USER);
-    return FAKE_USER;
+    const body = new URLSearchParams({ username: email, password });
+    const data = await this._call('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    // Decode JWT payload (no signature verification needed client-side)
+    const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+    const me = { id: payload.sub, email: payload.email, role: payload.role, full_name: payload.email, is_active: true, created_at: new Date().toISOString() };
+    this.setSession(data.access_token, me);
+    return me;
   },
-  me()      { return Promise.resolve(FAKE_USER); },
+  me()      { return this._call('/api/auth/me'); },
   refresh() { return this._call('/api/auth/refresh', { method: 'POST' }); },
   users()   { return this._call('/api/auth/users'); },
 
@@ -92,6 +93,12 @@ const api = {
   geoSplit()    { return this._call('/api/geo/honeypot-split'); },
   geoBreakdown(){ return this._call('/api/geo/breakdown'); },
   profile(ip)   { return this._call('/api/profiling/' + encodeURIComponent(ip)); },
+  profilingList(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this._call('/api/profiling' + (qs ? '?' + qs : ''));
+  },
+  profilingStats()   { return this._call('/api/profiling/stats/summary'); },
+  profilingById(id)  { return this._call('/api/profiling/by-id/' + encodeURIComponent(id)); },
 
   /* ─── forensics ─── */
   forensicsTimeline(params) {
@@ -111,6 +118,34 @@ const api = {
   generateReport(body) { return this._call('/api/reports/generate', { method: 'POST', body }); },
   reportDownloadUrl(id){ return this.base + '/api/reports/' + encodeURIComponent(id) + '/download'; },
   reportStixUrl(id)    { return this.base + '/api/reports/' + encodeURIComponent(id) + '/stix'; },
+
+  /* ─── forensic PDF reports (Sprint 4) ─── */
+  forensicSessions(limit = 50) { return this._call('/api/reports/forensic/sessions?limit=' + limit); },
+  forensicReportPreviewUrl(sid) {
+    return this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/preview';
+  },
+  async forensicReportDownload(sid) {
+    const tok = this.token();
+    const res = await fetch(this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/generate', {
+      method: 'POST',
+      headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
+    });
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); msg = j.detail || msg; } catch(e){}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = /filename="([^"]+)"/.exec(cd);
+    a.download = m ? m[1] : 'ForenHive-' + sid + '.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return { sha256: res.headers.get('X-PDF-SHA256') };
+  },
 
   /* ─── alerts ─── */
   alertConfig()           { return this._call('/api/alerts/config'); },

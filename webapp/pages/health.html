@@ -1,15 +1,48 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">💊 Monitoring</div>
-    <h2 class="page-title">Health <span>check</span></h2>
-    <div class="page-sub">État des services ForenHive · endpoint <span class="mono">/health</span>.</div>
+    <div class="section-tag" style="margin-bottom:8px">Monitoring · NDR</div>
+    <h2 class="page-title">Health <span>Check &middot; Zeek</span></h2>
+    <div class="page-sub">État du capteur NDR Zeek · trafic réseau passif sur <span class="mono">eno12399</span> · état des services ForenHive.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gold btn-sm" id="refresh-now">🔄 Vérifier</button>
+    <button class="btn btn-gold btn-sm" id="refresh-now">Vérifier</button>
   </div>
 </div>
 
-<div class="grid-3 mb-20" id="svc-grid"><div class="alert info" style="grid-column:1/-1">Chargement…</div></div>
+<div class="kpi-grid">
+  <div class="kpi g"><div class="kpi-label">Événements Zeek</div><div class="kpi-val" id="kpi-zeek-total">—</div><div class="kpi-delta">indexés (fenêtre)</div></div>
+  <div class="kpi b"><div class="kpi-label">Connexions uniques</div><div class="kpi-val" id="kpi-zeek-conn">—</div><div class="kpi-delta">conn.log</div></div>
+  <div class="kpi p"><div class="kpi-label">IPs sources</div><div class="kpi-val" id="kpi-zeek-ips">—</div><div class="kpi-delta">attaquants distincts</div></div>
+  <div class="kpi r"><div class="kpi-label">Notice / Weird</div><div class="kpi-val" id="kpi-zeek-weird">—</div><div class="kpi-delta">événements anormaux</div></div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h">
+      <div class="card-t">Trafic Zeek capté</div>
+      <div class="card-sub">Top protocoles · ports destination</div>
+    </div>
+    <div id="zeek-protos"><div class="alert info">Chargement…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h">
+      <div class="card-t">Top IPs sources (Zeek)</div>
+      <div class="card-sub">Émetteurs les plus actifs · 100 derniers événements</div>
+    </div>
+    <div id="zeek-ips"><div class="alert info">Chargement…</div></div>
+  </div>
+</div>
+
+<div class="card mb-20">
+  <div class="card-h">
+    <div class="card-t">Derniers événements Zeek</div>
+    <div class="card-sub">Flux NDR brut · 20 dernières lignes</div>
+  </div>
+  <div id="zeek-stream"><div class="alert info">Chargement…</div></div>
+</div>
+
+<div class="grid-3 mb-20" id="svc-grid"><div class="alert info" style="grid-column:1/-1">Vérification services…</div></div>
 
 <div class="grid-2 mb-20">
   <div class="card">
@@ -22,45 +55,114 @@
   </div>
 </div>
 
+<style>
+.bar-row { display:grid; grid-template-columns: 100px 1fr 60px; gap:10px; align-items:center; padding: 4px 0; font-size: 12px; }
+.bar-row .lab { font-family:'Share Tech Mono',monospace; color: var(--text2); }
+.bar-track { background: var(--bg3); height: 6px; border-radius: 3px; overflow: hidden; }
+.bar-fill { height:100%; background: linear-gradient(90deg, var(--blue), var(--gold)); }
+.bar-row .v { font-family:'Share Tech Mono',monospace; color: var(--gold); text-align:right; }
+
+.zlog { display:grid; grid-template-columns: 80px 100px 1fr; gap:10px; padding: 5px 0; border-bottom: 1px solid rgba(249,168,37,.07); font-size: 12px; }
+.zlog:last-child { border-bottom:none; }
+.zlog .t { font-family:'Share Tech Mono',monospace; font-size: 10px; color: var(--text3); }
+.zlog .ip { font-family:'Share Tech Mono',monospace; font-size: 11px; color: var(--blue2); }
+.zlog .m { color: var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+
 <script>
 (async function(){
   const { fmt, esc, $ } = FH;
+  const { evNormalize } = FH;
 
   const STLABEL = {up:'OPÉRATIONNEL', ok:'OK', down:'HORS-LIGNE', degraded:'DÉGRADÉ', warn:'DÉGRADÉ'};
   const STCLASS = {up:'teal', ok:'teal', down:'red', degraded:'gold', warn:'gold'};
 
-  async function load() {
-    $('#svc-grid').innerHTML = '<div class="alert info" style="grid-column:1/-1">Vérification…</div>';
+  async function loadZeek() {
+    try {
+      const res = await api.attacks({ honeypot: 'zeek', page_size: 200 });
+      const items = (res && res.items) || [];
+      const normalized = items.map(evNormalize);
+
+      $('#kpi-zeek-total').textContent = fmt.num(items.length);
+
+      const ipCounts = {}, protoCounts = {};
+      let connCount = 0, weirdCount = 0;
+      for (const n of normalized) {
+        if (n.source_ip) ipCounts[n.source_ip] = (ipCounts[n.source_ip] || 0) + 1;
+        const action = (n.event_action || '').toLowerCase();
+        const cat    = (n.event_category || '').toLowerCase();
+        if (action.includes('conn') || cat.includes('conn'))  connCount++;
+        if (action.includes('weird') || action.includes('notice') || cat.includes('weird')) weirdCount++;
+        const proto = (n.protocol || (n.dest_port ? 'port:'+n.dest_port : 'other')).toString();
+        protoCounts[proto] = (protoCounts[proto] || 0) + 1;
+      }
+      $('#kpi-zeek-conn').textContent  = fmt.num(connCount);
+      $('#kpi-zeek-weird').textContent = fmt.num(weirdCount);
+      $('#kpi-zeek-ips').textContent   = fmt.num(Object.keys(ipCounts).length);
+
+      const topProto = Object.entries(protoCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+      const maxP = topProto[0] ? topProto[0][1] : 1;
+      $('#zeek-protos').innerHTML = topProto.length
+        ? topProto.map(([p, c]) => `
+          <div class="bar-row">
+            <span class="lab">${esc(p)}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${(c/maxP)*100}%"></div></div>
+            <span class="v">${c}</span>
+          </div>`).join('')
+        : '<div class="alert info">Aucun événement Zeek dans la fenêtre.</div>';
+
+      const topIp = Object.entries(ipCounts).sort((a,b) => b[1]-a[1]).slice(0, 10);
+      const maxI = topIp[0] ? topIp[0][1] : 1;
+      $('#zeek-ips').innerHTML = topIp.length
+        ? topIp.map(([ip, c]) => `
+          <div class="bar-row">
+            <span class="lab" style="color:var(--blue2)">${esc(ip)}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${(c/maxI)*100}%"></div></div>
+            <span class="v">${c}</span>
+          </div>`).join('')
+        : '<div class="alert info">Aucune IP source.</div>';
+
+      const last = normalized.slice(0, 20);
+      $('#zeek-stream').innerHTML = last.length
+        ? last.map(n => `<div class="zlog">
+            <span class="t">${fmt.time(n.timestamp)}</span>
+            <span class="ip">${esc(n.source_ip || '—')}</span>
+            <span class="m">${esc(n.message || n.event_action || '—')}${n.dest_port ? ' &rarr; :'+esc(n.dest_port) : ''}</span>
+          </div>`).join('')
+        : '<div class="alert info">Aucun événement.</div>';
+
+    } catch (e) {
+      ['zeek-protos','zeek-ips','zeek-stream'].forEach(id => $('#'+id).innerHTML = `<div class="alert err">${esc(e.message)}</div>`);
+    }
+  }
+
+  async function loadServices() {
     try {
       const h = await api.health();
       const components = h.components || h.checks || h.services || {};
       const entries = Object.entries(components);
 
-      if (!entries.length) {
-        $('#svc-grid').innerHTML = `<div class="card" style="grid-column:1/-1">
-          <div class="flex items-c" style="justify-content:space-between">
-            <div class="card-t">Backend ForenHive</div>
-            <span class="badge ${STCLASS[h.status] || 'gold'}"><span class="dot ${h.status === 'ok' || h.status === 'up' ? 'up' : 'down'}"></span>${STLABEL[h.status] || esc(h.status || 'UNKNOWN')}</span>
-          </div>
-        </div>`;
-      } else {
-        $('#svc-grid').innerHTML = entries.map(([name, st]) => {
+      $('#svc-grid').innerHTML = entries.length
+        ? entries.map(([name, st]) => {
           const status = (typeof st === 'string') ? st : (st.status || 'unknown');
-          const version = st.version || '';
-          const detail = st.detail || st.message || '';
+          const version = (typeof st === 'object' && (st.version || st.detail || st.message)) || '';
           return `<div class="card">
             <div class="flex items-c" style="justify-content:space-between;margin-bottom:8px">
               <div class="card-t">${esc(name)}</div>
-              <span class="badge ${STCLASS[status] || 'gold'}"><span class="dot ${status === 'ok' || status === 'up' ? 'up' : (status === 'down' ? 'down' : 'warn')}"></span>${STLABEL[status] || esc(status.toUpperCase())}</span>
+              <span class="badge ${STCLASS[status] || 'gold'}"><span class="dot ${status==='ok'||status==='up'?'up':(status==='down'?'down':'warn')}"></span>${STLABEL[status] || esc(String(status).toUpperCase())}</span>
             </div>
-            <div class="text-3 mono" style="font-size:11px">${esc(version || detail || '—')}</div>
+            <div class="text-3 mono" style="font-size:11px">${esc(version || '—')}</div>
           </div>`;
-        }).join('');
-      }
+        }).join('')
+        : `<div class="card" style="grid-column:1/-1">
+          <div class="flex items-c" style="justify-content:space-between">
+            <div class="card-t">Backend ForenHive</div>
+            <span class="badge ${STCLASS[h.status] || 'gold'}">${STLABEL[h.status] || esc(h.status || 'UNKNOWN')}</span>
+          </div>
+        </div>`;
 
       $('#api-info').textContent = `${api.base} · status : ${h.status || 'unknown'}`;
       $('#api-detail').innerHTML = `<pre class="pre">${esc(JSON.stringify(h, null, 2))}</pre>`;
-
     } catch (e) {
       $('#svc-grid').innerHTML = `<div class="alert err" style="grid-column:1/-1">Backend injoignable : ${esc(e.message)}</div>`;
       $('#api-info').textContent = 'hors-ligne';
@@ -85,11 +187,11 @@
   }
 
   $('#refresh-now').addEventListener('click', async () => {
-    const btn = $('#refresh-now'); btn.disabled = true; btn.textContent = '⟳ Vérification…';
-    await Promise.all([load(), loadAudit()]);
-    btn.disabled = false; btn.innerHTML = '🔄 Vérifier';
+    const btn = $('#refresh-now'); btn.disabled = true; btn.textContent = 'Vérification…';
+    await Promise.all([loadZeek(), loadServices(), loadAudit()]);
+    btn.disabled = false; btn.textContent = 'Vérifier';
   });
 
-  await Promise.all([load(), loadAudit()]);
+  await Promise.all([loadZeek(), loadServices(), loadAudit()]);
 })();
 </script>

@@ -1,0 +1,48 @@
+{
+  "target_ip": "193.32.162.157",
+  "enrichment": {
+    "ip": "193.32.162.157",
+    "geo": {
+      "asn": 35478,
+      "lat": 46.0,
+      "lon": 25.0,
+      "org": "Bunea TELECOM SRL",
+      "city": null,
+      "country": "Romania",
+      "country_code": "RO"
+    },
+    "whois": {
+      "org": "UNMANAGED-DEDICATED-SERVERS, GB",
+      "cidr": "193.32.162.0/24",
+      "network": "DMZHOST"
+    },
+    "privacy": {
+      "is_tor": false,
+      "is_vpn": false,
+      "is_proxy": false,
+      "is_hosting": false
+    },
+    "reputation": {},
+    "enriched_at": "2026-04-25T22:12:04.947879+00:00",
+    "infrastructure": {}
+  },
+  "sessions": [
+    {
+      "session_id": "dionaea-193.32.162.157-445",
+      "honeypot_type": "dionaea",
+      "started_at": "2026-04-23 19:58:53",
+      "ended_at": "2026-04-23 19:58:55.500000",
+      "risk_score": 5,
+      "mitre_techniques": [
+        "T1021.002",
+        "T1210"
+      ],
+      "kill_chain_phase": "lateral_movement",
+      "kill_chain_stage": 7,
+      "primary_technique": "T1021.002",
+      "forensic_narrative": "The incident involves an unsuccessful attempt to access a system through the SMB protocol on port 445 using the dionaea honeypot, originating from IP address 19"
+    }
+  ],
+  "profile": {},
+  "iocs": []
+}

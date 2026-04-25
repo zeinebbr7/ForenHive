@@ -1,113 +1,162 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">📋 Reporting</div>
+    <div class="section-tag" style="margin-bottom:8px">Reporting</div>
     <h2 class="page-title">Rapports <span>forensiques</span></h2>
-    <div class="page-sub">PDF générés par le backend · SHA-256 + signature RFC 3161.</div>
+    <div class="page-sub">Sélectionne une session · prévisualise le rapport · télécharge le PDF certifié SHA-256.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gold btn-sm" id="new-report">＋ Nouveau rapport</button>
+    <button class="btn btn-gh btn-sm" id="rep-refresh">Actualiser</button>
   </div>
 </div>
 
-<div class="card">
-  <table class="tbl"><thead><tr>
-    <th>Titre</th><th>Type</th><th>Auteur</th><th>Date</th><th>SHA-256</th><th>Statut</th><th>Actions</th>
-  </tr></thead><tbody id="rpt-rows"><tr><td colspan="7">Chargement…</td></tr></tbody></table>
+<div class="grid-2 mb-20" style="grid-template-columns: 360px 1fr; gap:14px">
+
+  <div class="card" style="padding:0">
+    <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-t">Sessions disponibles</div>
+      <div class="card-sub"><span id="rep-count">—</span> session(s) · classées par risque</div>
+    </div>
+    <div id="rep-list" style="max-height:560px;overflow-y:auto">
+      <div class="alert info" style="margin:14px">Chargement…</div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;display:flex;flex-direction:column;min-height:560px">
+    <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div>
+        <div class="card-t" id="rep-pv-title">Aperçu rapport</div>
+        <div class="card-sub" id="rep-pv-sub">Sélectionne une session pour générer l'aperçu.</div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-gh btn-sm" id="rep-open" disabled title="Ouvrir dans un nouvel onglet">Ouvrir</button>
+        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Télécharger PDF certifié">Télécharger PDF</button>
+      </div>
+    </div>
+    <div id="rep-preview" style="flex:1;background:#fff;min-height:560px">
+      <div class="alert info" style="margin:14px">Aucun rapport sélectionné.</div>
+    </div>
+    <div id="rep-status" style="padding:8px 16px;border-top:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text3);display:none"></div>
+  </div>
+
 </div>
+
+<style>
+.rep-row {
+  display:grid; grid-template-columns: 1fr auto; gap:8px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background .15s;
+}
+.rep-row:hover { background: rgba(249,168,37,.05); }
+.rep-row.active { background: rgba(249,168,37,.10); border-left: 3px solid var(--gold); padding-left: 13px; }
+.rep-ip { font-family:'Share Tech Mono',monospace; font-size:12px; font-weight:700; color: var(--text); }
+.rep-sid { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--text3); margin-top: 2px; }
+.rep-meta { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--text3); margin-top: 4px; }
+.rep-score { display:inline-block; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-family:'Share Tech Mono',monospace; font-size: 12px; }
+.rep-score.lo { background: rgba(21,101,192,.12); color: var(--blue2); }
+.rep-score.md { background: rgba(249,168,37,.12); color: var(--gold); }
+.rep-score.hi { background: rgba(198,40,40,.12); color: var(--red2); }
+#rep-preview iframe { width:100%; height:100%; min-height:560px; border:none; background:#fff; }
+</style>
 
 <script>
 (async function(){
   const { fmt, esc, $ } = FH;
+  let sessions = [];
+  let activeSid = null;
 
-  async function load() {
+  function scoreCls(s) { if (s == null) return 'lo'; return s < 40 ? 'lo' : (s < 70 ? 'md' : 'hi'); }
+
+  async function loadList() {
+    $('#rep-list').innerHTML = '<div class="alert info" style="margin:14px">Chargement…</div>';
     try {
-      const res = await api.reports({ page_size: 100 });
-      const items = (res && res.items) || [];
-      if (!items.length) {
-        $('#rpt-rows').innerHTML = `<tr><td colspan="7"><div class="alert info"><b>Aucun rapport généré.</b><br>Clique sur <b>＋ Nouveau rapport</b> pour en générer un depuis les données actuelles.</div></td></tr>`;
+      sessions = await api.forensicSessions(50);
+      $('#rep-count').textContent = sessions.length;
+      if (!sessions.length) {
+        $('#rep-list').innerHTML = '<div class="alert info" style="margin:14px"><b>Aucune session forensique.</b><br>Lance le forensic-engine pour générer des sessions.</div>';
         return;
       }
-      $('#rpt-rows').innerHTML = items.map(r => {
-        const stBadge = (r.status === 'ready' || r.status === 'completed')
-          ? '<span class="badge teal">✓ Prêt</span>'
-          : (r.status === 'failed' ? '<span class="badge red">✗ Erreur</span>'
-          : '<span class="badge gold">⏳ ' + esc(r.status || '—') + '</span>');
-        const kind = (r.kind || r.type || 'forensic').toLowerCase();
-        const kindBadge = {incident:'<span class="badge red">Incident</span>',forensic:'<span class="badge blue">Forensique</span>',exec:'<span class="badge purple">Exec</span>'}[kind]
-          || '<span class="badge gray">'+esc(kind)+'</span>';
-        return `<tr data-id="${esc(r.id)}">
-          <td><b>${esc(r.title || '(sans titre)')}</b></td>
-          <td>${kindBadge}</td>
-          <td class="mono" style="font-size:11px">${esc(r.author_email || r.author || '—')}</td>
-          <td class="mono" style="font-size:11px">${fmt.date(r.created_at || r.date)}</td>
-          <td><span class="mono" style="font-size:10px" title="${esc(r.sha256 || '')}">${fmt.shortHash(r.sha256)}</span></td>
-          <td>${stBadge}</td>
-          <td class="flex gap-8">
-            <a class="btn btn-out btn-sm" href="${api.reportDownloadUrl(r.id)}?token=${encodeURIComponent(api.token() || '')}" target="_blank">⬇ PDF</a>
-            <button class="btn btn-gh btn-sm" data-act="verify">🔏</button>
-          </td>
-        </tr>`;
-      }).join('');
+      $('#rep-list').innerHTML = sessions.map(s => `
+        <div class="rep-row" data-sid="${esc(s.session_id)}">
+          <div>
+            <div class="rep-ip">${esc(s.source_ip || '—')}</div>
+            <div class="rep-sid">${esc(s.session_id)}</div>
+            <div class="rep-meta">${esc((s.honeypot_type||'').toUpperCase())} · ${esc(s.primary_technique || '—')} · ${esc(s.kill_chain_phase || '—')}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="rep-score ${scoreCls(s.risk_score)}">${s.risk_score == null ? '—' : s.risk_score}</span>
+            <div class="rep-meta" style="margin-top:6px">${s.started_at ? fmt.date(s.started_at) : '—'}</div>
+          </div>
+        </div>`).join('');
 
-      $('#rpt-rows').querySelectorAll('[data-act="verify"]').forEach(b => {
-        b.addEventListener('click', () => {
-          const tr = b.closest('tr');
-          const r = items.find(x => x.id === tr.dataset.id);
-          openModal(`
-            <div class="modal-h"><div class="card-t">Vérification hash</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
-            <div class="alert ok">✓ Hash SHA-256 calculé · signature RFC 3161 vérifiée</div>
-            <div class="card-sub mb-12">SHA-256</div>
-            <pre class="pre">${esc(r.sha256 || '—')}</pre>
-            ${r.tsa_timestamp ? `<div class="card-sub mb-12" style="margin-top:16px">TSA Token</div><pre class="pre">${esc(r.tsa_timestamp)}</pre>` : ''}
-          `);
-        });
+      $('#rep-list').querySelectorAll('.rep-row').forEach(r => {
+        r.addEventListener('click', () => selectSession(r.dataset.sid));
       });
     } catch (e) {
-      $('#rpt-rows').innerHTML = `<tr><td colspan="7"><div class="alert err">${esc(e.message)}</div></td></tr>`;
+      $('#rep-list').innerHTML = `<div class="alert err" style="margin:14px">${esc(e.message)}</div>`;
     }
   }
 
-  $('#new-report').addEventListener('click', () => {
-    openModal(`
-      <div class="modal-h"><div class="card-t">Nouveau rapport forensique</div><button class="drawer-close" onclick="closeModal()">✕</button></div>
-      <div class="form-g"><label class="form-l">Titre</label><input class="form-i" id="r-title" placeholder="Rapport incident XYZ" value="Rapport forensique ${new Date().toLocaleDateString('fr-FR')}"></div>
-      <div class="form-g"><label class="form-l">Type</label><select class="form-s" id="r-kind"><option value="incident">Incident</option><option value="forensic" selected>Forensique complet</option><option value="exec">Résumé exécutif</option></select></div>
-      <div class="form-g"><label class="form-l">Fenêtre temporelle (heures)</label><input class="form-i" id="r-window" type="number" value="24" min="1" max="720"></div>
-      <div class="form-g">
-        <label class="form-l">Options</label>
-        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" id="r-raw" checked> Inclure logs bruts</label>
-        <label class="flex items-c gap-8" style="margin-bottom:6px"><input type="checkbox" id="r-mitre" checked> Mapping MITRE ATT&CK</label>
-        <label class="flex items-c gap-8"><input type="checkbox" id="r-tsa" checked> Signature RFC 3161</label>
-      </div>
-      <div id="r-status" class="hide"></div>
-      <div class="flex gap-8" style="justify-content:flex-end;margin-top:16px">
-        <button class="btn btn-gh btn-sm" onclick="closeModal()">Annuler</button>
-        <button class="btn btn-gold btn-sm" id="r-gen">Générer</button>
-      </div>
-    `);
-    $('#r-gen').addEventListener('click', async () => {
-      const body = {
-        title: $('#r-title').value.trim() || 'Rapport',
-        kind: $('#r-kind').value,
-        window_hours: parseInt($('#r-window').value, 10) || 24,
-        include_raw: $('#r-raw').checked,
-        include_mitre: $('#r-mitre').checked,
-        sign_rfc3161: $('#r-tsa').checked,
-      };
-      $('#r-status').classList.remove('hide');
-      $('#r-status').innerHTML = '<div class="alert info">⟳ Génération en cours…</div>';
-      $('#r-gen').disabled = true;
-      try {
-        const r = await api.generateReport(body);
-        $('#r-status').innerHTML = `<div class="alert ok">✓ Rapport créé · ID ${esc(r.id || '—')}</div>`;
-        $('#r-gen').textContent = 'OK'; $('#r-gen').disabled = false; $('#r-gen').onclick = () => { closeModal(); load(); };
-      } catch (e) {
-        $('#r-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
-        $('#r-gen').disabled = false;
-      }
-    });
+  async function selectSession(sid) {
+    if (!sid) return;
+    activeSid = sid;
+    $('#rep-list').querySelectorAll('.rep-row').forEach(r => r.classList.toggle('active', r.dataset.sid === sid));
+    const s = sessions.find(x => x.session_id === sid) || {};
+
+    $('#rep-pv-title').textContent = 'Aperçu · ' + sid;
+    $('#rep-pv-sub').innerHTML = `<span class="mono">${esc(s.source_ip || '—')}</span> · risk <b>${s.risk_score == null ? '—' : s.risk_score}</b> · ${esc(s.kill_chain_phase || '—')}`;
+    $('#rep-open').disabled = false;
+    $('#rep-download').disabled = false;
+    $('#rep-status').style.display = 'none';
+
+    $('#rep-preview').innerHTML = '<div class="alert info" style="margin:14px">Génération de l\'aperçu…</div>';
+    try {
+      const tok = api.token();
+      const res = await fetch(api.forensicReportPreviewUrl(sid), {
+        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {}
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const html = await res.text();
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      $('#rep-preview').innerHTML = `<iframe src="${url}" sandbox="allow-same-origin"></iframe>`;
+    } catch (e) {
+      $('#rep-preview').innerHTML = `<div class="alert err" style="margin:14px">Aperçu indisponible : ${esc(e.message)}</div>`;
+    }
+  }
+
+  $('#rep-open').addEventListener('click', async () => {
+    if (!activeSid) return;
+    try {
+      const tok = api.token();
+      const res = await fetch(api.forensicReportPreviewUrl(activeSid), {
+        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {}
+      });
+      const html = await res.text();
+      const w = window.open('', '_blank');
+      w.document.open(); w.document.write(html); w.document.close();
+    } catch (e) {
+      alert('Erreur : ' + e.message);
+    }
   });
 
-  await load();
+  $('#rep-download').addEventListener('click', async () => {
+    if (!activeSid) return;
+    const btn = $('#rep-download'); const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Génération PDF…';
+    $('#rep-status').style.display = 'block';
+    $('#rep-status').innerHTML = '<span style="color:var(--gold)">Génération en cours…</span>';
+    try {
+      const r = await api.forensicReportDownload(activeSid);
+      $('#rep-status').innerHTML = `<span style="color:var(--blue2)">PDF téléchargé</span> · SHA-256 : <span style="color:var(--gold);word-break:break-all">${esc(r.sha256 || 'N/A')}</span>`;
+      btn.textContent = 'PDF téléchargé';
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
+    } catch (e) {
+      $('#rep-status').innerHTML = `<span style="color:var(--red2)">Erreur : ${esc(e.message)}</span>`;
+      btn.textContent = orig; btn.disabled = false;
+    }
+  });
+
+  $('#rep-refresh').addEventListener('click', loadList);
+  await loadList();
 })();
 </script>

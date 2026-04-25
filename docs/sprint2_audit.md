@@ -217,48 +217,48 @@ Zeek     ──┘
 
 | Source Field | ES Field | ECS? |
 |---|---|---|
-| `src_ip` | `source.ip` | ✅ |
-| `dst_ip` | `destination.ip` | ✅ |
-| `dst_port` | `destination.port` | ✅ |
-| `username` | `user.name` | ✅ |
-| `password` | `user.password` | ✅ |
-| `eventid` | `event.id` | ✅ |
-| `protocol` | `network.transport` | ✅ |
-| `session` | `session.id` | ✅ |
-| `shasum` | `file.hash.sha256` | ✅ |
-| `duration` | `event.duration` | ✅ |
-| `size` | `network.bytes` | ✅ |
+| `src_ip` | `source.ip` |  |
+| `dst_ip` | `destination.ip` |  |
+| `dst_port` | `destination.port` |  |
+| `username` | `user.name` |  |
+| `password` | `user.password` |  |
+| `eventid` | `event.id` |  |
+| `protocol` | `network.transport` |  |
+| `session` | `session.id` |  |
+| `shasum` | `file.hash.sha256` |  |
+| `duration` | `event.duration` |  |
+| `size` | `network.bytes` |  |
 | `ttylog` | `cowrie.ttylog` | custom |
-| `timestamp` | `@timestamp` | ✅ |
+| `timestamp` | `@timestamp` |  |
 
 ### Galah → Elasticsearch
 
 | Source Field | ES Field | ECS? |
 |---|---|---|
-| `srcIP` | `source.ip` | ✅ |
-| `srcPort` | `source.port` | ✅ |
-| `httpRequest.method` | `http.request.method` | ✅ |
-| `httpRequest.request` | `http.request.uri` | ✅ |
-| `httpRequest.userAgent` | `user_agent.original` | ✅ |
-| `httpRequest.bodySha256` | `http.request.body.hash` | ✅ |
-| `httpRequest.sessionID` | `session.id` | ✅ |
+| `srcIP` | `source.ip` |  |
+| `srcPort` | `source.port` |  |
+| `httpRequest.method` | `http.request.method` |  |
+| `httpRequest.request` | `http.request.uri` |  |
+| `httpRequest.userAgent` | `user_agent.original` |  |
+| `httpRequest.bodySha256` | `http.request.body.hash` |  |
+| `httpRequest.sessionID` | `session.id` |  |
 | `httpResponse.headers.Server` | `http.response.server` | custom |
 | `responseMetadata.generationSource` | `galah.response.source` | custom |
 | `responseMetadata.info.model` | `galah.llm.model` | custom |
-| `sensorName` | `observer.name` | ✅ |
-| `port` | `destination.port` | ✅ |
-| `eventTime` | `@timestamp` | ✅ |
+| `sensorName` | `observer.name` |  |
+| `port` | `destination.port` |  |
+| `eventTime` | `@timestamp` |  |
 
 ### Zeek → Elasticsearch
 
 | Source Field | ES Field | ECS? |
 |---|---|---|
-| `id.orig_h` | `source.ip` | ✅ |
-| `id.orig_p` | `source.port` | ✅ |
-| `id.resp_h` | `destination.ip` | ✅ |
-| `id.resp_p` | `destination.port` | ✅ |
-| `proto` | `network.transport` | ✅ |
-| `ts` (UNIX) | `@timestamp` | ✅ |
+| `id.orig_h` | `source.ip` |  |
+| `id.orig_p` | `source.port` |  |
+| `id.resp_h` | `destination.ip` |  |
+| `id.resp_p` | `destination.port` |  |
+| `proto` | `network.transport` |  |
+| `ts` (UNIX) | `@timestamp` |  |
 
 ---
 
@@ -269,7 +269,7 @@ Zeek     ──┘
 | GeoIP fails on internal IPs | Docker 172.x addresses have no GeoIP record | `_geoip_lookup_failure` tag on internal connections; public attacker IPs resolve correctly |
 | Dionaea non-debug noise | `info` and `warning` level Dionaea messages without `source.ip` (startup messages) still stored | Minor disk overhead, not attack data |
 | Dionaea log rotation | No log rotation configured; `dionaea.log` will grow until container restart is required | Manual restart needed periodically |
-| Dionaea `@timestamp` = ingest time | No `date` filter for Dionaea — `@timestamp` was Filebeat processing time, not actual event time | ✅ Fixed in Sprint 3 (2026-04-04) — see Bug 6 |
+| Dionaea `@timestamp` = ingest time | No `date` filter for Dionaea — `@timestamp` was Filebeat processing time, not actual event time |  Fixed in Sprint 3 (2026-04-04) — see Bug 6 |
 | Elasticsearch no auth | `xpack.security.enabled=false` — dev configuration | Not suitable for production without TLS + credentials |
 
 ---
@@ -299,6 +299,6 @@ Guard with `if [dionaea.date]` because only grok pattern 2 produces this field �
 
 ---
 
-## 7. Sprint 2 Status: COMPLETE ✅
+## 7. Sprint 2 Status: COMPLETE 
 
 All 4 honeypot pipelines are operational. Events are normalized to ECS, timestamped in Africa/Tunis (GMT+1), and indexed in daily Elasticsearch indices. The pipeline is ready to serve the forensic engine (Sprint 3).

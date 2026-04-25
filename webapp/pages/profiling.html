@@ -1,123 +1,424 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">🧠 Profiling</div>
+    <div class="section-tag" style="margin-bottom:8px">Profiling</div>
     <h2 class="page-title">Profils <span>des attaquants</span></h2>
-    <div class="page-sub">Enrichissement par IP (AbuseIPDB · VirusTotal · Shodan via le forensic engine).</div>
+    <div class="page-sub">Dossiers forensiques LLM · comportement · kill-chain · MITRE ATT&amp;CK.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="p-refresh">Actualiser</button>
   </div>
 </div>
 
-<div class="filters">
-  <input class="form-i" id="p-lookup" placeholder="🔍 Rechercher une IP (ex: 185.220.101.5)" style="min-width:320px">
-  <button class="btn btn-gold btn-sm" id="p-go">Profiler</button>
+<div class="kpi-grid" id="p-stats">
+  <div class="kpi g"><div class="kpi-label">Total profils</div><div class="kpi-val" id="p-k-total">—</div><div class="kpi-delta" id="p-k-total-d">chargement…</div></div>
+  <div class="kpi r"><div class="kpi-label">Critical</div><div class="kpi-val" id="p-k-crit">—</div><div class="kpi-delta">score ≥ 70</div></div>
+  <div class="kpi p"><div class="kpi-label">High</div><div class="kpi-val" id="p-k-high">—</div><div class="kpi-delta">40 – 69</div></div>
+  <div class="kpi b"><div class="kpi-label">Score moyen</div><div class="kpi-val" id="p-k-avg">—</div><div class="kpi-delta">sur 100</div></div>
 </div>
 
-<div class="card mb-20">
-  <div class="card-h"><div class="card-t">Top IPs observées</div><div class="card-sub">sur 1000 derniers événements — cliquer pour profiler</div></div>
-  <div id="top-ip-grid" class="grid-3"><div class="alert info">Chargement…</div></div>
+<div class="filters" id="p-filters" style="margin-bottom:14px">
+  <button class="btn btn-gh btn-sm p-filter active" data-sev="ALL">Tous</button>
+  <button class="btn btn-gh btn-sm p-filter" data-sev="CRITICAL">CRITICAL</button>
+  <button class="btn btn-gh btn-sm p-filter" data-sev="HIGH">HIGH</button>
+  <button class="btn btn-gh btn-sm p-filter" data-sev="MEDIUM">MEDIUM</button>
+  <button class="btn btn-gh btn-sm p-filter" data-sev="LOW">LOW</button>
+  <input class="form-i" id="p-search" placeholder="Rechercher une IP…" style="min-width:260px;margin-left:auto">
 </div>
 
-<div id="profile-result"></div>
+<div class="p-layout">
+  <div class="p-list-col">
+    <div class="card" style="padding:0">
+      <div class="card-h" style="padding:14px 18px;margin:0;border-bottom:1px solid var(--border)">
+        <div class="card-t">Profils stockés</div>
+        <div class="card-sub" id="p-list-count">—</div>
+      </div>
+      <div id="p-list" class="scroll-y" style="max-height:calc(100vh - 360px);min-height:420px">
+        <div class="alert info" style="margin:14px">Chargement…</div>
+      </div>
+    </div>
+  </div>
+  <div class="p-detail-col">
+    <div id="p-detail">
+      <div class="card p-empty">
+        <div class="p-empty-icon">◎</div>
+        <div class="p-empty-t">Sélectionner un profil</div>
+        <div class="p-empty-s">pour afficher le dossier forensique</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.p-layout { display:grid; grid-template-columns: 38% 1fr; gap:16px; align-items:start; }
+@media (max-width: 1100px) { .p-layout { grid-template-columns: 1fr; } }
+
+.p-filter { cursor:pointer; }
+.p-filter.active { background: var(--gold-glow); border-color: var(--border2); color: var(--gold); }
+
+.p-card { padding:14px 18px; border-bottom:1px solid var(--border); cursor:pointer; transition:background .15s; border-left:3px solid transparent; }
+.p-card:hover { background: rgba(255,255,255,.025); }
+.p-card.active { background: rgba(140,26,43,.08); border-left-color: var(--gold); }
+.p-card-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px; }
+.p-card-ip { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:var(--text1); }
+.p-card-score { font-family:'Rajdhani',sans-serif; font-size:20px; font-weight:700; line-height:1; }
+.p-card-score.sev-CRITICAL { color:var(--red2); }
+.p-card-score.sev-HIGH     { color:var(--gold); }
+.p-card-score.sev-MEDIUM   { color:var(--blue2); }
+.p-card-score.sev-LOW      { color:var(--text3); }
+.p-card-meta { display:flex; gap:8px; flex-wrap:wrap; font-size:10px; font-family:'JetBrains Mono',monospace; color:var(--text3); text-transform:uppercase; letter-spacing:.6px; }
+.p-card-meta span.sev-tag { padding:2px 6px; border-radius:3px; border:1px solid var(--border); }
+.p-card-meta .sev-tag.sev-CRITICAL { color:var(--red2); border-color:rgba(201,61,85,.3); }
+.p-card-meta .sev-tag.sev-HIGH     { color:var(--gold); border-color:var(--border2); }
+.p-card-meta .sev-tag.sev-MEDIUM   { color:var(--blue2); border-color:rgba(106,176,255,.3); }
+
+.p-card-border-CRITICAL { border-left-color: var(--red2) !important; }
+.p-card-border-HIGH     { border-left-color: var(--gold) !important; }
+.p-card-border-MEDIUM   { border-left-color: var(--blue2) !important; }
+.p-card-border-LOW      { border-left-color: var(--text3) !important; }
+.p-card { border-left-width:3px; border-left-style:solid; }
+
+.p-empty { text-align:center; padding:80px 20px; color:var(--text3); }
+.p-empty-icon { font-size:48px; color:var(--text3); opacity:.4; margin-bottom:14px; font-family:'Rajdhani',sans-serif; }
+.p-empty-t { font-family:'Rajdhani',sans-serif; font-size:18px; color:var(--text2); margin-bottom:6px; }
+.p-empty-s { font-size:12px; color:var(--text3); font-family:'JetBrains Mono',monospace; }
+
+.sev-badge { display:inline-block; padding:4px 10px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; border:1px solid; }
+.sev-badge.soph-low          { color:var(--text3); border-color:var(--border); background:rgba(154,160,180,.06); }
+.sev-badge.soph-intermediate { color:var(--blue2); border-color:rgba(106,176,255,.3); background:rgba(26,79,187,.08); }
+.sev-badge.soph-high         { color:var(--gold); border-color:var(--border2); background:var(--gold-glow); }
+.sev-badge.soph-apt          { color:var(--red2); border-color:rgba(201,61,85,.4); background:rgba(201,61,85,.08); }
+
+/* Kill chain */
+.kc-wrap { margin:10px 0 6px; }
+.kc-bar  { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
+.kc-step {
+  position:relative;
+  height:34px; border-radius:4px;
+  background: rgba(255,255,255,.04);
+  border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  color:var(--text3); text-transform:uppercase; letter-spacing:.5px;
+  transition:all .2s;
+}
+.kc-step.done   { background: var(--gold); color:#060810; border-color:transparent; }
+.kc-step.done.sev-CRITICAL { background: var(--red2); }
+.kc-step.done.sev-HIGH     { background: var(--gold); }
+.kc-step.done.sev-MEDIUM   { background: var(--blue2); }
+.kc-step.current { box-shadow: 0 0 0 2px var(--text2) inset; filter:brightness(1.2); }
+.kc-label { font-size:11px; color:var(--text2); font-family:'JetBrains Mono',monospace; margin-top:8px; }
+
+/* Organised bar */
+.org-wrap { margin:12px 0; }
+.org-track { position:relative; height:10px; border-radius:5px; background:rgba(255,255,255,.05); overflow:hidden; border:1px solid var(--border); }
+.org-fill  { position:absolute; top:0; left:0; bottom:0; background: linear-gradient(90deg, var(--blue2), var(--red2)); transition:width .3s; }
+.org-labels { display:flex; justify-content:space-between; font-size:10px; color:var(--text3); font-family:'JetBrains Mono',monospace; text-transform:uppercase; margin-top:6px; }
+
+.sect-h { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; letter-spacing:.5px; color:var(--text2); margin:20px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--border); }
+.kv-row { display:grid; grid-template-columns: 140px 1fr; gap:10px; font-size:12px; padding:4px 0; }
+.kv-row .kv-k { color:var(--text3); font-family:'JetBrains Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+.kv-row .kv-v { color:var(--text1); }
+.trait-tag { display:inline-block; padding:3px 8px; margin:2px 4px 2px 0; border-radius:3px; background:var(--surface); border:1px solid var(--border); font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text2); }
+.narrative { font-style:italic; line-height:1.55; color:var(--text1); background: rgba(255,255,255,.02); border-left: 3px solid var(--gold); padding:12px 14px; border-radius:0 6px 6px 0; }
+.action-box { background:rgba(201,61,85,.06); border:1px solid rgba(201,61,85,.25); border-radius:6px; padding:12px 14px; color:var(--text1); }
+</style>
 
 <script>
 (async function(){
-  const { flag, fmt, esc, $, evNormalize } = FH;
+  const { esc, fmt, $, flag } = FH;
+  const STATE = { profiles: [], stats: null, activeSev: 'ALL', activeId: null, search: '' };
 
-  async function loadTop() {
-    try {
-      const res = await api.attacks({ limit: 1000 });
-      const items = (res && res.items) || [];
-      const agg = {};
-      items.forEach(raw => {
-        const n = evNormalize(raw);
-        if (!n.source_ip) return;
-        agg[n.source_ip] = agg[n.source_ip] || { ip: n.source_ip, count: 0, country: n.country, honeypots: new Set() };
-        agg[n.source_ip].count++;
-        if (n.honeypot) agg[n.source_ip].honeypots.add(n.honeypot);
-        if (!agg[n.source_ip].country && n.country) agg[n.source_ip].country = n.country;
-      });
-      const top = Object.values(agg).sort((a,b)=>b.count-a.count).slice(0,18);
-      if (!top.length) {
-        $('#top-ip-grid').innerHTML = '<div class="alert info" style="grid-column:1/-1">Aucune IP source détectée dans l\'échantillon.</div>';
-        return;
+  const KC_STEPS = [
+    { key:'reconnaissance',          label:'Recon' },
+    { key:'weaponization',           label:'Weapon' },
+    { key:'delivery',                label:'Delivery' },
+    { key:'exploitation',            label:'Exploit' },
+    { key:'installation',            label:'Install' },
+    { key:'command_and_control',     label:'C2' },
+    { key:'lateral_movement',        label:'Lateral' },
+    { key:'actions_on_objectives',   label:'Actions' },
+  ];
+
+  const SOPH_MAP = {
+    low:          { cls:'soph-low',          text:'SCRIPT KIDDIE' },
+    intermediate: { cls:'soph-intermediate', text:'SEMI-ORGANISÉ' },
+    high:         { cls:'soph-high',         text:'PROFESSIONNEL' },
+    apt:          { cls:'soph-apt',          text:'APT / ÉTATIQUE' },
+  };
+
+  // Prefix-based MITRE → kill-chain phase mapping (matches T1595.001 via "T1595")
+  const MITRE_PREFIX_KC = [
+    [['T1595','T1590','T1589'],       'reconnaissance'],
+    [['T1587','T1588'],               'weaponization'],
+    [['T1566'],                       'delivery'],
+    [['T1190','T1110','T1203'],       'exploitation'],
+    [['T1547','T1543'],               'installation'],
+    [['T1071','T1095'],               'command_and_control'],
+    [['T1021','T1550'],               'lateral_movement'],
+  ];
+  function deriveKCPhase(mitre) {
+    if (!Array.isArray(mitre)) return null;
+    let best = -1, phase = null;
+    const KC_ORDER = KC_STEPS.map(s => s.key);
+    for (const t of mitre) {
+      const pfx = String(t).slice(0,5);
+      for (const [pfxs, ph] of MITRE_PREFIX_KC) {
+        if (pfxs.includes(pfx)) {
+          const idx = KC_ORDER.indexOf(ph);
+          if (idx > best) { best = idx; phase = ph; }
+        }
       }
-      $('#top-ip-grid').innerHTML = top.map(x => `
-        <div class="prof-card" data-ip="${esc(x.ip)}" style="cursor:pointer">
-          <div class="prof-card-h">
-            <div class="prof-av">🎯</div>
-            <div class="prof-meta">
-              <div class="prof-ip">${esc(x.ip)}</div>
-              <div class="prof-asn">${x.country ? flag(x.country)+' '+x.country : '—'}</div>
-            </div>
-            <span class="score md">${x.count}</span>
-          </div>
-          <div class="flex gap-8" style="flex-wrap:wrap">
-            ${[...x.honeypots].map(h => `<span class="tag">${esc(h)}</span>`).join('')}
-          </div>
-        </div>`).join('');
-      $('#top-ip-grid').querySelectorAll('.prof-card').forEach(c => c.addEventListener('click', () => profile(c.dataset.ip)));
-    } catch (e) {
-      $('#top-ip-grid').innerHTML = `<div class="alert err" style="grid-column:1/-1">${esc(e.message)}</div>`;
     }
+    return phase || 'actions_on_objectives';
   }
 
-  async function profile(ip) {
-    $('#profile-result').innerHTML = `<div class="card"><div class="alert info">⟳ Profiling de ${esc(ip)}…</div></div>`;
+  // Map real profiler output → the shape the renderer expects.
+  function normalize(raw) {
+    const p = { ...raw };
+    // organised_score: profiler emits organized_score (US) as 0.0–1.0
+    if (p.organised_score == null && p.organized_score != null) {
+      p.organised_score = Number(p.organized_score);
+    }
+    // signature_behaviors ← signature_indicators
+    if (!Array.isArray(p.signature_behaviors) && Array.isArray(p.signature_indicators)) {
+      p.signature_behaviors = p.signature_indicators;
+    }
+    // kill_chain_stage ← kill_chain_phase, or derive from mitre_techniques
+    if (!p.kill_chain_stage) {
+      p.kill_chain_stage = p.kill_chain_phase || deriveKCPhase(p.mitre_techniques);
+    }
+    // recidivism ← similar_past_cases
+    if (!p.recidivism && typeof p.similar_past_cases === 'number') {
+      p.recidivism = {
+        seen_before: p.similar_past_cases > 0,
+        previous_sessions: p.similar_past_cases,
+      };
+    }
+    // modus_operandi: synthesize from primary_objective / dominant_tactic / mitre
+    if (!p.modus_operandi) {
+      const mo = {};
+      if (p.primary_objective)   mo.objectif_principal = String(p.primary_objective).replaceAll('_',' ');
+      if (p.secondary_objective) mo.objectif_secondaire = String(p.secondary_objective).replaceAll('_',' ');
+      if (p.dominant_tactic)     mo.tactique_dominante = p.dominant_tactic;
+      if (p.escalation_detected) mo.escalade = 'détectée';
+      if (Array.isArray(p.mitre_techniques) && p.mitre_techniques.length) mo.techniques = p.mitre_techniques;
+      if (Object.keys(mo).length) p.modus_operandi = mo;
+    }
+    // actor_type fallback
+    if (!p.actor_type) p.actor_type = p.dominant_tactic || p.primary_objective;
+    // recommended_action: derive if missing
+    if (!p.recommended_action) {
+      const s = Number(p.risk_score) || 0;
+      if (s >= 70)      p.recommended_action = 'Bloquer immédiatement l’IP · escalader à l’équipe SOC · préserver les preuves (chaîne de custody).';
+      else if (s >= 40) p.recommended_action = 'Surveillance renforcée · corréler avec autres sessions · envisager blocage si récidive.';
+      else if (s >= 20) p.recommended_action = 'Conserver les logs · suivre les patterns · pas d’action immédiate.';
+      else              p.recommended_action = 'Bruit de fond · archiver pour analyse statistique.';
+    }
+    return p;
+  }
+
+  /* ── Stats header ─────────────────────────────────────────── */
+  async function loadStats() {
     try {
-      const p = await api.profile(ip);
-      const abuse  = p.abuseipdb || p.abuse || {};
-      const vt     = p.virustotal || p.vt || {};
-      const shodan = p.shodan || {};
-      const stats  = p.stats || {};
-      const score  = p.risk_score ?? p.score ?? abuse.abuse_confidence_score ?? 0;
-      const sc = fmt.scoreClass(score);
-      const tor = p.tor || p.is_tor;
-      const vpn = p.vpn || p.is_vpn;
-
-      $('#profile-result').innerHTML = `
-        <div class="card">
-          <div class="card-h">
-            <div class="flex items-c gap-12">
-              <div class="prof-av" style="width:44px;height:44px;font-size:20px">🎯</div>
-              <div><div class="card-t">${esc(ip)}</div><div class="card-sub">${p.country ? flag(p.country)+' '+esc(p.country) : '—'} · ${esc(p.asn || '—')}</div></div>
-            </div>
-            <span class="score ${sc}" style="font-size:17px;padding:6px 14px">Score ${score}</span>
-          </div>
-          <div class="flex gap-8 mb-20" style="flex-wrap:wrap">
-            ${tor?'<span class="badge red">🧅 TOR</span>':''}
-            ${vpn?'<span class="badge gold">🛡 VPN</span>':''}
-            ${score>=80?'<span class="badge red">⚠ HIGH RISK</span>':''}
-          </div>
-
-          <div class="card-sub mb-12">Enrichissement</div>
-          <div class="grid-3 mb-20">
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">ABUSEIPDB</div><div class="kpi-val" style="font-size:22px;color:var(--red2)">${abuse.abuse_confidence_score ?? '—'}</div><div class="text-3 mono" style="font-size:10px">${abuse.total_reports ?? 0} reports</div></div>
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">VIRUSTOTAL</div><div class="kpi-val" style="font-size:22px;color:var(--gold)">${vt.malicious ?? '—'}/${vt.total ?? '—'}</div><div class="text-3 mono" style="font-size:10px">moteurs détectant</div></div>
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">SHODAN</div><div class="mono text-m" style="font-size:11px;line-height:1.5">${(shodan.tags || shodan.ports || []).slice(0,5).join(', ') || '—'}</div></div>
-          </div>
-
-          <div class="card-sub mb-12">Statistiques honeypots</div>
-          <div class="grid-3 mb-20">
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">ÉVÉNEMENTS</div><div class="kpi-val" style="font-size:22px">${stats.events ?? stats.total_events ?? '—'}</div></div>
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">SESSIONS</div><div class="kpi-val" style="font-size:22px">${stats.sessions ?? '—'}</div></div>
-            <div class="card" style="padding:12px"><div class="text-3 mono" style="font-size:10px">DERNIÈRE ACTIVITÉ</div><div class="mono text-m" style="font-size:11px">${stats.last_seen ? fmt.ago(stats.last_seen)+' ago' : '—'}</div></div>
-          </div>
-
-          <details>
-            <summary style="cursor:pointer;color:var(--text2);font-size:12px;font-family:'Share Tech Mono',monospace">Réponse brute</summary>
-            <pre class="pre" style="max-height:300px;overflow:auto;margin-top:10px">${esc(JSON.stringify(p, null, 2))}</pre>
-          </details>
-        </div>`;
+      const s = await api.profilingStats();
+      STATE.stats = s;
+      $('#p-k-total').textContent = s.total ?? 0;
+      $('#p-k-total-d').textContent = (s.total ? 'profils stockés' : 'aucun profil');
+      $('#p-k-crit').textContent  = s.critical ?? 0;
+      $('#p-k-high').textContent  = s.high ?? 0;
+      $('#p-k-avg').textContent   = s.avg_score ?? 0;
     } catch (e) {
-      $('#profile-result').innerHTML = `<div class="card"><div class="alert err">Erreur pour ${esc(ip)} : ${esc(e.message)}</div></div>`;
+      ['#p-k-total','#p-k-crit','#p-k-high','#p-k-avg'].forEach(sel => $(sel).textContent = '—');
+      $('#p-k-total-d').textContent = 'Données indisponibles';
     }
   }
 
-  $('#p-go').addEventListener('click', () => {
-    const ip = $('#p-lookup').value.trim();
-    if (ip) profile(ip);
-  });
-  $('#p-lookup').addEventListener('keydown', e => { if (e.key === 'Enter') $('#p-go').click(); });
+  /* ── List ─────────────────────────────────────────────────── */
+  async function loadList() {
+    try {
+      STATE.profiles = await api.profilingList({ limit: 200 });
+      renderList();
+    } catch (e) {
+      $('#p-list').innerHTML = `<div class="alert err" style="margin:14px">${esc(e.message)}</div>`;
+    }
+  }
 
-  await loadTop();
+  function renderList() {
+    const filtered = STATE.profiles.filter(p => {
+      if (STATE.activeSev !== 'ALL' && p.severity !== STATE.activeSev) return false;
+      if (STATE.search && !(p.source_ip || '').toLowerCase().includes(STATE.search.toLowerCase())) return false;
+      return true;
+    });
+    $('#p-list-count').textContent = filtered.length + ' / ' + STATE.profiles.length;
+    if (!filtered.length) {
+      $('#p-list').innerHTML = `<div class="alert info" style="margin:14px">${STATE.profiles.length ? 'Aucun profil pour ce filtre.' : 'Aucun profil stocké. Lancez le profiler forensique sur les sessions à risque.'}</div>`;
+      return;
+    }
+    $('#p-list').innerHTML = filtered.map(p => {
+      const sev = p.severity || 'LOW';
+      const soph = SOPH_MAP[p.sophistication] || null;
+      return `
+        <div class="p-card p-card-border-${sev} ${p.id === STATE.activeId ? 'active' : ''}" data-id="${p.id}">
+          <div class="p-card-top">
+            <div>
+              <div class="p-card-ip">${esc(p.source_ip)}</div>
+              <div class="p-card-meta">
+                <span class="sev-tag sev-${sev}">${sev}</span>
+                ${p.actor_type ? `<span>${esc(String(p.actor_type).replaceAll('_',' '))}</span>` : ''}
+                ${p.country ? `<span>${flag(p.country)} ${esc(p.country)}</span>` : ''}
+              </div>
+            </div>
+            <div class="p-card-score sev-${sev}">${p.risk_score ?? 0}</div>
+          </div>
+          ${soph ? `<span class="sev-badge ${soph.cls}">${soph.text}</span>` : ''}
+        </div>`;
+    }).join('');
+    $('#p-list').querySelectorAll('.p-card').forEach(el => {
+      el.addEventListener('click', () => loadDetail(Number(el.dataset.id)));
+    });
+  }
+
+  /* ── Detail dossier ───────────────────────────────────────── */
+  async function loadDetail(id) {
+    STATE.activeId = id;
+    renderList();
+    $('#p-detail').innerHTML = `<div class="card"><div class="alert info">Chargement du dossier…</div></div>`;
+    try {
+      const rec = await api.profilingById(id);
+      renderDetail(rec);
+    } catch (e) {
+      $('#p-detail').innerHTML = `<div class="card"><div class="alert err">${esc(e.message)}</div></div>`;
+    }
+  }
+
+  function killChain(profile, sev) {
+    const current = profile.kill_chain_stage || (profile.modus_operandi || {}).kill_chain_stage;
+    const reached = profile.kill_chain_reached || ((profile.modus_operandi || {}).techniques || []).map(t => t.phase || t.tactic).filter(Boolean);
+    const reachedSet = new Set((reached || []).map(String));
+    let currentIdx = KC_STEPS.findIndex(s => s.key === current);
+    if (currentIdx < 0 && reachedSet.size) {
+      for (let i = KC_STEPS.length - 1; i >= 0; i--) {
+        if (reachedSet.has(KC_STEPS[i].key)) { currentIdx = i; break; }
+      }
+    }
+    const label = currentIdx >= 0 ? KC_STEPS[currentIdx].label : '—';
+    const bar = KC_STEPS.map((s, i) => {
+      const done = reachedSet.has(s.key) || (currentIdx >= 0 && i <= currentIdx);
+      const cur  = i === currentIdx;
+      return `<div class="kc-step ${done ? 'done sev-' + sev : ''} ${cur ? 'current' : ''}">${s.label}</div>`;
+    }).join('');
+    return `<div class="kc-wrap">
+      <div class="kc-bar">${bar}</div>
+      <div class="kc-label">Stage actuel : <b>${esc(label)}</b></div>
+    </div>`;
+  }
+
+  function organisedBar(profile) {
+    const v = Number(profile.organised_score);
+    if (isNaN(v)) return '';
+    const pct = Math.max(0, Math.min(1, v)) * 100;
+    return `<div class="org-wrap">
+      <div class="org-track"><div class="org-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="org-labels"><span>Désorganisé</span><span>${pct.toFixed(0)} %</span><span>Organisé</span></div>
+    </div>`;
+  }
+
+  function listOrNA(arr) {
+    if (!Array.isArray(arr) || !arr.length) return '<span class="kv-v" style="color:var(--text3)">—</span>';
+    return arr.map(t => `<span class="trait-tag">${esc(String(t))}</span>`).join('');
+  }
+
+  function kvSection(title, obj) {
+    if (!obj || typeof obj !== 'object' || !Object.keys(obj).length) return '';
+    const rows = Object.entries(obj).map(([k,v]) => {
+      let val;
+      if (v == null || v === '') val = '<span style="color:var(--text3)">—</span>';
+      else if (Array.isArray(v)) val = v.map(x => `<span class="trait-tag">${esc(String(x))}</span>`).join('');
+      else if (typeof v === 'object') val = `<span class="mono" style="font-size:11px;color:var(--text2)">${esc(JSON.stringify(v))}</span>`;
+      else val = esc(String(v));
+      return `<div class="kv-row"><div class="kv-k">${esc(k.replaceAll('_',' '))}</div><div class="kv-v">${val}</div></div>`;
+    }).join('');
+    return `<div class="sect-h">${esc(title)}</div>${rows}`;
+  }
+
+  function renderDetail(rec) {
+    const p = normalize(rec.profile || {});
+    const sev = rec.severity || 'LOW';
+    const soph = SOPH_MAP[p.sophistication] || null;
+    const actor = p.actor_type ? String(p.actor_type).replaceAll('_',' ') : '—';
+    const confidencePct = p.confidence != null ? Math.round(Number(p.confidence) * 100) : null;
+
+    $('#p-detail').innerHTML = `
+      <div class="card">
+        <div class="card-h" style="align-items:flex-start">
+          <div>
+            <div class="card-t" style="font-size:18px">${esc(rec.source_ip)}</div>
+            <div class="card-sub">Dossier #${rec.id} · ${rec.created_at ? fmt.ago(rec.created_at) + ' ago' : '—'}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="p-card-score sev-${sev}" style="font-size:32px">${rec.risk_score}</div>
+            <div class="card-sub" style="margin-top:4px">${sev}</div>
+          </div>
+        </div>
+
+        <div class="flex gap-8 mb-12" style="flex-wrap:wrap;align-items:center">
+          ${soph ? `<span class="sev-badge ${soph.cls}">${soph.text}</span>` : ''}
+          <span class="trait-tag">${esc(actor)}</span>
+          ${confidencePct != null ? `<span class="trait-tag">Confiance ${confidencePct}%</span>` : ''}
+          ${p.recidivism && p.recidivism.seen_before ? `<span class="trait-tag" style="border-color:var(--border2);color:var(--gold)">Récidive (${p.recidivism.previous_sessions ?? '?'})</span>` : ''}
+        </div>
+
+        ${p.detective_narrative ? `
+          <div class="sect-h">Narratif forensique</div>
+          <div class="narrative">${esc(p.detective_narrative)}</div>` : ''}
+
+        <div class="sect-h">Kill chain</div>
+        ${killChain(p, sev)}
+
+        ${p.organised_score != null ? `
+          <div class="sect-h">Organisation</div>
+          ${organisedBar(p)}` : ''}
+
+        ${Array.isArray(p.behavioral_traits) && p.behavioral_traits.length ? `
+          <div class="sect-h">Traits comportementaux</div>
+          <div>${listOrNA(p.behavioral_traits)}</div>` : ''}
+
+        ${Array.isArray(p.signature_behaviors) && p.signature_behaviors.length ? `
+          <div class="sect-h">Signatures comportementales</div>
+          <div>${listOrNA(p.signature_behaviors)}</div>` : ''}
+
+        ${Array.isArray(p.mitre_techniques) && p.mitre_techniques.length ? `
+          <div class="sect-h">MITRE ATT&CK</div>
+          <div>${p.mitre_techniques.map(t => `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">${esc(String(t))}</span>`).join('')}</div>` : ''}
+
+        ${kvSection('Modus operandi', p.modus_operandi)}
+        ${kvSection('Traces de Locard', p.locard_traces)}
+        ${kvSection('Profil géographique', p.geographic_profile)}
+        ${kvSection('Récidive', p.recidivism)}
+
+        ${p.recommended_action ? `
+          <div class="sect-h">Action recommandée</div>
+          <div class="action-box">${esc(p.recommended_action)}</div>` : ''}
+
+        <details style="margin-top:20px">
+          <summary style="cursor:pointer;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">Dossier brut (JSON)</summary>
+          <pre class="pre" style="max-height:340px;overflow:auto;margin-top:10px">${esc(JSON.stringify(rec, null, 2))}</pre>
+        </details>
+      </div>`;
+  }
+
+  /* ── Wire up ──────────────────────────────────────────────── */
+  $('#p-refresh').addEventListener('click', () => { loadStats(); loadList(); });
+  $('#p-search').addEventListener('input', e => { STATE.search = e.target.value.trim(); renderList(); });
+  document.querySelectorAll('.p-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.p-filter').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      STATE.activeSev = btn.dataset.sev;
+      renderList();
+    });
+  });
+
+  await Promise.all([loadStats(), loadList()]);
 })();
 </script>

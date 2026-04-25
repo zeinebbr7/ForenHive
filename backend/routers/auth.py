@@ -116,8 +116,18 @@ async def refresh(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)) -> UserOut:
+async def me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+) -> UserOut:
     if user is None:
+        # DISABLE_AUTH mode: fall back to the bootstrap admin so the UI has a user to display
+        if get_settings().disable_auth:
+            s = get_settings()
+            res = await db.execute(select(User).where(User.email == s.bootstrap_admin_email.lower()))
+            admin = res.scalar_one_or_none()
+            if admin:
+                return UserOut.from_orm_user(admin)
         raise HTTPException(status_code=401)
     return UserOut.from_orm_user(user)
 

@@ -214,9 +214,9 @@ Internet / Host
 
 | Sprint | Scope | Status |
 |---|---|---|
-| Sprint 1 | Honeypots — Cowrie, Dionaea, Galah, Zeek | ✅ Complete |
-| Sprint 2 | ETL Pipeline — Filebeat, Logstash, Elasticsearch | ✅ Complete |
-| Sprint 3 | Forensic Engine — enrichment, YARA, MITRE, risk scoring, API, UI | 🔄 Planned |
+| Sprint 1 | Honeypots — Cowrie, Dionaea, Galah, Zeek |  Complete |
+| Sprint 2 | ETL Pipeline — Filebeat, Logstash, Elasticsearch |  Complete |
+| Sprint 3 | Forensic Engine — enrichment, YARA, MITRE, risk scoring, API, UI |  Planned |
 
 ---
 

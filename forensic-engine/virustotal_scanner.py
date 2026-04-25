@@ -29,18 +29,18 @@ def check_hash(sha256):
                 "vt_checked":     True
             }
         elif r.status_code == 404:
-            print(f"  ⚠️  Hash inconnu de VirusTotal")
+            print(f"    Hash inconnu de VirusTotal")
             return {"vt_checked": False, "vt_reason": "unknown"}
         else:
-            print(f"  ❌ Erreur VT: {r.status_code}")
+            print(f"   Erreur VT: {r.status_code}")
             return {"vt_checked": False}
     except Exception as e:
-        print(f"  ❌ Exception: {e}")
+        print(f"   Exception: {e}")
         return {"vt_checked": False}
 
 def enrich_yara_results():
     """Enrichit les résultats YARA avec VirusTotal"""
-    print("🔍 ForenHive VirusTotal Scanner")
+    print(" ForenHive VirusTotal Scanner")
 
     # Récupère les scans YARA non encore enrichis par VT
     resp = requests.post(
@@ -76,7 +76,7 @@ def enrich_yara_results():
         )
 
         if vt_result.get("vt_checked"):
-            print(f"  ✅ {fname} → {vt_result['vt_malicious']}/{vt_result['vt_total']} antivirus détectent")
+            print(f"   {fname} → {vt_result['vt_malicious']}/{vt_result['vt_total']} antivirus détectent")
         
 if __name__ == "__main__":
     enrich_yara_results()

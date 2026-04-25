@@ -168,7 +168,7 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
                 ON CONFLICT (source_ip) DO UPDATE SET
                     profile    = EXCLUDED.profile,
                     risk_score = EXCLUDED.risk_score,
-                    updated_at = NOW()
+                    created_at = NOW()
                 """,
                 (source_ip, json.dumps(profile), risk_score),
             )

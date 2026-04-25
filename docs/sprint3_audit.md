@@ -315,18 +315,18 @@ forensic-engine/
 
 | Component | File | Status |
 |---|---|---|
-| PostgreSQL schema | `db/schema.sql` + `db/init_db.py` | ✅ Complete |
-| Configuration | `config.py` | ✅ Complete |
-| IP Enrichment | `enricher.py` | ✅ Complete |
-| YARA rules (6) | `yara_rules/*.yar` | ✅ Complete |
-| YARA scanner | `yara_scanner.py` | ✅ Complete |
-| VirusTotal lookup | `virustotal.py` | ✅ Complete |
-| Risk scoring | `risk_score.py` | ✅ Complete |
-| Engine orchestrator | `engine.py` | ✅ Complete |
-| Docker container | `Dockerfile` + `requirements.txt` | ✅ Complete |
-| docker-compose integration | `docker-compose.yml` | ✅ Complete |
-| MITRE ATT&CK via Ollama | — | 🔲 Not started |
-| Forensic timeline | — | 🔲 Not started |
-| SHA-256 + RFC 3161 custody | — | 🔲 Not started |
-| FastAPI backend (C4) | `backend/` | 🔲 Not started |
-| React frontend (C5) | `frontend/` | 🔲 Not started |
+| PostgreSQL schema | `db/schema.sql` + `db/init_db.py` |  Complete |
+| Configuration | `config.py` |  Complete |
+| IP Enrichment | `enricher.py` |  Complete |
+| YARA rules (6) | `yara_rules/*.yar` |  Complete |
+| YARA scanner | `yara_scanner.py` |  Complete |
+| VirusTotal lookup | `virustotal.py` |  Complete |
+| Risk scoring | `risk_score.py` |  Complete |
+| Engine orchestrator | `engine.py` |  Complete |
+| Docker container | `Dockerfile` + `requirements.txt` |  Complete |
+| docker-compose integration | `docker-compose.yml` |  Complete |
+| MITRE ATT&CK via Ollama | — |  Not started |
+| Forensic timeline | — |  Not started |
+| SHA-256 + RFC 3161 custody | — |  Not started |
+| FastAPI backend (C4) | `backend/` |  Not started |
+| React frontend (C5) | `frontend/` |  Not started |

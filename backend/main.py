@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import get_settings
 from db import dispose as dispose_db, init_db
-from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, sessions
+from routers import alerts, attacks, audit, auth, forensic_reports, forensics, geo, profiling, reports, sessions
 from services import audit_service
 from services.alert_watcher import get_watcher
 from services.auth_service import bootstrap_admin, get_current_user
@@ -218,6 +218,7 @@ app.include_router(geo.router, dependencies=_protected_deps)
 app.include_router(alerts.router, dependencies=_protected_deps)
 app.include_router(profiling.router, dependencies=_protected_deps)
 app.include_router(reports.router, dependencies=_protected_deps)
+app.include_router(forensic_reports.router, dependencies=_protected_deps)
 app.include_router(forensics.router, dependencies=_protected_deps)
 app.include_router(audit.router)  # audit has its own admin guard
 

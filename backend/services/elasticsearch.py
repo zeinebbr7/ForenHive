@@ -158,10 +158,11 @@ class ESClient:
 
     def _doc_to_event(self, doc: Dict[str, Any]) -> AttackEvent:
         src = doc.get("_source", {})
-        geo_src = src.get("source", {}).get("geo") or src.get("geoip") or {}
-        asn_src = src.get("source", {}).get("as") or {}
+        # ES stores flat dotted keys — access them directly, not as nested dicts
+        geo_container = src.get("source.geo") or {}
+        geo_src = geo_container.get("geo") or geo_container or src.get("geoip") or {}
         geo = None
-        if geo_src or asn_src:
+        if geo_src:
             loc = geo_src.get("location")
             if isinstance(loc, dict) and "lat" in loc and "lon" in loc:
                 location = {"lat": float(loc["lat"]), "lon": float(loc["lon"])}
@@ -172,10 +173,6 @@ class ESClient:
                 country_iso=geo_src.get("country_iso_code") or geo_src.get("country_code2"),
                 city=geo_src.get("city_name"),
                 location=location,
-                asn=asn_src.get("number"),
-                as_org=asn_src.get("organization", {}).get("name")
-                if isinstance(asn_src.get("organization"), dict)
-                else asn_src.get("organization"),
             )
 
         ts_raw = src.get("@timestamp") or src.get("timestamp")
@@ -188,20 +185,20 @@ class ESClient:
             id=doc.get("_id", ""),
             timestamp=ts,
             honeypot=self._honeypot_from_doc(src, doc.get("_index", "")),
-            source_ip=(src.get("source") or {}).get("ip") or src.get("src_ip"),
-            source_port=(src.get("source") or {}).get("port") or src.get("src_port"),
-            dest_port=(src.get("destination") or {}).get("port") or src.get("dst_port"),
-            protocol=(src.get("network") or {}).get("protocol") or src.get("protocol"),
+            source_ip=src.get("source.ip") or src.get("src_ip"),
+            source_port=src.get("source.port") or src.get("src_port"),
+            dest_port=src.get("destination.port") or src.get("dst_port"),
+            protocol=src.get("network.transport") or src.get("network.protocol") or src.get("protocol"),
             severity=self._severity_from_doc(src),
             risk_score=src.get("risk_score"),
-            event_type=src.get("eventid") or (src.get("event") or {}).get("type"),
-            session_id=src.get("session") or src.get("session_id"),
-            username=(src.get("user") or {}).get("name") or src.get("username"),
-            password=src.get("password"),
+            event_type=src.get("event.id") or src.get("event.action") or src.get("eventid"),
+            session_id=src.get("session.id") or src.get("session_id"),
+            username=src.get("user.name") or src.get("username"),
+            password=src.get("user.password") or src.get("password"),
             command=src.get("input") or src.get("command"),
-            http_method=(src.get("http") or {}).get("request", {}).get("method"),
-            http_path=(src.get("url") or {}).get("path") or (src.get("http") or {}).get("path"),
-            user_agent=(src.get("user_agent") or {}).get("original"),
+            http_method=src.get("method"),
+            http_path=src.get("uri") or src.get("http.request.uri"),
+            user_agent=src.get("user_agent.original") or src.get("user_agent"),
             geo=geo,
             raw=src,
         )
@@ -212,7 +209,7 @@ class ESClient:
         if f.ip:
             filt.append({"term": {"source.ip": f.ip}})
         if f.country:
-            filt.append({"term": {"source.geo.country_iso_code": f.country.upper()}})
+            filt.append({"term": {"source.geo.geo.country_iso_code.keyword": f.country.upper()}})
         if f.severity:
             filt.append({"term": {"severity": f.severity.value}})
         if f.honeypot:
@@ -313,9 +310,9 @@ class ESClient:
             "size": 0,
             "aggs": {
                 "countries": {
-                    "terms": {"field": "source.geo.country_iso_code", "size": top},
+                    "terms": {"field": "source.geo.geo.country_iso_code.keyword", "size": top},
                     "aggs": {
-                        "name": {"terms": {"field": "source.geo.country_name", "size": 1}},
+                        "name": {"terms": {"field": "source.geo.geo.country_name.keyword", "size": 1}},
                         "unique_ips": {"cardinality": {"field": "source.ip.keyword"}},
                         "avg_risk": {"avg": {"field": "risk_score"}},
                     },
@@ -386,23 +383,23 @@ class ESClient:
             "query": {"bool": {"must": must or [{"match_all": {}}]}},
             "aggs": {
                 "sessions": {
-                    "terms": {"field": "session", "size": limit, "order": {"latest": "desc"}},
+                    "terms": {"field": "session.id.keyword", "size": limit, "order": {"latest": "desc"}},
                     "aggs": {
                         "latest": {"max": {"field": "@timestamp"}},
                         "earliest": {"min": {"field": "@timestamp"}},
                         "honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 1}},
                         "src_ip": {"terms": {"field": "source.ip.keyword", "size": 1}},
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
-                        "username": {"terms": {"field": "user.name", "size": 1}},
+                        "username": {"terms": {"field": "user.name.keyword", "size": 1}},
                         "cmd_count": {
-                            "filter": {"term": {"eventid": "cowrie.command.input"}}
+                            "filter": {"term": {"event.id.keyword": "cowrie.command.input"}}
                         },
                         "auth_count": {
                             "filter": {
                                 "bool": {
                                     "should": [
-                                        {"term": {"eventid": "cowrie.login.success"}},
-                                        {"term": {"eventid": "cowrie.login.failed"}},
+                                        {"term": {"event.id.keyword": "cowrie.login.success"}},
+                                        {"term": {"event.id.keyword": "cowrie.login.failed"}},
                                     ]
                                 }
                             }
@@ -447,7 +444,7 @@ class ESClient:
     async def session_detail(self, session_id: str) -> Optional[Dict[str, Any]]:
         body = {
             "size": 500,
-            "query": {"term": {"session": session_id}},
+            "query": {"term": {"session.id.keyword": session_id}},
             "sort": [{"@timestamp": {"order": "asc"}}],
         }
         resp = await self.client.search(
@@ -464,7 +461,7 @@ class ESClient:
         last = events[-1]
         commands, downloads, logins = [], [], []
         for e in events:
-            evid = e.get("eventid", "")
+            evid = e.get("event.id") or (e.get("event") or {}).get("id", "")
             ts = e.get("@timestamp")
             if evid == "cowrie.command.input":
                 commands.append({"timestamp": ts, "input": e.get("input"), "success": True})
@@ -476,8 +473,8 @@ class ESClient:
                 logins.append(
                     {
                         "success": evid == "cowrie.login.success",
-                        "username": e.get("username") or (e.get("user") or {}).get("name"),
-                        "password": e.get("password"),
+                        "username": e.get("user.name") or (e.get("user") or {}).get("name"),
+                        "password": e.get("user.password") or (e.get("user") or {}).get("password"),
                         "timestamp": ts,
                     }
                 )
@@ -488,10 +485,10 @@ class ESClient:
             started = ended = datetime.now(tz=timezone.utc)
         return {
             "session_id": session_id,
-            "honeypot": first.get("honeypot", "unknown"),
-            "source_ip": (first.get("source") or {}).get("ip") or first.get("src_ip"),
-            "source_port": (first.get("source") or {}).get("port"),
-            "username": (first.get("user") or {}).get("name") or first.get("username"),
+            "honeypot": first.get("honeypot.type") or first.get("honeypot", "unknown"),
+            "source_ip": first.get("source.ip") or first.get("src_ip"),
+            "source_port": first.get("source.port"),
+            "username": first.get("user.name") or first.get("username"),
             "started_at": started,
             "ended_at": ended,
             "duration_seconds": (ended - started).total_seconds(),
@@ -506,7 +503,7 @@ class ESClient:
     async def mark_session_closed(self, session_id: str) -> bool:
         body = {
             "script": {"source": "ctx._source.session_closed_by_admin = true"},
-            "query": {"term": {"session": session_id}},
+            "query": {"term": {"session.id.keyword": session_id}},
         }
         try:
             resp = await self.client.update_by_query(
@@ -543,13 +540,13 @@ class ESClient:
                 "first_seen": {"min": {"field": "@timestamp"}},
                 "last_seen": {"max": {"field": "@timestamp"}},
                 "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 10}},
-                "sessions": {"cardinality": {"field": "session"}},
-                "usernames": {"terms": {"field": "user.name", "size": 10}},
-                "passwords": {"terms": {"field": "password", "size": 10}},
+                "sessions": {"cardinality": {"field": "session.id.keyword"}},
+                "usernames": {"terms": {"field": "user.name.keyword", "size": 10}},
+                "passwords": {"terms": {"field": "user.password.keyword", "size": 10}},
                 "commands": {"terms": {"field": "input.keyword", "size": 10}},
-                "country": {"terms": {"field": "source.geo.country_name", "size": 1}},
-                "country_iso": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},
-                "city": {"terms": {"field": "source.geo.city_name", "size": 1}},
+                "country": {"terms": {"field": "source.geo.geo.country_name.keyword", "size": 1}},
+                "country_iso": {"terms": {"field": "source.geo.geo.country_iso_code.keyword", "size": 1}},
+                "city": {"terms": {"field": "source.geo.geo.city_name.keyword", "size": 1}},
                 "asn": {"terms": {"field": "source.as.number", "size": 1}},
                 "as_org": {"terms": {"field": "source.as.organization.name", "size": 1}},
                 "total": {"value_count": {"field": "@timestamp"}},

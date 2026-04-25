@@ -120,9 +120,9 @@ def main() -> int:
 
     print()
     if errors:
-        print(f"\033[31m✗ {errors} error(s) — chain compromised\033[0m")
+        print(f"\033[31m {errors} error(s) — chain compromised\033[0m")
         return 1
-    print(f"\033[32m✓ chain intact — {checked} records, {len(batches)} batch(es)\033[0m")
+    print(f"\033[32m chain intact — {checked} records, {len(batches)} batch(es)\033[0m")
     return 0
 
 

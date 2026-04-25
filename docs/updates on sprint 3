@@ -253,7 +253,7 @@ docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
   "ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase VARCHAR(50);"
 # (repeated for all 4 columns)
 ```
-Result: `forensic_sessions` now has 13 columns. ✅
+Result: `forensic_sessions` now has 13 columns. 
 
 **Recurring issue:** PostgreSQL container restart resets the user password (Docker volume behavior).
 Fix required after each container recreate:
@@ -276,16 +276,16 @@ docker exec forenhive-postgresql psql -U forenhive -c \
 | exploitation | 4 | T1110.001 / T1210 | cowrie / dionaea | 11 | 17 |
 | delivery | 3 | T1190 | all honeypots | 13 | 55 |
 
-All 24 sessions persisted to PostgreSQL with all 4 new columns populated. ✅
+All 24 sessions persisted to PostgreSQL with all 4 new columns populated. 
 
 **Smoke tests:**
 
 | Test | Expected | Result |
 |---|---|---|
-| Cowrie brute-force + login success + commands | T1110.001, T1078, T1059.004 → installation stage 5 | ✅ |
-| Dionaea port 445 (SMB) | T1021.002 + T1210 → lateral_movement stage 7 | ✅ |
-| Galah `/wp-admin` + `/.env` + `/phpinfo.php` | T1190 + T1595.002 → delivery stage 3 | ✅ |
-| All imports | `import engine, mitre_mapper, risk_score` | ✅ |
+| Cowrie brute-force + login success + commands | T1110.001, T1078, T1059.004 → installation stage 5 |  |
+| Dionaea port 445 (SMB) | T1021.002 + T1210 → lateral_movement stage 7 |  |
+| Galah `/wp-admin` + `/.env` + `/phpinfo.php` | T1190 + T1595.002 → delivery stage 3 |  |
+| All imports | `import engine, mitre_mapper, risk_score` |  |
 
 ---
 

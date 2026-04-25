@@ -1,11 +1,11 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">🛠 Configuration</div>
+    <div class="section-tag" style="margin-bottom:8px"> Configuration</div>
     <h2 class="page-title">Paramètres <span>système</span></h2>
     <div class="page-sub">Alerting backend · config honeypots locale.</div>
   </div>
   <div class="page-actions">
-    <span class="badge gold">👑 Admin uniquement</span>
+    <span class="badge gold"> Admin uniquement</span>
   </div>
 </div>
 
@@ -15,7 +15,7 @@
 
   <!-- Alerting (backend) -->
   <div class="acc open" data-acc>
-    <div class="acc-h"><div class="acc-t">🔔 Alerting (backend)</div><div class="acc-i">▶</div></div>
+    <div class="acc-h"><div class="acc-t"> Alerting (backend)</div><div class="acc-i">▶</div></div>
     <div class="acc-b">
       <div id="alert-status"><div class="alert info">Chargement…</div></div>
       <div class="grid-2">
@@ -28,15 +28,15 @@
         <label class="toggle"><input type="checkbox" id="a-enabled"><span class="toggle-slider"></span></label>
       </div>
       <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gh btn-sm" id="a-test">✉ Envoyer alerte test</button>
-        <button class="btn btn-gold btn-sm" id="a-save">💾 Sauvegarder</button>
+        <button class="btn btn-gh btn-sm" id="a-test"> Envoyer alerte test</button>
+        <button class="btn btn-gold btn-sm" id="a-save"> Sauvegarder</button>
       </div>
     </div>
   </div>
 
   <!-- Historique alertes -->
   <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">📜 Historique alertes</div><div class="acc-i">▶</div></div>
+    <div class="acc-h"><div class="acc-t"> Historique alertes</div><div class="acc-i">▶</div></div>
     <div class="acc-b">
       <div id="alert-history"><div class="alert info">Chargement…</div></div>
     </div>
@@ -44,7 +44,7 @@
 
   <!-- Honeypots (info read-only depuis split) -->
   <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">🍯 Sources actives</div><div class="acc-i">▶</div></div>
+    <div class="acc-h"><div class="acc-t"> Sources actives</div><div class="acc-i">▶</div></div>
     <div class="acc-b">
       <div id="sources-info"><div class="alert info">Chargement…</div></div>
     </div>
@@ -52,7 +52,7 @@
 
   <!-- Intégrations (locale) -->
   <div class="acc" data-acc>
-    <div class="acc-h"><div class="acc-t">🔗 Intégrations API (préférences locales)</div><div class="acc-i">▶</div></div>
+    <div class="acc-h"><div class="acc-t"> Intégrations API (préférences locales)</div><div class="acc-i">▶</div></div>
     <div class="acc-b">
       <div class="alert info">Ces clés sont stockées localement uniquement (la configuration réelle se fait côté serveur via <span class="mono">.env</span>).</div>
       <div class="grid-2">
@@ -62,7 +62,7 @@
         <div class="form-g"><label class="form-l">MaxMind licence key</label><input class="form-i" type="password" data-cfg="int.maxmind"></div>
       </div>
       <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
-        <button class="btn btn-gold btn-sm" data-save="int">💾 Sauvegarder localement</button>
+        <button class="btn btn-gold btn-sm" data-save="int"> Sauvegarder localement</button>
       </div>
     </div>
   </div>
@@ -75,7 +75,7 @@
   const user = FH.Auth.current();
 
   if (!user || user.role !== 'admin') {
-    $('#cfg-gate').innerHTML = `<div class="alert err">⛔ Accès refusé. Cette page est réservée aux administrateurs.</div>`;
+    $('#cfg-gate').innerHTML = `<div class="alert err"> Accès refusé. Cette page est réservée aux administrateurs.</div>`;
     return;
   }
   $('#cfg-body').classList.remove('hide');
@@ -85,7 +85,7 @@
   // Alerting config
   try {
     const cfg = await api.alertConfig();
-    $('#alert-status').innerHTML = `<div class="alert ok">✓ Config alerting chargée depuis backend</div>`;
+    $('#alert-status').innerHTML = `<div class="alert ok"> Config alerting chargée depuis backend</div>`;
     $('#a-threshold').value = cfg.threshold ?? cfg.critical_threshold ?? 80;
     $('#a-email').value = cfg.email || cfg.notify_email || '';
     $('#a-slack').value = cfg.slack_webhook || cfg.webhook || '';
@@ -103,7 +103,7 @@
         slack_webhook: $('#a-slack').value.trim(),
         enabled: $('#a-enabled').checked,
       });
-      btn.innerHTML = '✓ Sauvegardé'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);
+      btn.innerHTML = ' Sauvegardé'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);
     } catch (e) {
       openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
       btn.innerHTML = old; btn.disabled = false;
@@ -113,7 +113,7 @@
   $('#a-test').addEventListener('click', async () => {
     try {
       await api.alertTest({ message: 'Test depuis ForenHive UI' });
-      openModal(`<div class="alert ok">✓ Alerte de test envoyée.</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+      openModal(`<div class="alert ok"> Alerte de test envoyée.</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
     } catch (e) {
       openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
     }
@@ -129,7 +129,7 @@
         <tr><td class="mono" style="font-size:11px">${fmt.date(a.timestamp || a.created_at)}</td>
         <td>${esc(a.type || a.kind || '—')}</td>
         <td class="mono" style="font-size:11px">${esc(a.target || a.recipient || '—')}</td>
-        <td>${a.status === 'sent' ? '<span class="badge teal">✓ envoyé</span>' : (a.status === 'failed' ? '<span class="badge red">✗ erreur</span>' : '<span class="badge gold">'+esc(a.status || '—')+'</span>')}</td>
+        <td>${a.status === 'sent' ? '<span class="badge teal"> envoyé</span>' : (a.status === 'failed' ? '<span class="badge red"> erreur</span>' : '<span class="badge gold">'+esc(a.status || '—')+'</span>')}</td>
         </tr>`).join('')}</tbody></table>` : '<div class="alert info">Aucune alerte dans l\'historique.</div>';
   } catch (e) {
     $('#alert-history').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
@@ -142,7 +142,7 @@
     $('#sources-info').innerHTML = `
       <table class="tbl"><thead><tr><th>Source</th><th>Type</th><th>Description</th><th>Événements</th><th>Part</th></tr></thead>
       <tbody>${arr.map(x => {
-        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', kind: '?', desc: '—' };
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '', kind: '?', desc: '—' };
         return `<tr>
           <td><b>${meta.icon} ${meta.label}</b></td>
           <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.kind === 'sensor' ? 'Capteur NDR' : 'Honeypot'}</span></td>
@@ -170,7 +170,7 @@
       obj[key] = el.value;
     });
     localStorage.setItem('fh.config.'+section, JSON.stringify(obj));
-    const old = btn.innerHTML; btn.innerHTML = '✓ Enregistré'; setTimeout(() => { btn.innerHTML = old; }, 1400);
+    const old = btn.innerHTML; btn.innerHTML = ' Enregistré'; setTimeout(() => { btn.innerHTML = old; }, 1400);
   });
 })();
 </script>

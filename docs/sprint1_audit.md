@@ -18,11 +18,11 @@ Sprint 1 covers the deployment and configuration of all four honeypots. Each hon
 
 | Honeypot | Container | Status | Logs | Notes |
 |---|---|---|---|---|
-| Cowrie | `forenhive-cowrie` | ✅ Running | JSON | SSH/Telnet active, UserDB auth working |
-| Dionaea | `forenhive-dionaea` | ✅ Running | Plain text | 11 protocols, SMB + MSSQL identity configured |
-| Galah | `forenhive-galah` | ✅ Running | JSON | LLM responses working, SQLite cache active |
-| Zeek | `forenhive-zeek` | ✅ Running | JSON | Passive capture on `eno12399`, log files flowing |
-| Ollama | `forenhive-ollama` | ✅ Running | — | Mistral 7B Q4_K_M loaded (4.4 GB) |
+| Cowrie | `forenhive-cowrie` |  Running | JSON | SSH/Telnet active, UserDB auth working |
+| Dionaea | `forenhive-dionaea` |  Running | Plain text | 11 protocols, SMB + MSSQL identity configured |
+| Galah | `forenhive-galah` |  Running | JSON | LLM responses working, SQLite cache active |
+| Zeek | `forenhive-zeek` |  Running | JSON | Passive capture on `eno12399`, log files flowing |
+| Ollama | `forenhive-ollama` |  Running | — | Mistral 7B Q4_K_M loaded (4.4 GB) |
 
 ---
 
@@ -332,6 +332,6 @@ During the Sprint 1 audit, the following unnecessary files were removed:
 
 ---
 
-## 7. Sprint 1 Status: COMPLETE ✅
+## 7. Sprint 1 Status: COMPLETE 
 
 All four honeypots are running and generating logs. The log files are readable by Filebeat and the data flows correctly into the Sprint 2 pipeline. The system is ready for internet-facing deployment.
