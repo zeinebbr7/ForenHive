@@ -1,0 +1,16 @@
+# Format: username:uid:password
+# Banque simulee - niveau moyen
+root:0:root
+root:0:toor
+root:0:admin
+root:0:password
+root:0:123456
+root:0:mongo2024
+root:0:banking123
+mongodb:1001:mongodb
+mongodb:1001:mongo123
+mongodb:1001:password
+dbadmin:1002:dbadmin
+dbadmin:1002:Admin@2024
+ubuntu:1000:ubuntu
+ubuntu:1000:changeme
