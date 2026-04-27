@@ -1,0 +1,97 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px"> Paramètres</div>
+    <h2 class="page-title">Préférences <span>utilisateur</span></h2>
+    <div class="page-sub">Profil, utilisateurs (admin), sessions.</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Profil</div></div>
+    <div class="flex items-c gap-12 mb-20">
+      <div class="prof-av" style="width:60px;height:60px;font-size:28px" id="s-avatar"></div>
+      <div>
+        <div class="card-t" id="s-name">—</div>
+        <div class="text-3 mono" style="font-size:11px" id="s-email">—</div>
+      </div>
+    </div>
+    <div class="form-g"><label class="form-l">Email</label><input class="form-i" id="s-email-i" disabled></div>
+    <div class="form-g"><label class="form-l">Rôle</label><input class="form-i" id="s-role" disabled></div>
+    <div class="form-g"><label class="form-l">Créé le</label><input class="form-i" id="s-created" disabled></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><div class="card-t">Apparence</div></div>
+    <div class="flex items-c" style="justify-content:space-between;margin-bottom:14px">
+      <div><b>Sidebar compacte</b><div class="text-3 mono" style="font-size:11px">Réduit la largeur</div></div>
+      <label class="toggle"><input type="checkbox" data-k="compact"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="form-g"><label class="form-l">Densité</label>
+      <select class="form-s" data-k="density"><option value="normal">Normale</option><option value="compact">Compacte</option><option value="comfortable">Confort</option></select>
+    </div>
+    <div class="form-g"><label class="form-l">Rafraîchissement auto (s)</label><input class="form-i" type="number" data-k="refresh" value="30" min="5" max="300"></div>
+  </div>
+
+  <div class="card" id="users-card" style="grid-column:1/-1">
+    <div class="card-h"><div class="card-t">Utilisateurs</div><div class="card-sub" id="users-sub">admin uniquement</div></div>
+    <div id="users-body"><div class="alert info">Chargement…</div></div>
+  </div>
+</div>
+
+<script>
+(async function(){
+  const { ROLES, fmt, esc, $ } = FH;
+
+  try {
+    const me = await api.me();
+    const role = ROLES[me.role] || ROLES.viewer;
+    $('#s-avatar').textContent = role.icon;
+    $('#s-name').textContent = me.email.split('@')[0];
+    $('#s-email').textContent = me.email;
+    $('#s-email-i').value = me.email;
+    $('#s-role').value = role.label;
+    $('#s-created').value = me.created_at ? fmt.date(me.created_at) : '—';
+
+    if (me.role === 'admin') {
+      try {
+        const users = await api.users();
+        const list = Array.isArray(users) ? users : (users.items || []);
+        $('#users-sub').textContent = list.length + ' utilisateur' + (list.length>1?'s':'');
+        $('#users-body').innerHTML = list.length ? `
+          <table class="tbl"><thead><tr><th>Email</th><th>Rôle</th><th>Actif</th><th>Créé</th><th>Dernière connexion</th></tr></thead>
+          <tbody>${list.map(u => {
+            const r = ROLES[u.role] || ROLES.viewer;
+            return `<tr>
+              <td class="mono">${esc(u.email)}</td>
+              <td><span class="badge ${r.color}">${r.icon} ${r.label}</span></td>
+              <td>${u.is_active === false ? '<span class="badge red">inactif</span>' : '<span class="badge teal">actif</span>'}</td>
+              <td class="mono" style="font-size:11px">${u.created_at ? fmt.date(u.created_at) : '—'}</td>
+              <td class="mono" style="font-size:11px">${u.last_login_at ? fmt.ago(u.last_login_at)+' ago' : '—'}</td>
+            </tr>`;
+          }).join('')}</tbody></table>` : '<div class="alert info">Aucun utilisateur.</div>';
+      } catch (e) {
+        $('#users-body').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+      }
+    } else {
+      $('#users-card').style.display = 'none';
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  // préférences locales
+  const prefs = JSON.parse(localStorage.getItem('fh.prefs') || '{}');
+  document.querySelectorAll('[data-k]').forEach(el => {
+    const k = el.dataset.k;
+    if (k in prefs) {
+      if (el.type === 'checkbox') el.checked = !!prefs[k];
+      else el.value = prefs[k];
+    }
+    el.addEventListener('change', () => {
+      prefs[k] = el.type === 'checkbox' ? el.checked : el.value;
+      localStorage.setItem('fh.prefs', JSON.stringify(prefs));
+    });
+  });
+})();
+</script>

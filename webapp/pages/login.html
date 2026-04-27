@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForenHive — Connexion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/style.css?v=7">
+<script>
+  // Apply theme before first paint to avoid FOUC
+  (function(){ const t = localStorage.getItem('fh.theme') || 'dark'; document.documentElement.setAttribute('data-theme', t); })();
+</script>
+</head>
+<body>
+<button class="theme-toggle" id="theme-toggle" title="Basculer thème" aria-label="Basculer thème"
+  style="position:fixed;top:20px;right:20px;z-index:100">
+  <span class="ic-moon">☾</span><span class="ic-sun">☀</span>
+</button>
+<div class="grid-bg"></div>
+<div class="login-glow"></div>
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="login-hex"></span>
+      <div class="login-name">FORENHIVE</div>
+      <div class="login-sub">SOC PLATFORM · v1.0</div>
+    </div>
+
+    <div id="err" class="alert err hide"></div>
+
+    <form id="login-form">
+      <div class="form-g">
+        <label class="form-l">Email</label>
+        <input class="form-i" type="email" id="email" placeholder="admin@forenhive.io" value="admin@forenhive.io" required>
+      </div>
+      <div class="form-g">
+        <label class="form-l">Mot de passe</label>
+        <div class="pwd-wrap">
+          <input class="form-i" type="password" id="pwd" placeholder="••••••••" required>
+          <button type="button" class="pwd-toggle" id="pwd-toggle" aria-label="Afficher"></button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-gold btn-lg" id="submit-btn" style="width:100%;justify-content:center;margin-top:6px">Connexion →</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:1px">
+      Admin initial : <span class="mono" style="color:var(--gold)">admin@forenhive.io</span> / <span class="mono" style="color:var(--gold)">ChangeMe!</span>
+    </div>
+
+    <div style="text-align:center;margin-top:22px;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:1px">
+      © 2026 FORENHIVE · <a href="../index.html" style="color:var(--gold);text-decoration:none">← Landing</a>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/api.js?v=11"></script>
+<script src="../assets/app.js?v=11"></script>
+<script>
+  const err = document.getElementById('err');
+  const showErr = (msg) => { err.textContent = msg; err.classList.remove('hide'); };
+
+  document.getElementById('pwd-toggle').addEventListener('click', () => {
+    const i = document.getElementById('pwd'); i.type = i.type === 'password' ? 'text' : 'password';
+  });
+
+  document.getElementById('login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    err.classList.add('hide');
+    const email = document.getElementById('email').value.trim();
+    const pwd   = document.getElementById('pwd').value;
+    const btn   = document.getElementById('submit-btn');
+    btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = '⟳ Connexion…';
+    try {
+      await Auth.login(email, pwd);
+      location.href = '../app.html';
+    } catch (ex) {
+      showErr(ex.message || 'Échec de la connexion');
+      btn.disabled = false; btn.textContent = oldTxt;
+    }
+  });
+
+  /* Auto-redirect removed — analyst must see and validate the login form. */
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const now = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', now);
+    localStorage.setItem('fh.theme', now);
+  });
+</script>
+</body>
+</html>

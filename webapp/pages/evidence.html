@@ -1,0 +1,123 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">Forensic Analysis</div>
+    <h2 class="page-title">Evidence <span>Logs</span></h2>
+    <div class="page-sub">Logs bruts des honeypots · filtre par capteur · vérification SHA-256 par enregistrement.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="ev-refresh">Actualiser</button>
+  </div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-h">
+    <div class="card-t">Filtres</div>
+  </div>
+  <div class="grid-2">
+    <div class="form-g">
+      <label class="form-l">Source</label>
+      <select class="form-s" id="ev-hp">
+        <option value="">Tous les honeypots (Cowrie + Dionaea + Galah)</option>
+        <option value="cowrie">Cowrie uniquement</option>
+        <option value="dionaea">Dionaea uniquement</option>
+        <option value="galah">Galah uniquement</option>
+        <option value="zeek">Zeek (NDR) — corrélation cross-honeypot</option>
+      </select>
+      <div class="card-sub" style="font-size:10px;margin-top:4px">Les logs Zeek (NDR passif) sont volumineux et exclus par défaut · sélectionne explicitement Zeek pour les voir.</div>
+    </div>
+    <div class="form-g">
+      <label class="form-l">Limite (max)</label>
+      <select class="form-s" id="ev-limit">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="500">500</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-h">
+    <div class="card-t">Logs bruts</div>
+    <div class="card-sub"><span id="ev-count">0</span> entrée(s)  <span id="ev-sealed">0</span> scellée(s) SHA-256</div>
+  </div>
+  <div id="ev-rows"><div class="alert info">Chargement…</div></div>
+</div>
+
+<style>
+.evlog { border-bottom: 1px solid var(--border); padding: 10px 0; }
+.evlog:last-child { border-bottom: none; }
+.evlog-h { display:grid; grid-template-columns: 90px 80px 1fr auto; gap:10px; align-items:center; cursor:pointer; }
+.evlog-time { font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); }
+.evlog-msg { font-size: 12.5px; color: var(--text2); min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.evlog-hash { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--gold); }
+.evlog-raw { display:none; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin-top:6px; font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow-y:auto; }
+.evlog.open .evlog-raw { display:block; }
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $ } = FH;
+  const { evNormalize } = FH;
+
+  async function load() {
+    $('#ev-rows').innerHTML = `<div class="alert info">Chargement…</div>`;
+    try {
+      const hp = $('#ev-hp').value;
+      const limit = parseInt($('#ev-limit').value, 10) || 100;
+      const params = { page_size: limit };
+      let items = [];
+      if (hp) {
+        params.honeypot = hp;
+        const res = await api.attacks(params);
+        items = (res && res.items) || [];
+      } else {
+        // Default: honeypots only — drop Zeek (NDR) unless explicitly selected.
+        const results = await Promise.allSettled([
+          api.attacks({ ...params, honeypot: 'cowrie' }),
+          api.attacks({ ...params, honeypot: 'dionaea' }),
+          api.attacks({ ...params, honeypot: 'galah' }),
+        ]);
+        items = results.flatMap(r => r.status === 'fulfilled' ? ((r.value && r.value.items) || []) : []);
+        items.sort((a, b) => +new Date(b.timestamp || (b.raw && b.raw['@timestamp']) || 0)
+                            - +new Date(a.timestamp || (a.raw && a.raw['@timestamp']) || 0));
+        items = items.slice(0, limit);
+      }
+
+      $('#ev-count').textContent = items.length;
+      $('#ev-sealed').textContent = items.filter(it => it.sha256 || (it.raw && it.raw.sha256)).length;
+
+      if (!items.length) {
+        $('#ev-rows').innerHTML = `<div class="alert info">Aucun log avec ces critères.</div>`;
+        return;
+      }
+
+      $('#ev-rows').innerHTML = items.map((ev, i) => {
+        const n = evNormalize(ev);
+        const hash = ev.sha256 || (n.raw && n.raw.sha256) || '';
+        return `<div class="evlog" data-i="${i}">
+          <div class="evlog-h">
+            <div class="evlog-time">${fmt.time(n.timestamp)}</div>
+            <div><span class="badge ${n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue'}">${esc(n.honeypot)}</span></div>
+            <div class="evlog-msg">${esc(n.message || n.event_action || '—')}</div>
+            <div class="evlog-hash">${hash ? ' '+fmt.shortHash(hash) : '<span class="muted">—</span>'}</div>
+          </div>
+          <pre class="evlog-raw">${esc(JSON.stringify(n.raw || ev, null, 2))}</pre>
+        </div>`;
+      }).join('');
+
+      document.querySelectorAll('.evlog .evlog-h').forEach(h => {
+        h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+      });
+    } catch (e) {
+      $('#ev-rows').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+    }
+  }
+
+  $('#ev-hp').addEventListener('change', load);
+  $('#ev-limit').addEventListener('change', load);
+  $('#ev-refresh').addEventListener('click', load);
+  await load();
+})();
+</script>
