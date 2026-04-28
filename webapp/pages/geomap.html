@@ -1,6 +1,6 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">🌍 Carte Géo</div>
+    <div class="section-tag" style="margin-bottom:8px"> Carte Géo</div>
     <h2 class="page-title">Carte des <span>attaquants</span></h2>
     <div class="page-sub">Positions géographiques réelles · enrichissement GeoIP MaxMind.</div>
   </div>
@@ -15,7 +15,7 @@
     position:absolute;bottom:24px;right:12px;z-index:1000;
     background:rgba(10,14,26,.9);border:1px solid var(--border);
     border-radius:8px;padding:10px 14px;font-size:11px;
-    font-family:'Share Tech Mono',monospace;color:var(--text2);
+    font-family:'JetBrains Mono',monospace;color:var(--text2);
     pointer-events:none">
     <div style="margin-bottom:6px;font-size:10px;color:var(--text3);letter-spacing:.06em">LÉGENDE</div>
     <div class="flex items-c gap-8" style="margin-bottom:4px">
@@ -169,9 +169,9 @@
         fillOpacity: 0.85,
       });
 
-      const meta = SOURCE_META[d.honeypot] || { label: d.honeypot || '?', icon: '❓' };
+      const meta = SOURCE_META[d.honeypot] || { label: d.honeypot || '?', icon: '' };
       circle.bindPopup(
-        `<div style="font-family:'Share Tech Mono',monospace;font-size:12px;min-width:180px">
+        `<div style="font-family:'JetBrains Mono',monospace;font-size:12px;min-width:180px">
           <div style="font-size:14px;font-weight:700;margin-bottom:6px">${flag(d.geo.country_code)} ${esc(d.ip)}</div>
           <div style="color:#aaa;margin-bottom:4px">${esc(d.geo.country_name)}${d.geo.city?' · '+esc(d.geo.city):''}</div>
           <div style="margin-bottom:4px">${meta.icon} ${esc(meta.label)}</div>

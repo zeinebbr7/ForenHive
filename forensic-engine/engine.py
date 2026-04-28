@@ -606,6 +606,10 @@ class ForensicEngine:
             privacy    = enrich.get("privacy", {})
             geo        = enrich.get("geo", {})
             infra      = enrich.get("infrastructure", {})
+            whois      = enrich.get("whois", {})
+            dns        = enrich.get("dns", {})
+            threat     = enrich.get("threat_summary", {})
+            shodan_host = (infra.get("host_detail") or {})
 
             # Classify private IPs
             is_private    = enrich.get("private", False)
@@ -657,22 +661,56 @@ class ForensicEngine:
                 # Reputation
                 "abuse_score":         reputation.get("abuse_score", 0),
                 "abuse_total_reports": reputation.get("total_reports", 0),
-                "geo_isp":             reputation.get("isp", "") or "",
+                "abuse_distinct_users": reputation.get("distinct_users", 0),
+                "abuse_last_reported": reputation.get("last_reported_at", ""),
+                "abuse_categories":    threat.get("attack_categories", []),
+                "abuse_recent_comments": reputation.get("recent_comments", []),
+                "abuse_usage_type":    reputation.get("usage_type", ""),
+                "geo_isp":             reputation.get("isp", "") or privacy.get("company_name", "") or "",
                 # Privacy / anonymization
-                "is_tor":              privacy.get("is_tor", False) or reputation.get("is_tor", False),
-                "is_vpn":              privacy.get("is_vpn", False),
-                "is_proxy":            privacy.get("is_proxy", False),
+                "is_tor":              threat.get("is_tor", False),
+                "is_vpn":              threat.get("is_vpn", False),
+                "is_proxy":            threat.get("is_proxy", False),
                 "is_hosting":          privacy.get("is_hosting", False),
+                "is_datacenter":       threat.get("is_datacenter", False),
+                "is_anonymized":       threat.get("is_anonymized", False),
+                "is_abuser_listed":    threat.get("is_abuser_listed", False),
+                "is_bogon":            threat.get("is_bogon", False),
                 # GeoIP / ASN
                 "geo_country":         geo.get("country", "") or "",
                 "geo_country_code":    geo.get("country_code", "") or reputation.get("country_code", "") or "",
-                "geo_asn":             geo.get("asn", 0) or 0,
-                "geo_org":             geo.get("org", "") or "",
+                "geo_region":          geo.get("region", "") or "",
+                "geo_city":            geo.get("city", "") or "",
+                "geo_postal":          geo.get("postal_code", "") or "",
+                "geo_lat":             geo.get("lat"),
+                "geo_lon":             geo.get("lon"),
+                "geo_timezone":        geo.get("timezone", "") or "",
+                "geo_continent":       geo.get("continent", "") or "",
+                "geo_asn":             geo.get("asn", 0) or whois.get("asn") or 0,
+                "geo_org":             geo.get("org", "") or whois.get("asn_description", "") or "",
+                "network_cidr":        threat.get("network_cidr", ""),
+                "asn_route":           privacy.get("asn_route", ""),
+                "asn_type":            privacy.get("asn_type", ""),
+                "company_domain":      privacy.get("company_domain", ""),
+                "abuse_contact":       threat.get("abuse_contact", ""),
+                # DNS
+                "ptr_hostname":        dns.get("ptr", ""),
+                "all_hostnames":       threat.get("hostnames", []),
+                # Whois
+                "whois_network":       whois.get("network_name", ""),
+                "whois_registry":      whois.get("asn_registry", ""),
+                "whois_registration":  whois.get("registration", ""),
                 # Shodan / attacker infrastructure
                 "shodan_vulns":        infra.get("vulns", []) or [],
                 "shodan_tags":         infra.get("tags", []) or [],
                 "shodan_open_ports":   infra.get("open_ports", []) or [],
                 "shodan_hostnames":    infra.get("hostnames", []) or [],
+                "shodan_cpes":         infra.get("cpes", []) or [],
+                "shodan_os":           shodan_host.get("os", ""),
+                "shodan_services":     shodan_host.get("services", []),
+                "shodan_last_update":  shodan_host.get("last_update", ""),
+                # Threat summary (derived)
+                "threat_tier":         threat.get("tier", ""),
                 # Malware
                 "yara_matches":        yara_matches,
                 "vt_malicious":        vt_malicious,

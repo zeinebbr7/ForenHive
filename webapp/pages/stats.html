@@ -1,6 +1,6 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">📊 Analytics</div>
+    <div class="section-tag" style="margin-bottom:8px"> Analytics</div>
     <h2 class="page-title">Statistiques <span>détaillées</span></h2>
     <div class="page-sub">Données issues d'Elasticsearch · <span id="stats-total">—</span> événements au total.</div>
   </div>
@@ -77,7 +77,7 @@
   /* ── Chart.js global defaults (dark theme) ── */
   Chart.defaults.color = '#8892a4';
   Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-  Chart.defaults.font.family = "'Share Tech Mono', monospace";
+  Chart.defaults.font.family = "'JetBrains Mono', monospace";
   Chart.defaults.font.size = 11;
 
   const COLORS = {
@@ -210,7 +210,7 @@
 
     /* Custom legend */
     $('#split-legend').innerHTML = splitArr.map((x,i) => {
-      const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓' };
+      const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '' };
       return `<div style="display:flex;align-items:center;gap:10px">
         <span style="width:10px;height:10px;border-radius:50%;background:${splitColors[i]};flex-shrink:0"></span>
         <span style="flex:1;font-size:12px">${meta.icon} <b>${meta.label}</b></span>
@@ -346,7 +346,7 @@
       },
     });
 
-    const sevMeta = { critical: '⛔', high: '🔴', medium: '🟡', low: '🟢' };
+    const sevMeta = { critical: '', high: '', medium: '', low: '' };
     $('#sev-kpis').innerHTML = sevOrder.map((k, i) => `
       <div class="card" style="padding:14px 18px;flex:1;min-width:120px;border-color:${sevColors[i]}33">
         <div style="font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">
@@ -355,7 +355,7 @@
         <div style="font-size:32px;font-weight:700;color:${sevColors[i]};font-family:'Rajdhani',sans-serif">
           ${bySev[k]}
         </div>
-        <div style="font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-top:2px">
+        <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:2px">
           ${((bySev[k]/totalSev)*100).toFixed(1)}%
         </div>
       </div>`).join('');

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForenHive — Technologies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css?v=8">
+<style>
+  body { background: #04000D; color: #FFF3CD; font-family: 'Inter',sans-serif; }
+  .pub-nav { position: sticky; top: 0; z-index: 100; display:flex; justify-content:space-between; align-items:center; padding: 14px 6%; background: rgba(8,2,21,.92); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(249,168,37,.18); }
+  .pub-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+  .pub-logo .hex { font-size: 22px; color: #F9A825; }
+  .pub-logo .name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; color:#F9A825; letter-spacing:2px; }
+  .pub-nav a { color:#E8DDB8; text-decoration:none; margin-left:26px; font-size:14px; font-weight:500; }
+  .pub-nav a:hover { color:#F9A825; }
+  .pub-nav a.active { color:#F9A825; }
+  .pub-nav .cta { padding:8px 18px; border:1px solid rgba(249,168,37,.4); color:#F9A825; border-radius:5px; font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px; }
+  .pub-nav .cta-primary { background:#F9A825; color:#04000D; border-color:#F9A825; }
+
+  .pub-hero { padding: 90px 6% 30px; text-align:center; }
+  .pub-tag { display:inline-block; font-family:'Share Tech Mono',monospace; font-size:11px; color:#F9A825; background:rgba(249,168,37,.08); border:1px solid rgba(249,168,37,.28); padding:5px 14px; border-radius:20px; letter-spacing:2px; }
+  .pub-h1 { font-size: clamp(2.2rem,5vw,4rem); font-weight:700; margin-top:18px; line-height:1.1; }
+  .pub-h1 span { background: linear-gradient(135deg,#F9A825,#FFC857); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .pub-sub { color:#E8DDB8; max-width:680px; margin:18px auto 0; font-size:1.1rem; line-height:1.6; }
+
+  .stack { max-width: 1280px; margin: 50px auto 80px; padding: 0 6%; }
+  .cat { margin-bottom: 32px; }
+  .cat-h { display:flex; align-items:center; gap:14px; margin-bottom: 14px; }
+  .cat-h .ic { font-size: 22px; }
+  .cat-h h3 { font-family:'Rajdhani',sans-serif; font-size: 1.4rem; color:#F9A825; letter-spacing:.5px; }
+  .cat-line { flex:1; height:1px; background: linear-gradient(90deg, rgba(249,168,37,.3), transparent); }
+
+  .tech-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 12px; }
+  .tech { background: linear-gradient(180deg,#080215,#0E0820); border: 1px solid rgba(249,168,37,.14); border-radius: 6px; padding: 12px 14px; transition: all .2s; }
+  .tech:hover { border-color: rgba(249,168,37,.4); transform: translateY(-2px); }
+  .tech-name { font-family:'Rajdhani',sans-serif; font-size: 14px; font-weight: 600; color: #F9A825; letter-spacing:.5px; }
+  .tech-ver { font-family:'Share Tech Mono',monospace; font-size: 10px; color:#A0896A; margin-top: 2px; letter-spacing: 1px; }
+  .tech-desc { color:#E8DDB8; font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
+
+  .pub-foot { padding: 30px 6%; border-top: 1px solid rgba(249,168,37,.14); color:#A0896A; font-family:'Share Tech Mono',monospace; font-size:11px; text-align:center; letter-spacing:1px; }
+  .pub-foot a { color:#F9A825; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<header class="pub-nav">
+  <a class="pub-logo" href="index.html"><span class="hex"></span><span class="name">FORENHIVE</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="features.html">Features</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="technologies.html" class="active">Technologies</a>
+    <a class="cta cta-primary" href="pages/login.html">Login</a>
+  </nav>
+</header>
+
+<section class="pub-hero">
+  <span class="pub-tag"> TECHNOLOGY STACK</span>
+  <h1 class="pub-h1">Stack <span>technique</span></h1>
+  <p class="pub-sub">Open-source de bout en bout  pas de SaaS, pas de clé API obligatoire  entièrement reproductible sur un serveur isolé.</p>
+</section>
+
+<div class="stack">
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic"></span><h3>Honeypots & Sensors</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">Cowrie</div><div class="tech-ver">cowrie/cowrie:latest</div><div class="tech-desc">Honeypot SSH/Telnet en Python</div></div>
+      <div class="tech"><div class="tech-name">Dionaea</div><div class="tech-ver">dinotools/dionaea:latest</div><div class="tech-desc">Multi-protocole  capture binaires</div></div>
+      <div class="tech"><div class="tech-name">Galah</div><div class="tech-ver">go 1.22  CGO</div><div class="tech-desc">Honeypot HTTP LLM-driven</div></div>
+      <div class="tech"><div class="tech-name">Zeek</div><div class="tech-ver">zeek/zeek:latest</div><div class="tech-desc">IDS passif  analyse trafic</div></div>
+    </div>
+  </div>
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic"></span><h3>Pipeline ETL</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">Filebeat</div><div class="tech-ver">elastic 8.x</div><div class="tech-desc">Tail honeypot logs</div></div>
+      <div class="tech"><div class="tech-name">Logstash</div><div class="tech-ver">elastic 8.x  4 workers</div><div class="tech-desc">Normalisation ECS  GeoIP</div></div>
+      <div class="tech"><div class="tech-name">Elasticsearch</div><div class="tech-ver">8.x</div><div class="tech-desc">Indexation quotidienne</div></div>
+    </div>
+  </div>
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic"></span><h3>Forensic Engine</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">Python</div><div class="tech-ver">3.12  asyncio</div><div class="tech-desc">Engine boucle d'enrichissement</div></div>
+      <div class="tech"><div class="tech-name">YARA</div><div class="tech-ver">yara-python</div><div class="tech-desc">Scan binaires (Mirai, ransomware)</div></div>
+      <div class="tech"><div class="tech-name">VirusTotal</div><div class="tech-ver">SHA-256 lookup</div><div class="tech-desc">Cache 24h  pas d'upload</div></div>
+      <div class="tech"><div class="tech-name">AbuseIPDB</div><div class="tech-ver">REST API</div><div class="tech-desc">Score réputation IP</div></div>
+      <div class="tech"><div class="tech-name">MaxMind</div><div class="tech-ver">GeoLite2-ASN</div><div class="tech-desc">Géolocalisation offline</div></div>
+      <div class="tech"><div class="tech-name">IPLocate</div><div class="tech-ver">REST API</div><div class="tech-desc">Tor / VPN / proxy detection</div></div>
+      <div class="tech"><div class="tech-name">Ollama</div><div class="tech-ver">Mistral 7B Q4_K_M</div><div class="tech-desc">LLM offline  MITRE + profil</div></div>
+      <div class="tech"><div class="tech-name">RFC 3161</div><div class="tech-ver">rfc3161-client 1.0.6</div><div class="tech-desc">TSA timestamp authority</div></div>
+    </div>
+  </div>
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic">️</span><h3>Backend</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">FastAPI</div><div class="tech-ver">0.115.6</div><div class="tech-desc">REST API async  OpenAPI</div></div>
+      <div class="tech"><div class="tech-name">SQLAlchemy</div><div class="tech-ver">2.0  asyncpg</div><div class="tech-desc">ORM async PostgreSQL</div></div>
+      <div class="tech"><div class="tech-name">PostgreSQL</div><div class="tech-ver">15</div><div class="tech-desc">Users  sessions  CoC</div></div>
+      <div class="tech"><div class="tech-name">PyJWT</div><div class="tech-ver">2.10  bcrypt</div><div class="tech-desc">Auth  tokens  RBAC</div></div>
+      <div class="tech"><div class="tech-name">WeasyPrint</div><div class="tech-ver">63.1</div><div class="tech-desc">PDF rendering  Jinja2</div></div>
+      <div class="tech"><div class="tech-name">slowapi</div><div class="tech-ver">0.1.9</div><div class="tech-desc">Rate limiting</div></div>
+    </div>
+  </div>
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic"></span><h3>Frontend</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">Vanilla JS</div><div class="tech-ver">ES2022</div><div class="tech-desc">SPA  0 dépendance build</div></div>
+      <div class="tech"><div class="tech-name">Leaflet</div><div class="tech-ver">1.9.4</div><div class="tech-desc">Carte géographique attaques</div></div>
+      <div class="tech"><div class="tech-name">Chart.js</div><div class="tech-ver">4.4</div><div class="tech-desc">KPI  graphes temps réel</div></div>
+      <div class="tech"><div class="tech-name">Nginx</div><div class="tech-ver">stable</div><div class="tech-desc">Reverse proxy  static</div></div>
+    </div>
+  </div>
+
+  <div class="cat">
+    <div class="cat-h"><span class="ic"></span><h3>Infrastructure</h3><span class="cat-line"></span></div>
+    <div class="tech-grid">
+      <div class="tech"><div class="tech-name">Docker</div><div class="tech-ver">28.4.0</div><div class="tech-desc">Orchestration conteneurs</div></div>
+      <div class="tech"><div class="tech-name">Docker Compose</div><div class="tech-ver">v2</div><div class="tech-desc">Stack 14 services</div></div>
+      <div class="tech"><div class="tech-name">Ubuntu</div><div class="tech-ver">24.10</div><div class="tech-desc">Dell PowerEdge R750</div></div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="pub-foot">
+  PFE 2025/2026  ISET RADÈS  STANDARD SHARING SOFTWARE  <a href="pages/login.html"> ACCÈS PLATEFORME</a>
+</footer>
+
+</body>
+</html>

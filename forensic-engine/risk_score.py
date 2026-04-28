@@ -138,19 +138,33 @@ def calculate_risk_score(session_data: dict) -> dict:
     network_class = session_data.get("network_class", "external")
 
     # Reputation
-    abuse_score   = int(session_data.get("abuse_score", 0))
-    abuse_reports = int(session_data.get("abuse_total_reports", 0))
-    is_tor        = session_data.get("is_tor", False)
-    is_vpn        = session_data.get("is_vpn", False)
-    is_proxy      = session_data.get("is_proxy", False)
-    is_hosting    = session_data.get("is_hosting", False)
+    abuse_score    = int(session_data.get("abuse_score", 0))
+    abuse_reports  = int(session_data.get("abuse_total_reports", 0))
+    abuse_distinct = int(session_data.get("abuse_distinct_users", 0))
+    abuse_last     = session_data.get("abuse_last_reported", "")
+    abuse_cats     = list(session_data.get("abuse_categories", []) or [])
+    abuse_usage    = session_data.get("abuse_usage_type", "")
+    is_tor         = session_data.get("is_tor", False)
+    is_vpn         = session_data.get("is_vpn", False)
+    is_proxy       = session_data.get("is_proxy", False)
+    is_hosting     = session_data.get("is_hosting", False)
+    is_datacenter  = session_data.get("is_datacenter", False)
+    is_abuser_list = session_data.get("is_abuser_listed", False)
+    is_bogon       = session_data.get("is_bogon", False)
 
     # Geo / ASN
     geo_country      = session_data.get("geo_country", "")
     geo_country_code = session_data.get("geo_country_code", "")
+    geo_region       = session_data.get("geo_region", "")
+    geo_city         = session_data.get("geo_city", "")
     geo_asn          = session_data.get("geo_asn", 0)
     geo_org          = session_data.get("geo_org", "")
     geo_isp          = session_data.get("geo_isp", "")
+    network_cidr     = session_data.get("network_cidr", "")
+    ptr_hostname     = session_data.get("ptr_hostname", "")
+    all_hostnames    = list(session_data.get("all_hostnames", []) or [])
+    abuse_contact    = session_data.get("abuse_contact", "")
+    threat_tier      = session_data.get("threat_tier", "")
 
     # Shodan attacker infrastructure
     shodan_vulns     = list(session_data.get("shodan_vulns", []) or [])
@@ -245,6 +259,10 @@ def calculate_risk_score(session_data: dict) -> dict:
         if anon_pts:
             techniques.append("proxy_anon")
             attack_types.add("anonymized_attacker")
+        if is_bogon:
+            notes.append("bogon_ip:source IP is in unallocated/reserved space (spoofed?)")
+        if is_abuser_list:
+            notes.append("iplocate_abuser_listed:IP flagged as abuser by IPLocate")
     breakdown["anonymization"] = {
         "points": anon_pts, "max": 10,
         "detail": f"anonymization: {', '.join(anon_flags)}" if anon_flags
@@ -270,11 +288,30 @@ def calculate_risk_score(session_data: dict) -> dict:
     if bad_tags:
         infra_details.append(f"Shodan tags: {bad_tags}")
 
-    if is_hosting or _is_hosting_asn(geo_org, geo_isp):
+    if is_hosting or is_datacenter or _is_hosting_asn(geo_org, geo_isp):
         infra_pts += HOSTING_SCORE
         attacker_is_hosting = True
-        infra_details.append(f"hosted infrastructure ({geo_org or geo_isp or 'VPS'})")
+        src = geo_org or geo_isp or "VPS"
+        if is_datacenter:
+            infra_details.append(f"datacenter/hosting ({src}) — IPLocate confirmed")
+        else:
+            infra_details.append(f"hosted infrastructure ({src})")
         techniques.append("acquire_infra")
+
+    # AbuseIPDB report categories enrich attack_types automatically
+    # (cat 18=Brute-Force, 22=SSH, 14=Port Scan, 21=Web App, 16=SQLi, 15=Hacking, 4=DDoS)
+    cat_to_type = {
+        "Brute-Force": "brute_force", "SSH": "brute_force",
+        "FTP Brute-Force": "brute_force", "Port Scan": "reconnaissance",
+        "Web App Attack": "exploitation", "SQL Injection": "exploitation",
+        "Hacking": "exploitation", "DDoS Attack": "ddos",
+        "Phishing": "phishing", "Web Spam": "spam", "Email Spam": "spam",
+        "Bad Web Bot": "automated", "Exploited Host": "compromised_host",
+    }
+    for label in abuse_cats:
+        t = cat_to_type.get(label)
+        if t:
+            attack_types.add(t)
 
     if infra_pts > 0:
         score += infra_pts
@@ -612,14 +649,27 @@ def calculate_risk_score(session_data: dict) -> dict:
         "source_ip":             source_ip,
         "country":               geo_country or "unknown",
         "country_code":          geo_country_code or "",
+        "region":                geo_region,
+        "city":                  geo_city,
         "asn":                   geo_asn,
         "asn_org":               geo_org,
         "isp":                   geo_isp,
-        "hostnames":             shodan_hostnames,
+        "network_cidr":          network_cidr,
+        "ptr_hostname":          ptr_hostname,
+        "hostnames":             sorted(set(shodan_hostnames + all_hostnames)),
+        "abuse_contact":         abuse_contact,
+        "abuse_usage_type":      abuse_usage,
+        "abuse_categories":      abuse_cats,
+        "abuse_distinct_reporters": abuse_distinct,
+        "abuse_last_reported":   abuse_last,
         "is_hosting":            attacker_is_hosting,
+        "is_datacenter":         is_datacenter,
+        "is_bogon":              is_bogon,
+        "is_abuser_listed":      is_abuser_list,
         "likely_compromised":    attacker_compromised,
         "anonymization":         anon_flags,
         "attacker_profile":      attacker_profile,
+        "threat_tier":           threat_tier,
         "previously_seen":       previously_seen,
         "previous_session_count": previous_sessions,
     }
@@ -629,7 +679,11 @@ def calculate_risk_score(session_data: dict) -> dict:
         "source_ip":     source_ip,
         "session_id":    session_id,
         "asn":           geo_asn,
+        "asn_org":       geo_org,
         "country_code":  geo_country_code,
+        "city":          geo_city,
+        "network_cidr":  network_cidr,
+        "ptr_hostname":  ptr_hostname,
         "sha256_hashes": sha256_hashes,
         "yara_families": yara_matches,
         "vt_families":   [vt_family] if vt_family else [],
@@ -637,7 +691,9 @@ def calculate_risk_score(session_data: dict) -> dict:
         "vt_file_names": vt_names[:5],
         "cves_probed":   exploit_cve,
         "ports_targeted": [dest_port] if dest_port else [],
-        "hostnames":     shodan_hostnames,
+        "hostnames":     sorted(set(shodan_hostnames + all_hostnames)),
+        "abuse_categories": abuse_cats,
+        "abuse_contact": abuse_contact,
     }
 
     # ── Narrative (for reports) ───────────────────────────────────────────────
@@ -711,10 +767,17 @@ def _build_narrative(
     else:
         geo_frag = ""
         if country and country != "unknown":
-            geo_frag = f" (origin: {country}"
+            city = attribution.get("city") or ""
+            geo_frag = f" (origin: {city + ', ' if city else ''}{country}"
             if org:
                 geo_frag += f", {org}"
+            cidr = attribution.get("network_cidr") or ""
+            if cidr:
+                geo_frag += f", CIDR {cidr}"
             geo_frag += ")"
+        ptr = attribution.get("ptr_hostname") or ""
+        if ptr:
+            geo_frag += f" PTR={ptr}"
         profile = attribution.get("attacker_profile", "")
         profile_frag = ""
         if profile and profile not in ("residential_or_unknown",):
@@ -730,6 +793,14 @@ def _build_narrative(
         hp_str = "against the honeypot infrastructure"
 
     parts.append(f"{subject} was observed performing malicious activity {hp_str}.")
+
+    # ── AbuseIPDB historical context ──
+    cats = attribution.get("abuse_categories") or []
+    distinct = attribution.get("abuse_distinct_reporters") or 0
+    if cats or distinct:
+        cat_str = f" — categories: {', '.join(cats[:5])}" if cats else ""
+        rep_str = f" reported by {distinct} distinct reporters" if distinct else ""
+        parts.append(f"AbuseIPDB shows prior malicious activity{rep_str}{cat_str}.")
 
     # ── Recidivism ──
     if previously_seen:

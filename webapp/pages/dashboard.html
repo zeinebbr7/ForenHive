@@ -1,11 +1,11 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">⬡ Vue d'ensemble</div>
+    <div class="section-tag" style="margin-bottom:8px"> Vue d'ensemble</div>
     <h2 class="page-title">Tableau de <span>bord</span></h2>
     <div class="page-sub">Monitoring temps réel · <span id="dash-src-count">—</span> sources actives.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="dash-refresh">🔄 Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="dash-refresh"> Actualiser</button>
   </div>
 </div>
 
@@ -18,7 +18,7 @@
 
 <div class="grid-2 mb-20">
   <div class="card">
-    <div class="card-h"><div class="card-t">Répartition par source</div><div class="card-sub">🍯 honeypots + 🔬 capteurs</div></div>
+    <div class="card-h"><div class="card-t">Répartition par source</div><div class="card-sub"> honeypots +  capteurs</div></div>
     <div id="dash-hpot"><div class="alert info">Chargement…</div></div>
   </div>
   <div class="card">
@@ -75,7 +75,7 @@
       // Bars répartition
       const max = Math.max(...splitArr.map(x => x.count), 1);
       $('#dash-hpot').innerHTML = splitArr.map(x => {
-        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '❓', color: 'var(--text3)', kind: '?' };
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '', color: 'var(--text3)', kind: '?' };
         return `<div class="hbar">
           <div class="hbar-l">${meta.icon} ${meta.label}</div>
           <div class="hbar-t"><div class="hbar-f" style="width:${(x.count/max*100).toFixed(1)}%;background:${meta.color}"></div></div>
@@ -91,7 +91,7 @@
       } else {
         $('#dash-logs').innerHTML = items.map(raw => {
           const ev = evNormalize(raw);
-          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '❓' };
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '' };
           return `<div class="log-row">
             <div class="log-t">${fmt.time(ev.timestamp)}</div>
             <div class="log-s ${ev.honeypot}">${meta.icon} ${meta.label}</div>
@@ -102,7 +102,7 @@
 
         $('#dash-events').innerHTML = items.map(raw => {
           const ev = evNormalize(raw);
-          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '❓' };
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '' };
           const sevCls = fmt.sevToClass(ev.severity);
           return `<tr data-id="${esc(ev.id)}" style="cursor:pointer">
             <td class="mono" style="font-size:11px">${fmt.time(ev.timestamp)}</td>
@@ -130,7 +130,7 @@
       openDrawer(`
         <div class="drawer-h">
           <div><div class="card-t">Événement ${esc(n.id.slice(0,12))}…</div><div class="card-sub">${fmt.date(n.timestamp)}</div></div>
-          <button class="drawer-close" onclick="closeDrawer()">✕</button>
+          <button class="drawer-close" onclick="closeDrawer()"></button>
         </div>
         <div class="drawer-b">
           <div class="flex gap-8 mb-12" style="flex-wrap:wrap">

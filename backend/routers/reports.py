@@ -1,10 +1,19 @@
+import html
+from typing import Any, Dict, List
+
 from fastapi import APIRouter, Body, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from config import get_settings
-from models.report import ReportListResponse, ReportMeta, ReportRequest
+from models.report import (
+    ReportListResponse,
+    ReportMeta,
+    ReportRequest,
+    ReportScope,
+)
+from services.elasticsearch import get_es
 from services.report_service import get_reports
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -60,3 +69,126 @@ async def export_stix(report_id: str):
         bundle,
         headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
     )
+
+
+# ─── Forensic per-session reports (Sprint 4 surface used by the SPA) ────────
+
+
+def _phase_from_techniques(mitre: List[str]) -> str | None:
+    """Coarse kill-chain phase from MITRE technique prefixes."""
+    if not mitre:
+        return None
+    pfx = {t[:5] for t in mitre if isinstance(t, str)}
+    if pfx & {"T1595", "T1590", "T1589"}: return "reconnaissance"
+    if pfx & {"T1587", "T1588"}:          return "weaponization"
+    if pfx & {"T1566"}:                   return "delivery"
+    if pfx & {"T1190", "T1110", "T1203"}: return "exploitation"
+    if pfx & {"T1547", "T1543"}:          return "installation"
+    if pfx & {"T1071", "T1095"}:          return "command_and_control"
+    if pfx & {"T1021", "T1550"}:          return "lateral_movement"
+    return "actions_on_objectives"
+
+
+@router.get("/forensic/sessions")
+async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
+    """List sessions in the flat shape the dashboard reconstruction/reporting
+    pages expect: session_id, source_ip, honeypot_type, risk_score,
+    kill_chain_phase, primary_technique, started_at.
+
+    Backed by /api/sessions data. When the forensic engine has not produced
+    enriched fields yet, sensible defaults are used.
+    """
+    rows = await get_es().sessions(limit=limit, active_only=False)
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        mitre = r.get("mitre_techniques") or r.get("techniques") or []
+        if isinstance(mitre, dict):
+            mitre = []
+        out.append({
+            "session_id":        r.get("session_id"),
+            "source_ip":         r.get("source_ip"),
+            "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
+            "risk_score":        r.get("risk_score"),
+            "kill_chain_phase":  r.get("kill_chain_phase") or _phase_from_techniques(mitre),
+            "kill_chain_stage":  r.get("kill_chain_stage"),
+            "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
+            "started_at":        r.get("started_at"),
+        })
+    return out
+
+
+@router.post("/forensic/{session_id}/generate")
+async def forensic_generate(request: Request, session_id: str):
+    """Generate a forensic PDF for one session (alias to /generate scope=session)."""
+    req = ReportRequest(scope=ReportScope.SESSION, session_id=session_id)
+    try:
+        meta = await get_reports().generate(req)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"report generation failed: {exc}")
+    try:
+        path = get_reports().resolve_pdf_path(meta)
+    except FileNotFoundError:
+        raise HTTPException(status_code=410, detail="report file missing on disk")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="report path rejected")
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"ForenHive-{session_id}.pdf",
+        headers={
+            "X-PDF-SHA256": meta.sha256,
+            "X-ForenHive-SHA256": meta.sha256,
+            "Content-Disposition": f'attachment; filename="ForenHive-{session_id}.pdf"',
+        },
+    )
+
+
+@router.get("/forensic/{session_id}/preview")
+async def forensic_preview(session_id: str):
+    """HTML preview of the forensic dossier for a single session.
+
+    Renders directly from session data — does not require a stored PDF.
+    """
+    detail = await get_es().session_detail(session_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="session not found")
+    e = lambda v: html.escape(str(v)) if v is not None else "—"
+    cmds = "".join(
+        f"<li><code>{e(c.get('input',''))}</code></li>"
+        for c in (detail.get("commands") or [])[:50]
+    ) or "<li><em>aucune commande capturée</em></li>"
+    auth = "".join(
+        f"<li>{e(a.get('username',''))} / {e(a.get('password',''))} — "
+        f"{'✓' if a.get('success') else '✗'}</li>"
+        for a in (detail.get("login_attempts") or [])[:20]
+    ) or "<li><em>aucune tentative d'authentification</em></li>"
+    body = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>ForenHive — Session {e(session_id)}</title>
+<style>
+ body{{font-family:-apple-system,Segoe UI,sans-serif;background:#fafafa;color:#222;padding:24px;max-width:840px;margin:auto}}
+ h1{{color:#8C1A2B;border-bottom:2px solid #F9A825;padding-bottom:6px}}
+ h2{{margin-top:22px;color:#444;font-size:16px;border-bottom:1px solid #eee;padding-bottom:4px}}
+ table{{border-collapse:collapse;width:100%;font-size:13px}}
+ th,td{{text-align:left;padding:6px 10px;border-bottom:1px solid #eee}}
+ th{{color:#666;font-weight:600;width:180px}}
+ code{{background:#fff3cd;padding:1px 6px;border-radius:3px;font-size:12px}}
+ .meta{{color:#888;font-size:12px;margin-bottom:14px}}
+ ul{{padding-left:20px;font-size:13px}}
+</style></head><body>
+<h1>Dossier forensique — Session</h1>
+<div class="meta">Aperçu HTML · session <code>{e(session_id)}</code></div>
+<h2>Informations</h2>
+<table>
+ <tr><th>Session ID</th><td>{e(detail.get('session_id'))}</td></tr>
+ <tr><th>Honeypot</th><td>{e(detail.get('honeypot'))}</td></tr>
+ <tr><th>IP source</th><td>{e(detail.get('source_ip'))}</td></tr>
+ <tr><th>Démarrée</th><td>{e(detail.get('started_at'))}</td></tr>
+ <tr><th>Terminée</th><td>{e(detail.get('ended_at'))}</td></tr>
+ <tr><th>Statut</th><td>{e(detail.get('status'))}</td></tr>
+ <tr><th>Commandes</th><td>{e(detail.get('command_count'))}</td></tr>
+ <tr><th>Tentatives auth</th><td>{e(detail.get('auth_attempts'))}</td></tr>
+</table>
+<h2>Commandes exécutées</h2><ul>{cmds}</ul>
+<h2>Tentatives d'authentification</h2><ul>{auth}</ul>
+</body></html>"""
+    return HTMLResponse(body)

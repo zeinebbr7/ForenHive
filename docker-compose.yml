@@ -178,16 +178,16 @@ services:
       - elasticsearch
       - postgresql
 
-  # ── BACKEND API ──────────────────────────────────────
-  backend:
+  # ── BACKEND API (FastAPI, async SQLAlchemy + ES) ─────
+  forenhive-backend:
     build: ./backend
     container_name: forenhive-backend
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - ES_HOST=http://elasticsearch:9200
-      - OLLAMA_HOST=http://ollama:11434
+      - ES_HOST=http://forenhive-elasticsearch:9200
+      - OLLAMA_HOST=http://forenhive-ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b}
       - REPORTS_DIR=/reports
       - PG_HOST=forenhive-postgresql
@@ -197,9 +197,9 @@ services:
       - PG_PASSWORD=${POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@forenhive.local}
-      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2026}
       - FORENSIC_ENGINE_URL=http://forensic-engine:8001
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100:9000,http://172.16.1.100:3000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100,http://172.16.1.100:9000,http://172.16.1.100:3000}
     ports:
       - "8000:8000"
     volumes:
@@ -207,8 +207,8 @@ services:
     networks:
       - backend-net
     depends_on:
-      - elasticsearch
       - postgresql
+      - elasticsearch
       - ollama
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
@@ -228,6 +228,20 @@ services:
       - "11434:11434"
     networks:
       - backend-net
+
+  # ── WEBAPP (nginx serving SPA) ───────────────────────
+  forenhive-webapp:
+    image: nginx:alpine
+    container_name: forenhive-webapp
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - /home/pfe/ForenHive/webapp:/usr/share/nginx/html:ro
+    networks:
+      - backend-net
+    depends_on:
+      - forenhive-backend
 
 # ── RÉSEAUX ──────────────────────────────────────────
 networks:
@@ -254,9 +268,9 @@ volumes:
     name: zeek_zeek-logs
   elasticsearch-data:
   postgresql-data:
+  reports-data:
   ollama-models:
     external: true
     name: llm_ollama-models
   galah-logs:
   zeek-spool:
-  reports-data:

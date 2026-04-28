@@ -1,49 +1,67 @@
 /* ═══════════════════════════════════════════════════════════════
    ForenHive SOC Platform — Router + Auth + Helpers
-   (données réelles via api.js → FastAPI)
+   (données réelles via api.js  FastAPI)
 ═══════════════════════════════════════════════════════════════ */
 
 const ROLES = {
-  admin:   { label: 'Admin',   color: 'gold',    icon: '👑' },
-  analyst: { label: 'Analyst', color: 'blue',    icon: '🔎' },
-  viewer:  { label: 'Viewer',  color: 'purple',  icon: '👤' },
-  user:    { label: 'User',    color: 'purple',  icon: '👤' },
+  admin:   { label: 'Admin',   color: 'gold',    icon: '' },
+  analyst: { label: 'Analyst', color: 'blue',    icon: '' },
+  viewer:  { label: 'Viewer',  color: 'purple',  icon: '' },
+  user:    { label: 'User',    color: 'purple',  icon: '' },
 };
 
-const NAV = [
-  { id: 'dashboard',  label: 'Dashboard',    icon: '🏠', roles: ['admin','analyst','viewer','user'] },
-  { id: 'stats',      label: 'Statistiques', icon: '📊', roles: ['admin','analyst','viewer'] },
-  { id: 'timeline',   label: 'Timeline',     icon: '⏱️', roles: ['admin','analyst','viewer'] },
-  { id: 'sessions',   label: 'Sessions',     icon: '🖥️', roles: ['admin','analyst','viewer'] },
-  { id: 'geomap',     label: 'Carte Géo',    icon: '🌍', roles: ['admin','analyst','viewer'] },
-  { id: 'profiling',  label: 'Profiling',    icon: '🧠', roles: ['admin','analyst'] },
-  { id: 'yara',       label: 'YARA Malware', icon: '🦠', roles: ['admin','analyst'] },
-  { id: 'reporting',  label: 'Reporting',    icon: '📋', roles: ['admin','analyst','viewer','user'] },
-  { id: 'settings',   label: 'Paramètres',   icon: '⚙️', roles: ['admin','analyst','viewer','user'] },
-  { id: 'audit',      label: 'Audit',        icon: '📋', roles: ['admin'], section: 'Système' },
-  { id: 'health',     label: 'Health Check', icon: '💊', roles: ['admin'] },
-  { id: 'config',     label: 'Configuration',icon: '🔧', roles: ['admin'] },
+/* Sidebar grouped structure (Sprint 4 redesign) */
+const NAV_GROUPS = [
+  { label: null, items: [
+    { id: 'dashboard', label: 'Home', icon: '', roles: ['admin','analyst','viewer','user'] },
+  ]},
+  { label: 'Monitoring', items: [
+    { id: 'alerts',   label: 'Alerts / Incidents', icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'sessions', label: 'Sessions',           icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'health',   label: 'Health Check',       icon: '', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Forensic Analysis', items: [
+    { id: 'timeline',       label: 'Timeline',              icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'reconstruction', label: 'Attack Reconstruction', icon: '', roles: ['admin','analyst'] },
+    { id: 'evidence',       label: 'Evidence Logs',         icon: '', roles: ['admin','analyst'] },
+    { id: 'profiling',      label: 'Profiling',             icon: '', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Threat Intelligence', items: [
+    { id: 'geomap', label: 'Geo Map', icon: '', roles: ['admin','analyst','viewer'] },
+  ]},
+  { label: null, items: [
+    { id: 'reporting', label: 'Reporting', icon: '', roles: ['admin','analyst','viewer','user'] },
+  ]},
+  { label: 'Honeypot Management', items: [
+    { id: 'honeypots', label: 'Honeypots', icon: '', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Access Control', items: [
+    { id: 'access', label: 'Access Control', icon: '', roles: ['admin'] },
+  ]},
 ];
+
+/* Flat NAV kept for legacy lookups (Auth.can, Router page resolution, title bar) */
+const NAV = NAV_GROUPS.flatMap(g => g.items);
 
 /* Zeek = NDR (IDS passif), pas un honeypot */
 const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
 const SENSORS   = ['zeek'];
 const ALL_SOURCES = [...HONEYPOTS, ...SENSORS];
 const SOURCE_META = {
-  cowrie:  { label: 'Cowrie',  icon: '🐚', kind: 'honeypot', color: 'var(--gold)',    desc: 'SSH/Telnet' },
-  dionaea: { label: 'Dionaea', icon: '🕷️', kind: 'honeypot', color: 'var(--red2)',    desc: 'Malware capture' },
-  galah:   { label: 'Galah',   icon: '🦜', kind: 'honeypot', color: 'var(--purple2)', desc: 'LLM Web' },
-  zeek:    { label: 'Zeek',    icon: '🔍', kind: 'sensor',   color: 'var(--blue2)',   desc: 'NDR · IDS passif' },
+  cowrie:  { label: 'Cowrie',  icon: '', kind: 'honeypot', color: 'var(--gold)',    desc: 'SSH/Telnet' },
+  dionaea: { label: 'Dionaea', icon: '', kind: 'honeypot', color: 'var(--red2)',    desc: 'Malware capture' },
+  galah:   { label: 'Galah',   icon: '', kind: 'honeypot', color: 'var(--purple2)', desc: 'LLM Web' },
+  zeek:    { label: 'Zeek',    icon: '', kind: 'sensor',   color: 'var(--blue2)',   desc: 'NDR  IDS passif' },
 };
 
 const COUNTRIES_ISO = {
-  RU:'🇷🇺', CN:'🇨🇳', US:'🇺🇸', BR:'🇧🇷', IN:'🇮🇳', DE:'🇩🇪', NL:'🇳🇱', UA:'🇺🇦',
-  IR:'🇮🇷', VN:'🇻🇳', TN:'🇹🇳', KP:'🇰🇵', FR:'🇫🇷', GB:'🇬🇧', JP:'🇯🇵', KR:'🇰🇷',
-  TR:'🇹🇷', PL:'🇵🇱', IT:'🇮🇹', ES:'🇪🇸', RO:'🇷🇴', CA:'🇨🇦', MX:'🇲🇽', AU:'🇦🇺',
-  CH:'🇨🇭', BE:'🇧🇪', SE:'🇸🇪', FI:'🇫🇮', NO:'🇳🇴', DK:'🇩🇰', AT:'🇦🇹', IE:'🇮🇪',
-  ZA:'🇿🇦', EG:'🇪🇬', NG:'🇳🇬', KE:'🇰🇪', MA:'🇲🇦', DZ:'🇩🇿', LY:'🇱🇾', SA:'🇸🇦',
-  AE:'🇦🇪', IL:'🇮🇱', SG:'🇸🇬', HK:'🇭🇰', TW:'🇹🇼', ID:'🇮🇩', TH:'🇹🇭', MY:'🇲🇾',
-  PH:'🇵🇭', PK:'🇵🇰', BD:'🇧🇩', AR:'🇦🇷', CL:'🇨🇱', CO:'🇨🇴', PE:'🇵🇪', VE:'🇻🇪',
+  RU:'', CN:'', US:'', BR:'', IN:'', DE:'', NL:'', UA:'',
+  IR:'', VN:'', TN:'', KP:'', FR:'', GB:'', JP:'', KR:'',
+  TR:'', PL:'', IT:'', ES:'', RO:'', CA:'', MX:'', AU:'',
+  CH:'', BE:'', SE:'', FI:'', NO:'', DK:'', AT:'', IE:'',
+  ZA:'', EG:'', NG:'', KE:'', MA:'', DZ:'', LY:'', SA:'',
+  AE:'', IL:'', SG:'', HK:'', TW:'', ID:'', TH:'', MY:'',
+  PH:'', PK:'', BD:'', AR:'', CL:'', CO:'', PE:'', VE:'',
 };
 const COUNTRY_LATLNG = {
   RU:[55,37],CN:[35,105],US:[39,-98],BR:[-14,-52],IN:[21,78],DE:[51,10],NL:[52,5],
@@ -55,7 +73,7 @@ const COUNTRY_LATLNG = {
   SG:[1.3,103],HK:[22,114],TW:[23,121],ID:[-5,118],TH:[15,101],MY:[4,102],PH:[12,122],
   PK:[30,70],BD:[24,90],AR:[-38,-63],CL:[-35,-71],CO:[4,-72],PE:[-9,-75],VE:[8,-66],
 };
-const flag = iso => COUNTRIES_ISO[iso] || '🏳️';
+const flag = iso => COUNTRIES_ISO[iso] || '';
 const countryLL = iso => COUNTRY_LATLNG[iso] || [0, 0];
 
 /* ───────── AUTH ───────── */
@@ -151,7 +169,7 @@ function evNormalize(ev) {
 
 /* ───────── ROUTER ───────── */
 const Router = {
-  pages: ['dashboard','stats','timeline','sessions','geomap','profiling','yara','reporting','settings','audit','health','config'],
+  pages: ['dashboard','alerts','sessions','health','timeline','reconstruction','evidence','profiling','geomap','reporting','honeypots','access','stats','settings','config'],
   current: null,
   async go(page, push = true) {
     if (!this.pages.includes(page)) page = 'dashboard';
@@ -181,7 +199,7 @@ const Router = {
       $('#tb-title').textContent = (NAV.find(n => n.id === page) || {label:'ForenHive'}).label;
       window.scrollTo({top:0});
     } catch(e) {
-      content.innerHTML = `<div class="alert err">Erreur de chargement · ${esc(e.message || e)}</div>`;
+      content.innerHTML = `<div class="alert err">Erreur de chargement  ${esc(e.message || e)}</div>`;
       console.error(e);
     }
   },
@@ -194,15 +212,17 @@ const Router = {
 
 /* ───────── APP SHELL INIT ───────── */
 function buildSidebar(user) {
-  const mainItems = NAV.filter(n => !n.section);
-  const sysItems  = NAV.filter(n => n.section === 'Système');
-  const render = items => items.map(n => {
-    const allowed = n.roles.includes(user.role);
-    return `<a class="sb-item ${allowed?'':'disabled'}" data-page="${n.id}" href="#${n.id}">
-      <span class="sb-item-ic">${n.icon}</span><span>${n.label}</span>
-    </a>`;
+  const html = NAV_GROUPS.map(group => {
+    const visible = group.items.filter(n => n.roles.includes(user.role));
+    if (!visible.length) return '';
+    const header = group.label ? `<div class="sb-section">${group.label}</div>` : '';
+    const items = visible.map(n => `
+      <a class="sb-item" data-page="${n.id}" href="#${n.id}">
+        <span class="sb-item-ic">${n.icon}</span><span>${n.label}</span>
+      </a>`).join('');
+    return header + items;
   }).join('');
-  $('#sb-nav').innerHTML = render(mainItems) + (sysItems.length ? `<div class="sb-section">Système</div>${render(sysItems)}` : '');
+  $('#sb-nav').innerHTML = html;
   $$('#sb-nav .sb-item').forEach(el => {
     el.addEventListener('click', e => {
       e.preventDefault();
@@ -236,7 +256,7 @@ async function initAppShell() {
 
 /* expose pour les pages */
 window.FH = {
-  Auth, Router, NAV, ROLES, HONEYPOTS, SENSORS, ALL_SOURCES, SOURCE_META,
+  Auth, Router, NAV, NAV_GROUPS, ROLES, HONEYPOTS, SENSORS, ALL_SOURCES, SOURCE_META,
   COUNTRIES_ISO, COUNTRY_LATLNG, flag, countryLL,
   fmt, esc, $, $$, evNormalize, evField,
 };

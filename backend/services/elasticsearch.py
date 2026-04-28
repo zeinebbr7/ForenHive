@@ -351,6 +351,59 @@ class ESClient:
             )
         return out
 
+    async def top_attackers(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Aggregate the top attacker IPs with summary stats.
+
+        One row per source.ip with event_count, distinct honeypots, country,
+        and average risk_score. Used by /api/profiling listing.
+        """
+        body = {
+            "size": 0,
+            "query": {"bool": {"must": [{"exists": {"field": "source.ip"}}]}},
+            "aggs": {
+                "ips": {
+                    "terms": {"field": "source.ip.keyword", "size": limit},
+                    "aggs": {
+                        "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 5}},
+                        "country": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},
+                        "avg_risk": {"avg": {"field": "risk_score"}},
+                        "max_risk": {"max": {"field": "risk_score"}},
+                        "first_seen": {"min": {"field": "@timestamp"}},
+                        "last_seen": {"max": {"field": "@timestamp"}},
+                    },
+                }
+            },
+        }
+        resp = await self.client.search(
+            index=self.settings.honeypot_indices,
+            body=body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
+        )
+        out: List[Dict[str, Any]] = []
+        for b in resp["aggregations"]["ips"]["buckets"]:
+            avg = float(b["avg_risk"]["value"] or 0)
+            mx = float(b["max_risk"]["value"] or 0)
+            score = round(max(avg, mx), 1)
+            severity = (
+                "CRITICAL" if score >= 80
+                else "HIGH" if score >= 60
+                else "MEDIUM" if score >= 40
+                else "LOW"
+            )
+            country_buckets = b["country"]["buckets"]
+            out.append({
+                "source_ip": b["key"],
+                "event_count": b["doc_count"],
+                "honeypots": [hp["key"] for hp in b["honeypots"]["buckets"]],
+                "country": country_buckets[0]["key"] if country_buckets else None,
+                "risk_score": score,
+                "severity": severity,
+                "first_seen": b["first_seen"].get("value_as_string"),
+                "last_seen": b["last_seen"].get("value_as_string"),
+            })
+        return out
+
     async def honeypot_split(self) -> List[Dict[str, Any]]:
         body = {
             "size": 0,
