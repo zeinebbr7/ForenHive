@@ -45,15 +45,136 @@
   <div id="ev-rows"><div class="alert info">Chargement…</div></div>
 </div>
 
+<!-- ── Log detail drawer (left slide-in) ── -->
+<div id="ev-drawer" class="ev-drawer">
+  <div class="ev-drawer-head">
+    <div style="min-width:0">
+      <div class="ev-drawer-title">Détail du log</div>
+      <div class="ev-drawer-sid" id="ev-drawer-sid">—</div>
+    </div>
+    <button class="ev-drawer-close" id="ev-drawer-close" title="Fermer (Echap)">✕</button>
+  </div>
+  <div class="ev-drawer-body" id="ev-drawer-body"></div>
+</div>
+<div id="ev-backdrop" class="ev-backdrop"></div>
+
 <style>
-.evlog { border-bottom: 1px solid var(--border); padding: 10px 0; }
+/* ── Drawer ── */
+.ev-drawer {
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-w, 220px);
+  height: 100vh;
+  width: 360px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border2);
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform .26s cubic-bezier(.4,0,.2,1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 0 28px rgba(0,0,0,.45);
+}
+.ev-drawer.open { transform: translateX(0); }
+.ev-backdrop {
+  position: fixed; inset: 0; z-index: 99;
+  background: rgba(0,0,0,.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s;
+}
+.ev-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.ev-drawer-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ev-drawer-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px; font-weight: 700; color: var(--gold);
+  letter-spacing: .4px;
+}
+.ev-drawer-sid {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; color: var(--text3);
+  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ev-drawer-close {
+  background: none; border: none; color: var(--text3);
+  font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1;
+  border-radius: 4px; flex-shrink: 0;
+  transition: color .15s, background .15s;
+}
+.ev-drawer-close:hover { color: var(--text); background: var(--surface2); }
+
+.ev-drawer-body {
+  flex: 1; overflow-y: auto; padding: 14px 16px;
+}
+
+/* ── Drawer content blocks ── */
+.ev-d-hero {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 14px;
+}
+.ev-d-ip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px; font-weight: 700; color: var(--text1);
+}
+.ev-d-section {
+  font-size: 9px; font-family: 'Share Tech Mono', monospace;
+  color: var(--text3); text-transform: uppercase; letter-spacing: 1px;
+  margin: 14px 0 6px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ev-d-row {
+  display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px;
+  padding: 4px 0; font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.ev-d-row:last-child { border-bottom: none; }
+.ev-d-k { color: var(--text3); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
+.ev-d-v { color: var(--text1); word-break: break-all; }
+.ev-d-cmd {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--gold); background: rgba(140,26,43,.08);
+  border-left: 2px solid var(--gold);
+  padding: 6px 10px; border-radius: 0 4px 4px 0;
+  margin: 6px 0; white-space: pre-wrap; word-break: break-all;
+}
+.ev-d-cred {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--red2); background: rgba(201,61,85,.07);
+  border-left: 2px solid var(--red2);
+  padding: 6px 10px; border-radius: 0 4px 4px 0;
+  margin: 6px 0;
+}
+.ev-d-hash {
+  font-family: 'Share Tech Mono', monospace; font-size: 10px;
+  color: var(--accent-gold); background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 5px 8px; margin: 6px 0;
+  word-break: break-all; line-height: 1.5;
+}
+.ev-d-raw-toggle {
+  background: none; border: 1px solid var(--border); color: var(--text3);
+  font-size: 11px; font-family: 'Share Tech Mono', monospace;
+  padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  margin-top: 12px; transition: color .15s, border-color .15s;
+}
+.ev-d-raw-toggle:hover { color: var(--text2); border-color: var(--border2); }
+.ev-d-raw { display: none; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-top: 6px; font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text3); white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow-y: auto; }
+.ev-d-raw.show { display: block; }
+
+/* ── Log list rows ── */
+.evlog { border-bottom: 1px solid var(--border); padding: 9px 0; cursor: pointer; transition: background .12s; border-radius: 4px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
+.evlog:hover { background: rgba(255,255,255,.025); }
+.evlog.active { background: rgba(140,26,43,.08); border-left: 2px solid var(--gold); padding-left: 6px; }
 .evlog:last-child { border-bottom: none; }
-.evlog-h { display:grid; grid-template-columns: 90px 80px 1fr auto; gap:10px; align-items:center; cursor:pointer; }
+.evlog-h { display:grid; grid-template-columns: 90px 80px 1fr auto; gap:10px; align-items:center; }
 .evlog-time { font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); }
-.evlog-msg { font-size: 12.5px; color: var(--text2); min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.evlog-msg { font-size: 12.5px; color: var(--text2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .evlog-hash { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--gold); }
-.evlog-raw { display:none; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin-top:6px; font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow-y:auto; }
-.evlog.open .evlog-raw { display:block; }
 </style>
 
 <script>
@@ -61,7 +182,112 @@
   const { fmt, esc, $ } = FH;
   const { evNormalize } = FH;
 
+  let allItems = [];
+  let activeIdx = null;
+
+  /* ── Drawer ── */
+  function openDrawer(idx) {
+    activeIdx = idx;
+    document.querySelectorAll('.evlog').forEach((el, i) => el.classList.toggle('active', i === idx));
+
+    const ev = allItems[idx];
+    const n  = evNormalize(ev);
+    const raw = n.raw || ev;
+    const hash = ev.sha256 || (raw && raw.sha256) || '';
+    const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
+
+    $('#ev-drawer-sid').textContent = n.source_ip || '—';
+
+    const rows = [];
+
+    /* Hero */
+    rows.push(`<div class="ev-d-hero">
+      <div class="ev-d-ip">${esc(n.source_ip || '—')}</div>
+      <span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span>
+    </div>`);
+
+    /* Credentials */
+    if (n.username || n.password) {
+      rows.push(`<div class="ev-d-cred">
+        👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}
+      </div>`);
+    }
+
+    /* Command */
+    if (n.command) {
+      rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
+    }
+
+    /* HTTP */
+    if (n.http_path) {
+      rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
+    }
+
+    /* Event details */
+    rows.push(`<div class="ev-d-section">Événement</div>`);
+    const evFields = [
+      ['Horodatage', fmt.date(n.timestamp)],
+      ['Action',     n.event_action || n.message || '—'],
+      ['Honeypot',   n.honeypot],
+      ['IP source',  n.source_ip],
+      ['Protocole',  n.protocol],
+      ['Port dest',  n.dest_port],
+      ['IP dest',    n.dest_ip],
+      ['Session',    n.session_id],
+      ['Sévérité',   n.severity],
+    ];
+    rows.push(evFields.filter(([,v]) => v != null && v !== '').map(([k,v]) =>
+      `<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`
+    ).join(''));
+
+    /* Geo */
+    const geo = (raw.source && raw.source.geo) || raw.geo || {};
+    if (geo.country_name || geo.city_name) {
+      rows.push(`<div class="ev-d-section">Géolocalisation</div>`);
+      [['Pays', geo.country_name], ['Ville', geo.city_name], ['Région', geo.region_name], ['ASN', raw.source && raw.source.as && raw.source.as.number]].filter(([,v])=>v).forEach(([k,v])=>{
+        rows.push(`<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`);
+      });
+    }
+
+    /* SHA-256 */
+    if (hash) {
+      rows.push(`<div class="ev-d-section">Intégrité</div>`);
+      rows.push(`<div class="ev-d-hash">SHA-256 · ${esc(hash)}</div>`);
+    }
+
+    /* Raw JSON toggle */
+    rows.push(`
+      <button class="ev-d-raw-toggle" id="ev-d-raw-btn">Voir JSON brut ▾</button>
+      <pre class="ev-d-raw" id="ev-d-raw">${esc(JSON.stringify(raw, null, 2))}</pre>
+    `);
+
+    $('#ev-drawer-body').innerHTML = rows.join('');
+
+    $('#ev-d-raw-btn').addEventListener('click', () => {
+      const el = $('#ev-d-raw');
+      const btn = $('#ev-d-raw-btn');
+      el.classList.toggle('show');
+      btn.textContent = el.classList.contains('show') ? 'Masquer JSON ▴' : 'Voir JSON brut ▾';
+    });
+
+    $('#ev-drawer').classList.add('open');
+    $('#ev-backdrop').classList.add('show');
+  }
+
+  function closeDrawer() {
+    activeIdx = null;
+    document.querySelectorAll('.evlog').forEach(el => el.classList.remove('active'));
+    $('#ev-drawer').classList.remove('open');
+    $('#ev-backdrop').classList.remove('show');
+  }
+
+  $('#ev-drawer-close').addEventListener('click', closeDrawer);
+  $('#ev-backdrop').addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+  /* ── Load ── */
   async function load() {
+    closeDrawer();
     $('#ev-rows').innerHTML = `<div class="alert info">Chargement…</div>`;
     try {
       const hp = $('#ev-hp').value;
@@ -73,7 +299,6 @@
         const res = await api.attacks(params);
         items = (res && res.items) || [];
       } else {
-        // Default: honeypots only — drop Zeek (NDR) unless explicitly selected.
         const results = await Promise.allSettled([
           api.attacks({ ...params, honeypot: 'cowrie' }),
           api.attacks({ ...params, honeypot: 'dionaea' }),
@@ -85,6 +310,7 @@
         items = items.slice(0, limit);
       }
 
+      allItems = items;
       $('#ev-count').textContent = items.length;
       $('#ev-sealed').textContent = items.filter(it => it.sha256 || (it.raw && it.raw.sha256)).length;
 
@@ -96,19 +322,19 @@
       $('#ev-rows').innerHTML = items.map((ev, i) => {
         const n = evNormalize(ev);
         const hash = ev.sha256 || (n.raw && n.raw.sha256) || '';
+        const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
         return `<div class="evlog" data-i="${i}">
           <div class="evlog-h">
             <div class="evlog-time">${fmt.time(n.timestamp)}</div>
-            <div><span class="badge ${n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue'}">${esc(n.honeypot)}</span></div>
+            <div><span class="badge ${hpColor}">${esc(n.honeypot)}</span></div>
             <div class="evlog-msg">${esc(n.message || n.event_action || '—')}</div>
-            <div class="evlog-hash">${hash ? ' '+fmt.shortHash(hash) : '<span class="muted">—</span>'}</div>
+            <div class="evlog-hash">${hash ? '⬡ '+fmt.shortHash(hash) : '<span style="color:var(--text3)">—</span>'}</div>
           </div>
-          <pre class="evlog-raw">${esc(JSON.stringify(n.raw || ev, null, 2))}</pre>
         </div>`;
       }).join('');
 
-      document.querySelectorAll('.evlog .evlog-h').forEach(h => {
-        h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+      document.querySelectorAll('.evlog').forEach((el, i) => {
+        el.addEventListener('click', () => openDrawer(i));
       });
     } catch (e) {
       $('#ev-rows').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;

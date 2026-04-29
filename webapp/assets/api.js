@@ -1,10 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════
-   ForenHive API client — real backend integration (FastAPI :8000)
+   ForenHive API client — proxied through nginx (/api → backend)
 ═══════════════════════════════════════════════════════════════ */
 
-const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? 'http://localhost:8000'
-  : `http://${location.hostname}:8000`;
+const API_BASE = '';
 
 const TOKEN_KEY = 'forenhive.token';
 const USER_KEY  = 'forenhive.user';
