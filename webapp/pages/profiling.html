@@ -174,9 +174,18 @@
     return phase || 'actions_on_objectives';
   }
 
+  function sevFromScore(s) {
+    s = Number(s) || 0;
+    return s >= 70 ? ‘CRITICAL’ : s >= 40 ? ‘HIGH’ : s >= 20 ? ‘MEDIUM’ : ‘LOW’;
+  }
+
   // Map real profiler output → the shape the renderer expects.
   function normalize(raw) {
     const p = { ...raw };
+    // source_ip: backend uses "ip" field name
+    if (!p.source_ip && p.ip) p.source_ip = p.ip;
+    // severity: derive from risk_score if not present
+    if (!p.severity) p.severity = sevFromScore(p.risk_score);
     // organised_score: profiler emits organized_score (US) as 0.0–1.0
     if (p.organised_score == null && p.organized_score != null) {
       p.organised_score = Number(p.organized_score);
@@ -190,7 +199,7 @@
       p.kill_chain_stage = p.kill_chain_phase || deriveKCPhase(p.mitre_techniques);
     }
     // recidivism ← similar_past_cases
-    if (!p.recidivism && typeof p.similar_past_cases === 'number') {
+    if (!p.recidivism && typeof p.similar_past_cases === ‘number’) {
       p.recidivism = {
         seen_before: p.similar_past_cases > 0,
         previous_sessions: p.similar_past_cases,
@@ -199,10 +208,10 @@
     // modus_operandi: synthesize from primary_objective / dominant_tactic / mitre
     if (!p.modus_operandi) {
       const mo = {};
-      if (p.primary_objective)   mo.objectif_principal = String(p.primary_objective).replaceAll('_',' ');
-      if (p.secondary_objective) mo.objectif_secondaire = String(p.secondary_objective).replaceAll('_',' ');
+      if (p.primary_objective)   mo.objectif_principal = String(p.primary_objective).replaceAll(‘_’,’ ‘);
+      if (p.secondary_objective) mo.objectif_secondaire = String(p.secondary_objective).replaceAll(‘_’,’ ‘);
       if (p.dominant_tactic)     mo.tactique_dominante = p.dominant_tactic;
-      if (p.escalation_detected) mo.escalade = 'détectée';
+      if (p.escalation_detected) mo.escalade = ‘détectée’;
       if (Array.isArray(p.mitre_techniques) && p.mitre_techniques.length) mo.techniques = p.mitre_techniques;
       if (Object.keys(mo).length) p.modus_operandi = mo;
     }
@@ -211,10 +220,10 @@
     // recommended_action: derive if missing
     if (!p.recommended_action) {
       const s = Number(p.risk_score) || 0;
-      if (s >= 70)      p.recommended_action = 'Bloquer immédiatement l’IP · escalader à l’équipe SOC · préserver les preuves (chaîne de custody).';
-      else if (s >= 40) p.recommended_action = 'Surveillance renforcée · corréler avec autres sessions · envisager blocage si récidive.';
-      else if (s >= 20) p.recommended_action = 'Conserver les logs · suivre les patterns · pas d’action immédiate.';
-      else              p.recommended_action = 'Bruit de fond · archiver pour analyse statistique.';
+      if (s >= 70)      p.recommended_action = ‘Bloquer immédiatement l’IP · escalader à l’équipe SOC · préserver les preuves (chaîne de custody).’;
+      else if (s >= 40) p.recommended_action = ‘Surveillance renforcée · corréler avec autres sessions · envisager blocage si récidive.’;
+      else if (s >= 20) p.recommended_action = ‘Conserver les logs · suivre les patterns · pas d’action immédiate.’;
+      else              p.recommended_action = ‘Bruit de fond · archiver pour analyse statistique.’;
     }
     return p;
   }
@@ -312,7 +321,7 @@
     $('#p-detail').innerHTML = `<div class="card"><div class="alert info">Chargement du dossier…</div></div>`;
     try {
       const rec = await api.profilingById(id);
-      renderDetail(rec);
+      renderDetail(normalize(rec));
     } catch (e) {
       $('#p-detail').innerHTML = `<div class="card"><div class="alert err">${esc(e.message)}</div></div>`;
     }
@@ -368,36 +377,58 @@
     return `<div class="sect-h">${esc(title)}</div>${rows}`;
   }
 
-  function renderDetail(rec) {
-    const p = normalize(rec.profile || {});
-    const sev = rec.severity || 'LOW';
+  function renderDetail(p) {
+    // p is already normalize()'d — fields: ip/source_ip, severity, risk_score, first_seen, last_seen, etc.
+    const sev = p.severity || 'LOW';
     const soph = SOPH_MAP[p.sophistication] || null;
-    const actor = p.actor_type ? String(p.actor_type).replaceAll('_',' ') : '—';
+    const actor = p.actor_type ? String(p.actor_type).replaceAll('_',' ') : null;
     const confidencePct = p.confidence != null ? Math.round(Number(p.confidence) * 100) : null;
+    const ts = p.last_seen || p.first_seen;
+    const dossierNum = STATE.activeId != null ? `#${STATE.activeId}` : '';
+
+    // Geographic profile: synthesize from flat enrichment fields
+    const geoProfile = {};
+    if (p.country)   geoProfile.pays = p.country;
+    if (p.city)      geoProfile.ville = p.city;
+    if (p.asn)       geoProfile.asn = String(p.asn);
+    if (p.as_org)    geoProfile.organisation = p.as_org;
+    if (p.is_tor)    geoProfile.tor = 'oui';
+    if (p.is_vpn)    geoProfile.vpn = 'oui';
+    if (p.abuseipdb_score != null) geoProfile.abuseipdb = `${p.abuseipdb_score}/100 (${p.abuseipdb_reports ?? 0} signalements)`;
+
+    // Activity summary
+    const activityProfile = {};
+    if (p.event_count)   activityProfile.événements = p.event_count;
+    if (p.session_count) activityProfile.sessions = p.session_count;
+    if (Array.isArray(p.honeypots) && p.honeypots.length) activityProfile.honeypots_ciblés = p.honeypots;
+    if (p.first_seen)    activityProfile.premier_contact = new Date(p.first_seen).toLocaleString('fr-FR');
+    if (p.last_seen)     activityProfile.dernier_contact = new Date(p.last_seen).toLocaleString('fr-FR');
 
     $('#p-detail').innerHTML = `
       <div class="card">
         <div class="card-h" style="align-items:flex-start">
           <div>
-            <div class="card-t" style="font-size:18px">${esc(rec.source_ip)}</div>
-            <div class="card-sub">Dossier #${rec.id} · ${rec.created_at ? fmt.ago(rec.created_at) + ' ago' : '—'}</div>
+            <div class="card-t" style="font-size:18px">${esc(p.source_ip || p.ip || '—')}</div>
+            <div class="card-sub">Dossier ${esc(dossierNum)} · ${ts ? fmt.ago(ts) + ' ago' : '—'}</div>
           </div>
           <div style="text-align:right">
-            <div class="p-card-score sev-${sev}" style="font-size:32px">${rec.risk_score}</div>
+            <div class="p-card-score sev-${sev}" style="font-size:32px">${p.risk_score ?? 0}</div>
             <div class="card-sub" style="margin-top:4px">${sev}</div>
           </div>
         </div>
 
         <div class="flex gap-8 mb-12" style="flex-wrap:wrap;align-items:center">
           ${soph ? `<span class="sev-badge ${soph.cls}">${soph.text}</span>` : ''}
-          <span class="trait-tag">${esc(actor)}</span>
+          ${actor ? `<span class="trait-tag">${esc(actor)}</span>` : ''}
           ${confidencePct != null ? `<span class="trait-tag">Confiance ${confidencePct}%</span>` : ''}
+          ${p.is_tor ? `<span class="trait-tag" style="color:var(--red2);border-color:rgba(201,61,85,.3)">TOR</span>` : ''}
+          ${p.is_vpn ? `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">VPN</span>` : ''}
           ${p.recidivism && p.recidivism.seen_before ? `<span class="trait-tag" style="border-color:var(--border2);color:var(--gold)">Récidive (${p.recidivism.previous_sessions ?? '?'})</span>` : ''}
         </div>
 
-        ${p.detective_narrative ? `
-          <div class="sect-h">Narratif forensique</div>
-          <div class="narrative">${esc(p.detective_narrative)}</div>` : ''}
+        ${p.detective_narrative || p.mistral_analysis ? `
+          <div class="sect-h">Analyse forensique</div>
+          <div class="narrative">${esc(p.detective_narrative || p.mistral_analysis)}</div>` : ''}
 
         <div class="sect-h">Kill chain</div>
         ${killChain(p, sev)}
@@ -405,6 +436,9 @@
         ${p.organised_score != null ? `
           <div class="sect-h">Organisation</div>
           ${organisedBar(p)}` : ''}
+
+        ${Object.keys(activityProfile).length ? kvSection('Activité', activityProfile) : ''}
+        ${Object.keys(geoProfile).length ? kvSection('Profil géographique', geoProfile) : ''}
 
         ${Array.isArray(p.behavioral_traits) && p.behavioral_traits.length ? `
           <div class="sect-h">Traits comportementaux</div>
@@ -414,13 +448,28 @@
           <div class="sect-h">Signatures comportementales</div>
           <div>${listOrNA(p.signature_behaviors)}</div>` : ''}
 
+        ${Array.isArray(p.top_commands) && p.top_commands.length ? `
+          <div class="sect-h">Commandes exécutées</div>
+          <div>${listOrNA(p.top_commands)}</div>` : ''}
+
+        ${Array.isArray(p.top_usernames) && p.top_usernames.length ? `
+          <div class="sect-h">Identifiants tentés</div>
+          <div>${listOrNA(p.top_usernames)}</div>` : ''}
+
+        ${Array.isArray(p.top_passwords) && p.top_passwords.length ? `
+          <div class="sect-h">Mots de passe tentés</div>
+          <div>${listOrNA(p.top_passwords)}</div>` : ''}
+
         ${Array.isArray(p.mitre_techniques) && p.mitre_techniques.length ? `
           <div class="sect-h">MITRE ATT&CK</div>
           <div>${p.mitre_techniques.map(t => `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">${esc(String(t))}</span>`).join('')}</div>` : ''}
 
+        ${Array.isArray(p.yara_matches) && p.yara_matches.length ? `
+          <div class="sect-h">YARA matches</div>
+          <div>${listOrNA(p.yara_matches)}</div>` : ''}
+
         ${kvSection('Modus operandi', p.modus_operandi)}
         ${kvSection('Traces de Locard', p.locard_traces)}
-        ${kvSection('Profil géographique', p.geographic_profile)}
         ${kvSection('Récidive', p.recidivism)}
 
         ${p.recommended_action ? `
@@ -429,7 +478,7 @@
 
         <details style="margin-top:20px">
           <summary style="cursor:pointer;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">Dossier brut (JSON)</summary>
-          <pre class="pre" style="max-height:340px;overflow:auto;margin-top:10px">${esc(JSON.stringify(rec, null, 2))}</pre>
+          <pre class="pre" style="max-height:340px;overflow:auto;margin-top:10px">${esc(JSON.stringify(p, null, 2))}</pre>
         </details>
       </div>`;
   }

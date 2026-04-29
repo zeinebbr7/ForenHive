@@ -23,7 +23,7 @@
       Dionaea
     </div>
     <div class="flex items-c gap-8" style="margin-bottom:4px">
-      <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(250,185,5,.8)" stroke="#fab905" stroke-width="1.5"/></svg>
+      <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(140,26,43,.8)" stroke="#8C1A2B" stroke-width="1.5"/></svg>
       Cowrie
     </div>
     <div class="flex items-c gap-8" style="margin-bottom:4px">
@@ -118,7 +118,7 @@
   function markerColor(hp) {
     const map = {
       dionaea: { fill: 'rgba(255,80,80,.8)',   stroke: '#ff5050' },
-      cowrie:  { fill: 'rgba(250,185,5,.8)',   stroke: '#fab905' },
+      cowrie:  { fill: 'rgba(140,26,43,.8)',   stroke: '#8C1A2B' },
       galah:   { fill: 'rgba(180,100,255,.8)', stroke: '#b464ff' },
       zeek:    { fill: 'rgba(80,160,255,.8)',  stroke: '#50a0ff' },
     };
@@ -175,7 +175,7 @@
           <div style="font-size:14px;font-weight:700;margin-bottom:6px">${flag(d.geo.country_code)} ${esc(d.ip)}</div>
           <div style="color:#aaa;margin-bottom:4px">${esc(d.geo.country_name)}${d.geo.city?' · '+esc(d.geo.city):''}</div>
           <div style="margin-bottom:4px">${meta.icon} ${esc(meta.label)}</div>
-          <div style="color:#fab905"><b>${d.count}</b> événement${d.count>1?'s':''}</div>
+          <div style="color:#8C1A2B"><b>${d.count}</b> événement${d.count>1?'s':''}</div>
         </div>`,
         { maxWidth: 240 }
       );
@@ -207,7 +207,7 @@
         <td>${flag(c.code)} ${esc(c.name)}</td>
         <td class="mono">${c.ips}</td>
         <td class="mono">${c.count}</td>
-        <td><div style="background:rgba(250,185,5,.15);border-radius:3px;height:5px;overflow:hidden">
+        <td><div style="background:rgba(140,26,43,.15);border-radius:3px;height:5px;overflow:hidden">
           <div style="background:var(--gold);height:100%;width:${Math.round(c.count/maxC*100)}%"></div>
         </div></td>
       </tr>`).join('')}</tbody></table>`;

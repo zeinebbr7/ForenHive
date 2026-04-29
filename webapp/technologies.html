@@ -8,39 +8,39 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/style.css?v=8">
 <style>
-  body { background: #04000D; color: #FFF3CD; font-family: 'Inter',sans-serif; }
-  .pub-nav { position: sticky; top: 0; z-index: 100; display:flex; justify-content:space-between; align-items:center; padding: 14px 6%; background: rgba(8,2,21,.92); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(249,168,37,.18); }
+  body { background: #060810; color: #FFFFFF; font-family: 'Inter',sans-serif; }
+  .pub-nav { position: sticky; top: 0; z-index: 100; display:flex; justify-content:space-between; align-items:center; padding: 14px 6%; background: rgba(11,14,24,.92); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(140,26,43,.18); }
   .pub-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
-  .pub-logo .hex { font-size: 22px; color: #F9A825; }
-  .pub-logo .name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; color:#F9A825; letter-spacing:2px; }
-  .pub-nav a { color:#E8DDB8; text-decoration:none; margin-left:26px; font-size:14px; font-weight:500; }
-  .pub-nav a:hover { color:#F9A825; }
-  .pub-nav a.active { color:#F9A825; }
-  .pub-nav .cta { padding:8px 18px; border:1px solid rgba(249,168,37,.4); color:#F9A825; border-radius:5px; font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px; }
-  .pub-nav .cta-primary { background:#F9A825; color:#04000D; border-color:#F9A825; }
+  .pub-logo .hex { font-size: 22px; color: #8C1A2B; }
+  .pub-logo .name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; color:#8C1A2B; letter-spacing:2px; }
+  .pub-nav a { color:#E8E8F0; text-decoration:none; margin-left:26px; font-size:14px; font-weight:500; }
+  .pub-nav a:hover { color:#8C1A2B; }
+  .pub-nav a.active { color:#8C1A2B; }
+  .pub-nav .cta { padding:8px 18px; border:1px solid rgba(140,26,43,.4); color:#8C1A2B; border-radius:5px; font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px; }
+  .pub-nav .cta-primary { background:#8C1A2B; color:#060810; border-color:#8C1A2B; }
 
   .pub-hero { padding: 90px 6% 30px; text-align:center; }
-  .pub-tag { display:inline-block; font-family:'Share Tech Mono',monospace; font-size:11px; color:#F9A825; background:rgba(249,168,37,.08); border:1px solid rgba(249,168,37,.28); padding:5px 14px; border-radius:20px; letter-spacing:2px; }
+  .pub-tag { display:inline-block; font-family:'Share Tech Mono',monospace; font-size:11px; color:#8C1A2B; background:rgba(140,26,43,.08); border:1px solid rgba(140,26,43,.28); padding:5px 14px; border-radius:20px; letter-spacing:2px; }
   .pub-h1 { font-size: clamp(2.2rem,5vw,4rem); font-weight:700; margin-top:18px; line-height:1.1; }
-  .pub-h1 span { background: linear-gradient(135deg,#F9A825,#FFC857); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-  .pub-sub { color:#E8DDB8; max-width:680px; margin:18px auto 0; font-size:1.1rem; line-height:1.6; }
+  .pub-h1 span { background: linear-gradient(135deg,#8C1A2B,#E8B84B); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .pub-sub { color:#E8E8F0; max-width:680px; margin:18px auto 0; font-size:1.1rem; line-height:1.6; }
 
   .stack { max-width: 1280px; margin: 50px auto 80px; padding: 0 6%; }
   .cat { margin-bottom: 32px; }
   .cat-h { display:flex; align-items:center; gap:14px; margin-bottom: 14px; }
   .cat-h .ic { font-size: 22px; }
-  .cat-h h3 { font-family:'Rajdhani',sans-serif; font-size: 1.4rem; color:#F9A825; letter-spacing:.5px; }
-  .cat-line { flex:1; height:1px; background: linear-gradient(90deg, rgba(249,168,37,.3), transparent); }
+  .cat-h h3 { font-family:'Rajdhani',sans-serif; font-size: 1.4rem; color:#8C1A2B; letter-spacing:.5px; }
+  .cat-line { flex:1; height:1px; background: linear-gradient(90deg, rgba(140,26,43,.3), transparent); }
 
   .tech-grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 12px; }
-  .tech { background: linear-gradient(180deg,#080215,#0E0820); border: 1px solid rgba(249,168,37,.14); border-radius: 6px; padding: 12px 14px; transition: all .2s; }
-  .tech:hover { border-color: rgba(249,168,37,.4); transform: translateY(-2px); }
-  .tech-name { font-family:'Rajdhani',sans-serif; font-size: 14px; font-weight: 600; color: #F9A825; letter-spacing:.5px; }
-  .tech-ver { font-family:'Share Tech Mono',monospace; font-size: 10px; color:#A0896A; margin-top: 2px; letter-spacing: 1px; }
-  .tech-desc { color:#E8DDB8; font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
+  .tech { background: linear-gradient(180deg,#0B0E18,#121622); border: 1px solid rgba(140,26,43,.14); border-radius: 6px; padding: 12px 14px; transition: all .2s; }
+  .tech:hover { border-color: rgba(140,26,43,.4); transform: translateY(-2px); }
+  .tech-name { font-family:'Rajdhani',sans-serif; font-size: 14px; font-weight: 600; color: #8C1A2B; letter-spacing:.5px; }
+  .tech-ver { font-family:'Share Tech Mono',monospace; font-size: 10px; color:#9AA0B4; margin-top: 2px; letter-spacing: 1px; }
+  .tech-desc { color:#E8E8F0; font-size: 11.5px; margin-top: 6px; line-height: 1.4; }
 
-  .pub-foot { padding: 30px 6%; border-top: 1px solid rgba(249,168,37,.14); color:#A0896A; font-family:'Share Tech Mono',monospace; font-size:11px; text-align:center; letter-spacing:1px; }
-  .pub-foot a { color:#F9A825; text-decoration:none; }
+  .pub-foot { padding: 30px 6%; border-top: 1px solid rgba(140,26,43,.14); color:#9AA0B4; font-family:'Share Tech Mono',monospace; font-size:11px; text-align:center; letter-spacing:1px; }
+  .pub-foot a { color:#8C1A2B; text-decoration:none; }
 </style>
 </head>
 <body>
