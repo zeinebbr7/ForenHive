@@ -232,16 +232,16 @@ services:
     networks:
       - backend-net
 
-  # ── WEBAPP (nginx serving SPA) ───────────────────────
-  forenhive-webapp:
+  # ── FRONTEND (nginx serving SPA) ─────────────────────
+  forenhive-frontend:
     image: nginx:alpine
-    container_name: forenhive-webapp
+    container_name: forenhive-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
     volumes:
-      - ./webapp:/usr/share/nginx/html:ro
-      - ./webapp/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - backend-net
     depends_on:

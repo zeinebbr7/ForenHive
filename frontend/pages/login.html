@@ -1,19 +1,18 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ForenHive — Connexion</title>
+<title>ForenHive — Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/style.css?v=7">
 <script>
-  // Apply theme before first paint to avoid FOUC
   (function(){ const t = localStorage.getItem('fh.theme') || 'dark'; document.documentElement.setAttribute('data-theme', t); })();
 </script>
 </head>
 <body>
-<button class="theme-toggle" id="theme-toggle" title="Basculer thème" aria-label="Basculer thème"
+<button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme"
   style="position:fixed;top:20px;right:20px;z-index:100">
   <span class="ic-moon">☾</span><span class="ic-sun">☀</span>
 </button>
@@ -35,17 +34,17 @@
         <input class="form-i" type="email" id="email" placeholder="admin@forenhive.io" value="admin@forenhive.io" required>
       </div>
       <div class="form-g">
-        <label class="form-l">Mot de passe</label>
+        <label class="form-l">Password</label>
         <div class="pwd-wrap">
           <input class="form-i" type="password" id="pwd" placeholder="••••••••" required>
-          <button type="button" class="pwd-toggle" id="pwd-toggle" aria-label="Afficher"></button>
+          <button type="button" class="pwd-toggle" id="pwd-toggle" aria-label="Show"></button>
         </div>
       </div>
-      <button type="submit" class="btn btn-gold btn-lg" id="submit-btn" style="width:100%;justify-content:center;margin-top:6px">Connexion →</button>
+      <button type="submit" class="btn btn-gold btn-lg" id="submit-btn" style="width:100%;justify-content:center;margin-top:6px">Sign In →</button>
     </form>
 
     <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:1px">
-      Admin initial : <span class="mono" style="color:var(--gold)">admin@forenhive.io</span> / <span class="mono" style="color:var(--gold)">ChangeMe!</span>
+      Default admin: <span class="mono" style="color:var(--gold)">admin@forenhive.io</span> / <span class="mono" style="color:var(--gold)">ChangeMe!</span>
     </div>
 
     <div style="text-align:center;margin-top:22px;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:1px">
@@ -70,17 +69,15 @@
     const email = document.getElementById('email').value.trim();
     const pwd   = document.getElementById('pwd').value;
     const btn   = document.getElementById('submit-btn');
-    btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = '⟳ Connexion…';
+    btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = '⟳ Signing in…';
     try {
       await Auth.login(email, pwd);
       location.href = '../app.html';
     } catch (ex) {
-      showErr(ex.message || 'Échec de la connexion');
+      showErr(ex.message || 'Login failed');
       btn.disabled = false; btn.textContent = oldTxt;
     }
   });
-
-  /* Auto-redirect removed — analyst must see and validate the login form. */
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
     const now = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';

@@ -1,11 +1,11 @@
 <div class="page-head">
   <div>
     <div class="section-tag" style="margin-bottom:8px">Reporting</div>
-    <h2 class="page-title">Rapports <span>forensiques</span></h2>
-    <div class="page-sub">Sélectionne une session · prévisualise le rapport · télécharge le PDF certifié SHA-256.</div>
+    <h2 class="page-title">Forensic <span>Reports</span></h2>
+    <div class="page-sub">Select a session · preview the report · download the SHA-256 certified PDF.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="rep-refresh">Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="rep-refresh">Refresh</button>
   </div>
 </div>
 
@@ -13,27 +13,27 @@
 
   <div class="card" style="padding:0">
     <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border)">
-      <div class="card-t">Sessions disponibles</div>
-      <div class="card-sub"><span id="rep-count">—</span> session(s) · classées par risque</div>
+      <div class="card-t">Available Sessions</div>
+      <div class="card-sub"><span id="rep-count">—</span> session(s) · sorted by risk</div>
     </div>
     <div id="rep-list" style="max-height:560px;overflow-y:auto">
-      <div class="alert info" style="margin:14px">Chargement…</div>
+      <div class="alert info" style="margin:14px">Loading…</div>
     </div>
   </div>
 
   <div class="card" style="padding:0;display:flex;flex-direction:column;min-height:560px">
     <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px">
       <div>
-        <div class="card-t" id="rep-pv-title">Aperçu rapport</div>
-        <div class="card-sub" id="rep-pv-sub">Sélectionne une session pour générer l'aperçu.</div>
+        <div class="card-t" id="rep-pv-title">Report Preview</div>
+        <div class="card-sub" id="rep-pv-sub">Select a session to generate the preview.</div>
       </div>
       <div class="flex gap-8">
-        <button class="btn btn-gh btn-sm" id="rep-open" disabled title="Ouvrir dans un nouvel onglet">Ouvrir</button>
-        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Télécharger PDF certifié">Télécharger PDF</button>
+        <button class="btn btn-gh btn-sm" id="rep-open" disabled title="Open in new tab">Open</button>
+        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Download certified PDF">Download PDF</button>
       </div>
     </div>
     <div id="rep-preview" style="flex:1;background:#fff;min-height:560px">
-      <div class="alert info" style="margin:14px">Aucun rapport sélectionné.</div>
+      <div class="alert info" style="margin:14px">No report selected.</div>
     </div>
     <div id="rep-status" style="padding:8px 16px;border-top:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text3);display:none"></div>
   </div>
@@ -41,21 +41,17 @@
 </div>
 
 <style>
-.rep-row {
-  display:grid; grid-template-columns: 1fr auto; gap:8px;
-  padding: 10px 16px; border-bottom: 1px solid var(--border);
-  cursor: pointer; transition: background .15s;
-}
-.rep-row:hover { background: rgba(140,26,43,.05); }
-.rep-row.active { background: rgba(140,26,43,.10); border-left: 3px solid var(--gold); padding-left: 13px; }
-.rep-ip { font-family:'Share Tech Mono',monospace; font-size:12px; font-weight:700; color: var(--text); }
-.rep-sid { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--text3); margin-top: 2px; }
-.rep-meta { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--text3); margin-top: 4px; }
-.rep-score { display:inline-block; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-family:'Share Tech Mono',monospace; font-size: 12px; }
-.rep-score.lo { background: rgba(21,101,192,.12); color: var(--blue2); }
-.rep-score.md { background: rgba(140,26,43,.12); color: var(--gold); }
-.rep-score.hi { background: rgba(198,40,40,.12); color: var(--red2); }
-#rep-preview iframe { width:100%; height:100%; min-height:560px; border:none; background:#fff; }
+.rep-row { display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s; }
+.rep-row:hover { background:rgba(140,26,43,.05); }
+.rep-row.active { background:rgba(140,26,43,.10);border-left:3px solid var(--gold);padding-left:13px; }
+.rep-ip { font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:700;color:var(--text); }
+.rep-sid { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px; }
+.rep-meta { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);margin-top:4px; }
+.rep-score { display:inline-block;padding:3px 10px;border-radius:4px;font-weight:700;font-family:'Share Tech Mono',monospace;font-size:12px; }
+.rep-score.lo { background:rgba(21,101,192,.12);color:var(--blue2); }
+.rep-score.md { background:rgba(140,26,43,.12);color:var(--gold); }
+.rep-score.hi { background:rgba(198,40,40,.12);color:var(--red2); }
+#rep-preview iframe { width:100%;height:100%;min-height:560px;border:none;background:#fff; }
 </style>
 
 <script>
@@ -67,7 +63,7 @@
   function scoreCls(s) { if (s == null) return 'lo'; return s < 40 ? 'lo' : (s < 70 ? 'md' : 'hi'); }
 
   async function loadList() {
-    $('#rep-list').innerHTML = '<div class="alert info" style="margin:14px">Chargement…</div>';
+    $('#rep-list').innerHTML = '<div class="alert info" style="margin:14px">Loading…</div>';
     let endpointMissing = false;
     try {
       try {
@@ -76,8 +72,6 @@
         if (e1.status === 404) { endpointMissing = true; sessions = []; }
         else throw e1;
       }
-      /* Fallback: when the Sprint 4 forensic-sessions endpoint is not deployed,
-         try /api/sessions (Sprint 3 forensic engine). Map shape to forensic-sessions. */
       if ((endpointMissing || !sessions.length)) {
         try {
           const ss = await api.sessions({ page_size: 50 });
@@ -94,14 +88,14 @@
             }));
             endpointMissing = false;
           }
-        } catch (_) { /* keep current sessions */ }
+        } catch (_) {}
       }
       $('#rep-count').textContent = sessions.length;
       if (!sessions.length) {
-        $('#rep-list').innerHTML = `<div class="alert info" style="margin:14px"><b>Aucune session forensique.</b><br>${
+        $('#rep-list').innerHTML = `<div class="alert info" style="margin:14px"><b>No forensic sessions.</b><br>${
           endpointMissing
-            ? 'Endpoint <span class="mono">/api/reports/forensic/sessions</span> non déployé (Sprint 4) et <span class="mono">/api/sessions</span> est vide.'
-            : 'Lance le forensic-engine pour générer des sessions.'
+            ? 'Endpoint <span class="mono">/api/reports/forensic/sessions</span> not deployed (Sprint 4) and <span class="mono">/api/sessions</span> is empty.'
+            : 'Run the forensic engine to generate sessions.'
         }</div>`;
         return;
       }
@@ -131,26 +125,22 @@
     activeSid = sid;
     $('#rep-list').querySelectorAll('.rep-row').forEach(r => r.classList.toggle('active', r.dataset.sid === sid));
     const s = sessions.find(x => x.session_id === sid) || {};
-
-    $('#rep-pv-title').textContent = 'Aperçu · ' + sid;
+    $('#rep-pv-title').textContent = 'Preview · ' + sid;
     $('#rep-pv-sub').innerHTML = `<span class="mono">${esc(s.source_ip || '—')}</span> · risk <b>${s.risk_score == null ? '—' : s.risk_score}</b> · ${esc(s.kill_chain_phase || '—')}`;
     $('#rep-open').disabled = false;
     $('#rep-download').disabled = false;
     $('#rep-status').style.display = 'none';
-
-    $('#rep-preview').innerHTML = '<div class="alert info" style="margin:14px">Génération de l\'aperçu…</div>';
+    $('#rep-preview').innerHTML = '<div class="alert info" style="margin:14px">Generating preview…</div>';
     try {
       const tok = api.token();
-      const res = await fetch(api.forensicReportPreviewUrl(sid), {
-        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {}
-      });
+      const res = await fetch(api.forensicReportPreviewUrl(sid), { headers: tok ? { 'Authorization': 'Bearer ' + tok } : {} });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const html = await res.text();
       const blob = new Blob([html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       $('#rep-preview').innerHTML = `<iframe src="${url}" sandbox="allow-same-origin"></iframe>`;
     } catch (e) {
-      $('#rep-preview').innerHTML = `<div class="alert err" style="margin:14px">Aperçu indisponible : ${esc(e.message)}</div>`;
+      $('#rep-preview').innerHTML = `<div class="alert err" style="margin:14px">Preview unavailable: ${esc(e.message)}</div>`;
     }
   }
 
@@ -158,30 +148,26 @@
     if (!activeSid) return;
     try {
       const tok = api.token();
-      const res = await fetch(api.forensicReportPreviewUrl(activeSid), {
-        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {}
-      });
+      const res = await fetch(api.forensicReportPreviewUrl(activeSid), { headers: tok ? { 'Authorization': 'Bearer ' + tok } : {} });
       const html = await res.text();
       const w = window.open('', '_blank');
       w.document.open(); w.document.write(html); w.document.close();
-    } catch (e) {
-      alert('Erreur : ' + e.message);
-    }
+    } catch (e) { alert('Error: ' + e.message); }
   });
 
   $('#rep-download').addEventListener('click', async () => {
     if (!activeSid) return;
     const btn = $('#rep-download'); const orig = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Génération PDF…';
+    btn.disabled = true; btn.textContent = 'Generating PDF…';
     $('#rep-status').style.display = 'block';
-    $('#rep-status').innerHTML = '<span style="color:var(--gold)">Génération en cours…</span>';
+    $('#rep-status').innerHTML = '<span style="color:var(--gold)">Generating…</span>';
     try {
       const r = await api.forensicReportDownload(activeSid);
-      $('#rep-status').innerHTML = `<span style="color:var(--blue2)">PDF téléchargé</span> · SHA-256 : <span style="color:var(--gold);word-break:break-all">${esc(r.sha256 || 'N/A')}</span>`;
-      btn.textContent = 'PDF téléchargé';
+      $('#rep-status').innerHTML = `<span style="color:var(--blue2)">PDF downloaded</span> · SHA-256: <span style="color:var(--gold);word-break:break-all">${esc(r.sha256 || 'N/A')}</span>`;
+      btn.textContent = 'PDF downloaded';
       setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2500);
     } catch (e) {
-      $('#rep-status').innerHTML = `<span style="color:var(--red2)">Erreur : ${esc(e.message)}</span>`;
+      $('#rep-status').innerHTML = `<span style="color:var(--red2)">Error: ${esc(e.message)}</span>`;
       btn.textContent = orig; btn.disabled = false;
     }
   });

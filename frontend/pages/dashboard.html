@@ -1,41 +1,41 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px"> Vue d'ensemble</div>
-    <h2 class="page-title">Tableau de <span>bord</span></h2>
-    <div class="page-sub">Monitoring temps réel · <span id="dash-src-count">—</span> sources actives.</div>
+    <div class="section-tag" style="margin-bottom:8px"> Overview</div>
+    <h2 class="page-title">Dash<span>board</span></h2>
+    <div class="page-sub">Real-time monitoring · <span id="dash-src-count">—</span> active sources.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="dash-refresh"> Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="dash-refresh"> Refresh</button>
   </div>
 </div>
 
 <div class="kpi-grid">
-  <div class="kpi g"><div class="kpi-label">Événements totaux</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta" id="kpi-total-d">chargement…</div></div>
-  <div class="kpi r"><div class="kpi-label">Dernière heure</div><div class="kpi-val" id="kpi-hour">—</div><div class="kpi-delta" id="kpi-hour-d">—</div></div>
-  <div class="kpi b"><div class="kpi-label">Honeypots actifs</div><div class="kpi-val" id="kpi-hps">—</div><div class="kpi-delta" id="kpi-hps-d">—</div></div>
-  <div class="kpi p"><div class="kpi-label">Capteurs NDR</div><div class="kpi-val" id="kpi-sens">—</div><div class="kpi-delta" id="kpi-sens-d">—</div></div>
+  <div class="kpi g"><div class="kpi-label">Total Events</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta" id="kpi-total-d">loading…</div></div>
+  <div class="kpi r"><div class="kpi-label">Last Hour</div><div class="kpi-val" id="kpi-hour">—</div><div class="kpi-delta" id="kpi-hour-d">—</div></div>
+  <div class="kpi b"><div class="kpi-label">Active Honeypots</div><div class="kpi-val" id="kpi-hps">—</div><div class="kpi-delta" id="kpi-hps-d">—</div></div>
+  <div class="kpi p"><div class="kpi-label">NDR Sensors</div><div class="kpi-val" id="kpi-sens">—</div><div class="kpi-delta" id="kpi-sens-d">—</div></div>
 </div>
 
 <div class="grid-2 mb-20">
   <div class="card">
-    <div class="card-h"><div class="card-t">Répartition par source</div><div class="card-sub"> honeypots +  capteurs</div></div>
-    <div id="dash-hpot"><div class="alert info">Chargement…</div></div>
+    <div class="card-h"><div class="card-t">Source Distribution</div><div class="card-sub"> honeypots +  sensors</div></div>
+    <div id="dash-hpot"><div class="alert info">Loading…</div></div>
   </div>
   <div class="card">
-    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>20 derniers événements</div></div>
-    <div id="dash-logs" class="scroll-y" style="max-height:340px"><div class="alert info">Chargement…</div></div>
+    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>Last 20 events</div></div>
+    <div id="dash-logs" class="scroll-y" style="max-height:340px"><div class="alert info">Loading…</div></div>
   </div>
 </div>
 
 <div class="card">
   <div class="card-h">
-    <div class="card-t">Derniers événements</div>
-    <div class="card-sub">cliquer pour voir le détail</div>
+    <div class="card-t">Latest Events</div>
+    <div class="card-sub">click to view details</div>
   </div>
   <div style="overflow-x:auto">
     <table class="tbl">
-      <thead><tr><th>Horodatage</th><th>Source</th><th>IP source</th><th>Port</th><th>Sévérité</th><th>Type</th><th></th></tr></thead>
-      <tbody id="dash-events"><tr><td colspan="7"><div class="alert info">Chargement…</div></td></tr></tbody>
+      <thead><tr><th>Timestamp</th><th>Source</th><th>Source IP</th><th>Port</th><th>Severity</th><th>Type</th><th></th></tr></thead>
+      <tbody id="dash-events"><tr><td colspan="7"><div class="alert info">Loading…</div></td></tr></tbody>
     </table>
   </div>
 </div>
@@ -52,42 +52,39 @@
         api.statsHourly(),
       ]);
 
-      // KPIs
       const total = (recent && recent.total) || 0;
       $('#kpi-total').textContent = fmt.num(total);
-      $('#kpi-total-d').textContent = `▲ ${total.toLocaleString('fr-FR')} événements indexés`;
+      $('#kpi-total-d').textContent = `▲ ${total.toLocaleString('en-US')} indexed events`;
       $('#kpi-total-d').classList.add('up');
 
       const hourlyArr = Array.isArray(hourly) ? hourly : (hourly.items || []);
       const last = hourlyArr[hourlyArr.length - 1];
       $('#kpi-hour').textContent = last ? fmt.num(last.count) : '0';
-      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : "pas d'activité récente";
+      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : 'no recent activity';
 
       const splitArr = (split && split.split) || [];
       const hpActive = splitArr.filter(x => HONEYPOTS.includes(x.honeypot) && x.count > 0);
       const sensActive = splitArr.filter(x => SENSORS.includes(x.honeypot) && x.count > 0);
       $('#kpi-hps').textContent = hpActive.length + '/' + HONEYPOTS.length;
-      $('#kpi-hps-d').textContent = hpActive.map(x => x.honeypot).join(' · ') || 'aucun';
+      $('#kpi-hps-d').textContent = hpActive.map(x => x.honeypot).join(' · ') || 'none';
       $('#kpi-sens').textContent = sensActive.length + '/' + SENSORS.length;
-      $('#kpi-sens-d').textContent = sensActive.map(x => x.honeypot).join(' · ') || 'aucun';
+      $('#kpi-sens-d').textContent = sensActive.map(x => x.honeypot).join(' · ') || 'none';
       $('#dash-src-count').textContent = hpActive.length + sensActive.length;
 
-      // Bars répartition
       const max = Math.max(...splitArr.map(x => x.count), 1);
       $('#dash-hpot').innerHTML = splitArr.map(x => {
         const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '', color: 'var(--text3)', kind: '?' };
         return `<div class="hbar">
           <div class="hbar-l">${meta.icon} ${meta.label}</div>
           <div class="hbar-t"><div class="hbar-f" style="width:${(x.count/max*100).toFixed(1)}%;background:${meta.color}"></div></div>
-          <div class="hbar-v">${x.count.toLocaleString('fr-FR')}<span class="text-3 mono" style="font-size:10px;margin-left:6px">${x.percent}%</span></div>
+          <div class="hbar-v">${x.count.toLocaleString('en-US')}<span class="text-3 mono" style="font-size:10px;margin-left:6px">${x.percent}%</span></div>
         </div>`;
-      }).join('') || '<div class="alert info">Aucune source.</div>';
+      }).join('') || '<div class="alert info">No sources.</div>';
 
-      // Live logs + table
       const items = (recent && recent.items) || [];
       if (!items.length) {
-        $('#dash-logs').innerHTML = '<div class="alert info">Aucun événement.</div>';
-        $('#dash-events').innerHTML = '<tr><td colspan="7"><div class="alert info">Aucun événement.</div></td></tr>';
+        $('#dash-logs').innerHTML = '<div class="alert info">No events.</div>';
+        $('#dash-events').innerHTML = '<tr><td colspan="7"><div class="alert info">No events.</div></td></tr>';
       } else {
         $('#dash-logs').innerHTML = items.map(raw => {
           const ev = evNormalize(raw);
@@ -111,17 +108,16 @@
             <td class="mono">${ev.dest_port || '—'}</td>
             <td><span class="score ${sevCls}">${esc(ev.severity || 'low')}</span></td>
             <td class="mono" style="font-size:11px">${esc(ev.protocol || ev.event_action || '—')}</td>
-            <td><button class="btn btn-out btn-sm">Voir</button></td>
+            <td><button class="btn btn-out btn-sm">View</button></td>
           </tr>`;
         }).join('');
       }
     } catch (e) {
       console.error(e);
-      $('#dash-events').innerHTML = `<tr><td colspan="7"><div class="alert err">Erreur : ${esc(e.message)}</div></td></tr>`;
+      $('#dash-events').innerHTML = `<tr><td colspan="7"><div class="alert err">Error: ${esc(e.message)}</div></td></tr>`;
     }
   }
 
-  // click → drawer avec détail brut
   $('#dash-events').addEventListener('click', async e => {
     const tr = e.target.closest('tr'); if (!tr || !tr.dataset.id) return;
     try {
@@ -129,7 +125,7 @@
       const n = evNormalize(ev);
       openDrawer(`
         <div class="drawer-h">
-          <div><div class="card-t">Événement ${esc(n.id.slice(0,12))}…</div><div class="card-sub">${fmt.date(n.timestamp)}</div></div>
+          <div><div class="card-t">Event ${esc(n.id.slice(0,12))}…</div><div class="card-sub">${fmt.date(n.timestamp)}</div></div>
           <button class="drawer-close" onclick="closeDrawer()"></button>
         </div>
         <div class="drawer-b">
@@ -139,9 +135,9 @@
             ${n.source_ip ? `<span class="mono">${esc(n.source_ip)}${n.source_port?':'+n.source_port:''}</span>` : ''}
             ${n.dest_port ? `<span class="tag">→ port ${n.dest_port}</span>` : ''}
           </div>
-          ${n.command ? `<div class="card-sub mb-12">Commande</div><pre class="pre">${esc(n.command)}</pre>` : ''}
+          ${n.command ? `<div class="card-sub mb-12">Command</div><pre class="pre">${esc(n.command)}</pre>` : ''}
           ${n.http_path ? `<div class="card-sub mb-12">HTTP</div><pre class="pre">${esc(n.http_method || 'GET')} ${esc(n.http_path)}</pre>` : ''}
-          <div class="card-sub mb-12" style="margin-top:16px">Document brut</div>
+          <div class="card-sub mb-12" style="margin-top:16px">Raw document</div>
           <pre class="pre" style="max-height:320px;overflow:auto">${esc(JSON.stringify(n.raw, null, 2))}</pre>
         </div>`);
     } catch (ex) {

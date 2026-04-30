@@ -1,6 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
    ForenHive SOC Platform — Router + Auth + Helpers
-   (données réelles via api.js  FastAPI)
 ═══════════════════════════════════════════════════════════════ */
 
 const ROLES = {
@@ -10,7 +9,6 @@ const ROLES = {
   user:    { label: 'User',    color: 'purple',  icon: '' },
 };
 
-/* Sidebar grouped structure (Sprint 4 redesign) */
 const NAV_GROUPS = [
   { label: null, items: [
     { id: 'dashboard', label: 'Home', icon: '', roles: ['admin','analyst','viewer','user'] },
@@ -27,7 +25,8 @@ const NAV_GROUPS = [
     { id: 'profiling',      label: 'Profiling',             icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [
-    { id: 'geomap', label: 'Geo Map', icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'geomap', label: 'Geo Map',    icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'stats',  label: 'Statistics', icon: '', roles: ['admin','analyst','viewer'] },
   ]},
   { label: null, items: [
     { id: 'reporting', label: 'Reporting', icon: '', roles: ['admin','analyst','viewer','user'] },
@@ -40,10 +39,8 @@ const NAV_GROUPS = [
   ]},
 ];
 
-/* Flat NAV kept for legacy lookups (Auth.can, Router page resolution, title bar) */
 const NAV = NAV_GROUPS.flatMap(g => g.items);
 
-/* Zeek = NDR (IDS passif), pas un honeypot */
 const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
 const SENSORS   = ['zeek'];
 const ALL_SOURCES = [...HONEYPOTS, ...SENSORS];
@@ -51,7 +48,7 @@ const SOURCE_META = {
   cowrie:  { label: 'Cowrie',  icon: '', kind: 'honeypot', color: 'var(--gold)',    desc: 'SSH/Telnet' },
   dionaea: { label: 'Dionaea', icon: '', kind: 'honeypot', color: 'var(--red2)',    desc: 'Malware capture' },
   galah:   { label: 'Galah',   icon: '', kind: 'honeypot', color: 'var(--purple2)', desc: 'LLM Web' },
-  zeek:    { label: 'Zeek',    icon: '', kind: 'sensor',   color: 'var(--blue2)',   desc: 'NDR  IDS passif' },
+  zeek:    { label: 'Zeek',    icon: '', kind: 'sensor',   color: 'var(--blue2)',   desc: 'NDR · Passive IDS' },
 };
 
 const COUNTRIES_ISO = {
@@ -98,14 +95,14 @@ const Auth = {
 
 /* ───────── HELPERS ───────── */
 const fmt = {
-  date(ts){ const d = new Date(ts); return isNaN(d) ? '—' : d.toLocaleString('fr-FR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); },
-  time(ts){ const d = new Date(ts); return isNaN(d) ? '—' : d.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'}); },
+  date(ts){ const d = new Date(ts); return isNaN(d) ? '—' : d.toLocaleString('en-US', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); },
+  time(ts){ const d = new Date(ts); return isNaN(d) ? '—' : d.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); },
   ago(ts){ const t = typeof ts === 'number' ? ts : +new Date(ts);
     const s = Math.max(1, Math.floor((Date.now()-t)/1000));
     if (s < 60) return s+'s';
     if (s < 3600) return Math.floor(s/60)+'m';
     if (s < 86400) return Math.floor(s/3600)+'h';
-    return Math.floor(s/86400)+'j'; },
+    return Math.floor(s/86400)+'d'; },
   dur(sec){ if (sec<60) return sec+'s'; if (sec<3600) return Math.floor(sec/60)+'m'+(sec%60)+'s'; return Math.floor(sec/3600)+'h'+Math.floor((sec%3600)/60)+'m'; },
   num(n){ if (n == null) return '—'; if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'k'; return String(n); },
   shortHash(h){ return h && h.length > 18 ? h.slice(0,10)+'…'+h.slice(-6) : (h || '—'); },
@@ -117,7 +114,6 @@ const $  = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
-/* utilitaires extraction champs depuis attack event (structure backend) */
 function evField(ev, ...candidates) {
   for (const k of candidates) {
     const parts = k.split('.');
@@ -145,20 +141,14 @@ function evNormalize(ev) {
     severity: ev.severity || 'low',
     risk_score: ev.risk_score,
     session_id: ev.session_id || raw['session.id'] || raw.session,
-    /* auth fields (Cowrie) */
     username: ev.username || raw['user.name'] || raw.username,
     password: ev.password || raw['user.password'] || raw.password,
-    /* command (Cowrie shell) */
     command: ev.command || raw['process.command_line'] || raw.input || raw.command,
-    /* event type */
     event_action: ev.event_type || raw['event.action'] || raw['event.id'],
     event_category: raw['event.category'],
-    /* human-readable message */
     message: raw.message || (raw.event && raw.event.original),
-    /* Dionaea-specific */
     dionaea_msg: raw['dionaea.msg'],
     dionaea_module: raw['dionaea.module'],
-    /* HTTP (Galah) */
     http_method: ev.http_method || raw['http.request.method'],
     http_path: ev.http_path || raw['http.request.uri'] || raw['http.request.path'] || raw.url || (raw.http && raw.http.path),
     user_agent: ev.user_agent || raw['http.request.user_agent'] || raw['user_agent.original'] || raw['http.request.headers.user-agent'],
@@ -169,7 +159,7 @@ function evNormalize(ev) {
 
 /* ───────── ROUTER ───────── */
 const Router = {
-  pages: ['dashboard','alerts','sessions','health','timeline','reconstruction','evidence','profiling','geomap','reporting','honeypots','access','stats','settings','config'],
+  pages: ['dashboard','alerts','sessions','health','timeline','reconstruction','evidence','profiling','geomap','stats','reporting','honeypots','access','settings','config'],
   current: null,
   async go(page, push = true) {
     if (!this.pages.includes(page)) page = 'dashboard';
@@ -186,7 +176,6 @@ const Router = {
       const res = await fetch('pages/' + page + '.html?v=3', {cache: 'no-cache'});
       const html = await res.text();
       content.innerHTML = html;
-      // re-exécute les <script> injectés
       content.querySelectorAll('script').forEach(old => {
         const s = document.createElement('script');
         for (const a of old.attributes) s.setAttribute(a.name, a.value);
@@ -199,7 +188,7 @@ const Router = {
       $('#tb-title').textContent = (NAV.find(n => n.id === page) || {label:'ForenHive'}).label;
       window.scrollTo({top:0});
     } catch(e) {
-      content.innerHTML = `<div class="alert err">Erreur de chargement  ${esc(e.message || e)}</div>`;
+      content.innerHTML = `<div class="alert err">Loading error — ${esc(e.message || e)}</div>`;
       console.error(e);
     }
   },
@@ -233,13 +222,12 @@ function buildSidebar(user) {
 }
 
 function updateTime() {
-  const el = $('#tb-time'); if (el) el.textContent = new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const el = $('#tb-time'); if (el) el.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 }
 
 async function initAppShell() {
   const user = Auth.require(); if (!user) return;
-  // refresh user info from backend (role may have changed)
-  try { const me = await api.me(); api.setSession(null, me); } catch(e) { /* offline? use cached */ }
+  try { const me = await api.me(); api.setSession(null, me); } catch(e) { /* offline — use cached */ }
   const cur = Auth.current();
   const role = ROLES[cur.role] || ROLES.viewer;
   $('#sb-role').className = `sb-role ${cur.role}`;
@@ -254,7 +242,6 @@ async function initAppShell() {
   Router.init();
 }
 
-/* expose pour les pages */
 window.FH = {
   Auth, Router, NAV, NAV_GROUPS, ROLES, HONEYPOTS, SENSORS, ALL_SOURCES, SOURCE_META,
   COUNTRIES_ISO, COUNTRY_LATLNG, flag, countryLL,

@@ -2,31 +2,31 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">Forensic Analysis</div>
     <h2 class="page-title">Evidence <span>Logs</span></h2>
-    <div class="page-sub">Logs bruts des honeypots · filtre par capteur · vérification SHA-256 par enregistrement.</div>
+    <div class="page-sub">Raw honeypot logs · filter by sensor · SHA-256 verification per entry.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="ev-refresh">Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="ev-refresh">Refresh</button>
   </div>
 </div>
 
 <div class="card mb-16">
   <div class="card-h">
-    <div class="card-t">Filtres</div>
+    <div class="card-t">Filters</div>
   </div>
   <div class="grid-2">
     <div class="form-g">
       <label class="form-l">Source</label>
       <select class="form-s" id="ev-hp">
-        <option value="">Tous les honeypots (Cowrie + Dionaea + Galah)</option>
-        <option value="cowrie">Cowrie uniquement</option>
-        <option value="dionaea">Dionaea uniquement</option>
-        <option value="galah">Galah uniquement</option>
-        <option value="zeek">Zeek (NDR) — corrélation cross-honeypot</option>
+        <option value="">All honeypots (Cowrie + Dionaea + Galah)</option>
+        <option value="cowrie">Cowrie only</option>
+        <option value="dionaea">Dionaea only</option>
+        <option value="galah">Galah only</option>
+        <option value="zeek">Zeek (NDR) — cross-honeypot correlation</option>
       </select>
-      <div class="card-sub" style="font-size:10px;margin-top:4px">Les logs Zeek (NDR passif) sont volumineux et exclus par défaut · sélectionne explicitement Zeek pour les voir.</div>
+      <div class="card-sub" style="font-size:10px;margin-top:4px">Zeek (passive NDR) logs are large and excluded by default · explicitly select Zeek to view them.</div>
     </div>
     <div class="form-g">
-      <label class="form-l">Limite (max)</label>
+      <label class="form-l">Limit (max)</label>
       <select class="form-s" id="ev-limit">
         <option value="50">50</option>
         <option value="100" selected>100</option>
@@ -39,135 +39,60 @@
 
 <div class="card">
   <div class="card-h">
-    <div class="card-t">Logs bruts</div>
-    <div class="card-sub"><span id="ev-count">0</span> entrée(s)  <span id="ev-sealed">0</span> scellée(s) SHA-256</div>
+    <div class="card-t">Raw Logs</div>
+    <div class="card-sub"><span id="ev-count">0</span> entries · <span id="ev-sealed">0</span> SHA-256 sealed</div>
   </div>
-  <div id="ev-rows"><div class="alert info">Chargement…</div></div>
+  <div id="ev-rows"><div class="alert info">Loading…</div></div>
 </div>
 
-<!-- ── Log detail drawer (left slide-in) ── -->
 <div id="ev-drawer" class="ev-drawer">
   <div class="ev-drawer-head">
     <div style="min-width:0">
-      <div class="ev-drawer-title">Détail du log</div>
+      <div class="ev-drawer-title">Log Detail</div>
       <div class="ev-drawer-sid" id="ev-drawer-sid">—</div>
     </div>
-    <button class="ev-drawer-close" id="ev-drawer-close" title="Fermer (Echap)">✕</button>
+    <button class="ev-drawer-close" id="ev-drawer-close" title="Close (Esc)">✕</button>
   </div>
   <div class="ev-drawer-body" id="ev-drawer-body"></div>
 </div>
 <div id="ev-backdrop" class="ev-backdrop"></div>
 
 <style>
-/* ── Drawer ── */
 .ev-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  width: 400px;
-  max-width: 100vw;
-  background: var(--bg2);
-  border-left: 1px solid var(--border2);
-  z-index: 100;
-  transform: translateX(100%);
-  transition: transform .26s cubic-bezier(.4,0,.2,1);
-  display: flex;
-  flex-direction: column;
-  box-shadow: -6px 0 28px rgba(0,0,0,.45);
+  position: fixed; top: 0; right: 0; height: 100vh; width: 400px; max-width: 100vw;
+  background: var(--bg2); border-left: 1px solid var(--border2); z-index: 100;
+  transform: translateX(100%); transition: transform .26s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column; box-shadow: -6px 0 28px rgba(0,0,0,.45);
 }
 .ev-drawer.open { transform: translateX(0); }
 .ev-backdrop {
   position: fixed; inset: 0; z-index: 99;
-  background: rgba(0,0,0,.35);
-  opacity: 0; pointer-events: none;
-  transition: opacity .22s;
+  background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .22s;
 }
 .ev-backdrop.show { opacity: 1; pointer-events: auto; }
-
 .ev-drawer-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  padding: 16px 16px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.ev-drawer-title {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 15px; font-weight: 700; color: var(--gold);
-  letter-spacing: .4px;
-}
-.ev-drawer-sid {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 10px; color: var(--text3);
-  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.ev-drawer-close {
-  background: none; border: none; color: var(--text3);
-  font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1;
-  border-radius: 4px; flex-shrink: 0;
-  transition: color .15s, background .15s;
-}
+.ev-drawer-title { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: var(--gold); letter-spacing: .4px; }
+.ev-drawer-sid { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-drawer-close { background: none; border: none; color: var(--text3); font-size: 16px; cursor: pointer; padding: 2px 4px; line-height: 1; border-radius: 4px; flex-shrink: 0; transition: color .15s, background .15s; }
 .ev-drawer-close:hover { color: var(--text); background: var(--surface2); }
-
-.ev-drawer-body {
-  flex: 1; overflow-y: auto; padding: 14px 16px;
-}
-
-/* ── Drawer content blocks ── */
-.ev-d-hero {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-bottom: 14px;
-}
-.ev-d-ip {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 16px; font-weight: 700; color: var(--text1);
-}
-.ev-d-section {
-  font-size: 9px; font-family: 'Share Tech Mono', monospace;
-  color: var(--text3); text-transform: uppercase; letter-spacing: 1px;
-  margin: 14px 0 6px; padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
-.ev-d-row {
-  display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px;
-  padding: 4px 0; font-size: 12px;
-  border-bottom: 1px solid rgba(255,255,255,.03);
-}
+.ev-drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.ev-d-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.ev-d-ip { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: var(--text1); }
+.ev-d-section { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.ev-d-row { display: grid; grid-template-columns: 100px 1fr; gap: 4px 10px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,.03); }
 .ev-d-row:last-child { border-bottom: none; }
 .ev-d-k { color: var(--text3); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
 .ev-d-v { color: var(--text1); word-break: break-all; }
-.ev-d-cmd {
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  color: var(--gold); background: rgba(140,26,43,.08);
-  border-left: 2px solid var(--gold);
-  padding: 6px 10px; border-radius: 0 4px 4px 0;
-  margin: 6px 0; white-space: pre-wrap; word-break: break-all;
-}
-.ev-d-cred {
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
-  color: var(--red2); background: rgba(201,61,85,.07);
-  border-left: 2px solid var(--red2);
-  padding: 6px 10px; border-radius: 0 4px 4px 0;
-  margin: 6px 0;
-}
-.ev-d-hash {
-  font-family: 'Share Tech Mono', monospace; font-size: 10px;
-  color: var(--accent-gold); background: var(--bg3);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 5px 8px; margin: 6px 0;
-  word-break: break-all; line-height: 1.5;
-}
-.ev-d-raw-toggle {
-  background: none; border: 1px solid var(--border); color: var(--text3);
-  font-size: 11px; font-family: 'Share Tech Mono', monospace;
-  padding: 4px 10px; border-radius: 4px; cursor: pointer;
-  margin-top: 12px; transition: color .15s, border-color .15s;
-}
+.ev-d-cmd { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--gold); background: rgba(140,26,43,.08); border-left: 2px solid var(--gold); padding: 6px 10px; border-radius: 0 4px 4px 0; margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
+.ev-d-cred { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--red2); background: rgba(201,61,85,.07); border-left: 2px solid var(--red2); padding: 6px 10px; border-radius: 0 4px 4px 0; margin: 6px 0; }
+.ev-d-hash { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--accent-gold); background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; margin: 6px 0; word-break: break-all; line-height: 1.5; }
+.ev-d-raw-toggle { background: none; border: 1px solid var(--border); color: var(--text3); font-size: 11px; font-family: 'Share Tech Mono', monospace; padding: 4px 10px; border-radius: 4px; cursor: pointer; margin-top: 12px; transition: color .15s, border-color .15s; }
 .ev-d-raw-toggle:hover { color: var(--text2); border-color: var(--border2); }
 .ev-d-raw { display: none; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-top: 6px; font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text3); white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow-y: auto; }
 .ev-d-raw.show { display: block; }
-
-/* ── Log list rows ── */
 .evlog { border-bottom: 1px solid var(--border); padding: 9px 0; cursor: pointer; transition: background .12s; border-radius: 4px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
 .evlog:hover { background: rgba(255,255,255,.025); }
 .evlog.active { background: rgba(140,26,43,.08); border-left: 2px solid var(--gold); padding-left: 6px; }
@@ -186,109 +111,64 @@
   let allItems = [];
   let activeIdx = null;
 
-  /* ── Hoist drawer + backdrop to <body> so position:fixed works correctly.
-       #content has animation:fadeUp which leaves transform:translateY(0) on it,
-       creating a containing block that breaks fixed positioning. ── */
   const drawerEl  = document.getElementById('ev-drawer');
   const backdropEl = document.getElementById('ev-backdrop');
   document.body.appendChild(drawerEl);
   document.body.appendChild(backdropEl);
 
-  /* ── Drawer ── */
   function openDrawer(idx) {
     try {
       activeIdx = idx;
       document.querySelectorAll('.evlog').forEach((el, i) => el.classList.toggle('active', i === idx));
-
       const ev = allItems[idx];
       if (!ev) return;
       const n  = evNormalize(ev);
       const raw = n.raw || {};
       const hash = ev.sha256 || raw.sha256 || '';
       const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
-
       drawerEl.querySelector('#ev-drawer-sid').textContent = n.source_ip || '—';
-
       const rows = [];
-
-      /* Hero */
-      rows.push(`<div class="ev-d-hero">
-        <div class="ev-d-ip">${esc(n.source_ip || '—')}</div>
-        <span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span>
-      </div>`);
-
-      /* Credentials */
-      if (n.username || n.password) {
-        rows.push(`<div class="ev-d-cred">
-          👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}
-        </div>`);
-      }
-
-      /* Command */
-      if (n.command) {
-        rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
-      }
-
-      /* HTTP */
-      if (n.http_path) {
-        rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
-      }
-
-      /* Event details */
-      rows.push(`<div class="ev-d-section">Événement</div>`);
+      rows.push(`<div class="ev-d-hero"><div class="ev-d-ip">${esc(n.source_ip || '—')}</div><span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span></div>`);
+      if (n.username || n.password) rows.push(`<div class="ev-d-cred">👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}</div>`);
+      if (n.command) rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
+      if (n.http_path) rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
+      rows.push(`<div class="ev-d-section">Event</div>`);
       const evFields = [
-        ['Horodatage', fmt.date(n.timestamp)],
-        ['Action',     n.event_action || n.message || '—'],
-        ['Honeypot',   n.honeypot],
-        ['IP source',  n.source_ip],
-        ['Protocole',  n.protocol],
-        ['Port dest',  n.dest_port],
-        ['IP dest',    n.dest_ip],
-        ['Session',    n.session_id],
-        ['Sévérité',   n.severity],
+        ['Timestamp', fmt.date(n.timestamp)],
+        ['Action',    n.event_action || n.message || '—'],
+        ['Honeypot',  n.honeypot],
+        ['Source IP', n.source_ip],
+        ['Protocol',  n.protocol],
+        ['Dest Port', n.dest_port],
+        ['Dest IP',   n.dest_ip],
+        ['Session',   n.session_id],
+        ['Severity',  n.severity],
       ];
       rows.push(evFields.filter(([,v]) => v != null && v !== '').map(([k,v]) =>
         `<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`
       ).join(''));
-
-      /* Geo */
       const geo = (raw.source && typeof raw.source === 'object' && raw.source.geo) || raw.geo || {};
       if (geo.country_name || geo.city_name) {
-        rows.push(`<div class="ev-d-section">Géolocalisation</div>`);
-        [['Pays', geo.country_name], ['Ville', geo.city_name], ['Région', geo.region_name],
+        rows.push(`<div class="ev-d-section">Geolocation</div>`);
+        [['Country', geo.country_name], ['City', geo.city_name], ['Region', geo.region_name],
          ['ASN', raw.source && typeof raw.source === 'object' && raw.source.as && raw.source.as.number]
         ].filter(([,v])=>v).forEach(([k,v])=>{
           rows.push(`<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`);
         });
       }
-
-      /* SHA-256 */
       if (hash) {
-        rows.push(`<div class="ev-d-section">Intégrité</div>`);
+        rows.push(`<div class="ev-d-section">Integrity</div>`);
         rows.push(`<div class="ev-d-hash">SHA-256 · ${esc(hash)}</div>`);
       }
-
-      /* Raw JSON toggle — use event delegation to avoid getElementById issues */
-      rows.push(`
-        <button class="ev-d-raw-toggle" data-raw-toggle>Voir JSON brut ▾</button>
-        <pre class="ev-d-raw" data-raw-pre>${esc(JSON.stringify(raw, null, 2))}</pre>
-      `);
-
+      rows.push(`<button class="ev-d-raw-toggle" data-raw-toggle>Show raw JSON ▾</button><pre class="ev-d-raw" data-raw-pre>${esc(JSON.stringify(raw, null, 2))}</pre>`);
       const body = drawerEl.querySelector('#ev-drawer-body');
       body.innerHTML = rows.join('');
-
-      /* event delegation for raw toggle */
       body.addEventListener('click', function handler(e) {
-        const btn = e.target.closest('[data-raw-toggle]');
-        if (!btn) return;
-        const pre = body.querySelector('[data-raw-pre]');
-        if (!pre) return;
+        const btn = e.target.closest('[data-raw-toggle]'); if (!btn) return;
+        const pre = body.querySelector('[data-raw-pre]'); if (!pre) return;
         pre.classList.toggle('show');
-        btn.textContent = pre.classList.contains('show') ? 'Masquer JSON ▴' : 'Voir JSON brut ▾';
-        body.removeEventListener('click', handler);
-        body.addEventListener('click', handler);
+        btn.textContent = pre.classList.contains('show') ? 'Hide JSON ▴' : 'Show raw JSON ▾';
       }, {once: false});
-
       drawerEl.classList.add('open');
       backdropEl.classList.add('show');
     } catch(err) {
@@ -312,10 +192,9 @@
   const _keyHandler = e => { if (e.key === 'Escape') closeDrawer(); };
   document.addEventListener('keydown', _keyHandler);
 
-  /* ── Load ── */
   async function load() {
     closeDrawer();
-    $('#ev-rows').innerHTML = `<div class="alert info">Chargement…</div>`;
+    $('#ev-rows').innerHTML = `<div class="alert info">Loading…</div>`;
     try {
       const hp = $('#ev-hp').value;
       const limit = parseInt($('#ev-limit').value, 10) || 100;
@@ -336,16 +215,10 @@
                             - +new Date(a.timestamp || (a.raw && a.raw['@timestamp']) || 0));
         items = items.slice(0, limit);
       }
-
       allItems = items;
       $('#ev-count').textContent = items.length;
       $('#ev-sealed').textContent = items.filter(it => it.sha256 || (it.raw && it.raw.sha256)).length;
-
-      if (!items.length) {
-        $('#ev-rows').innerHTML = `<div class="alert info">Aucun log avec ces critères.</div>`;
-        return;
-      }
-
+      if (!items.length) { $('#ev-rows').innerHTML = `<div class="alert info">No logs matching these filters.</div>`; return; }
       $('#ev-rows').innerHTML = items.map((ev, i) => {
         const n = evNormalize(ev);
         const hash = ev.sha256 || (n.raw && n.raw.sha256) || '';
@@ -359,10 +232,7 @@
           </div>
         </div>`;
       }).join('');
-
-      document.querySelectorAll('.evlog').forEach((el, i) => {
-        el.addEventListener('click', () => openDrawer(i));
-      });
+      document.querySelectorAll('.evlog').forEach((el, i) => { el.addEventListener('click', () => openDrawer(i)); });
     } catch (e) {
       $('#ev-rows').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
     }
