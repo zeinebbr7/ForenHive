@@ -63,17 +63,18 @@
 .ev-drawer {
   position: fixed;
   top: 0;
-  left: var(--sidebar-w, 220px);
+  right: 0;
   height: 100vh;
-  width: 360px;
+  width: 400px;
+  max-width: 100vw;
   background: var(--bg2);
-  border-right: 1px solid var(--border2);
+  border-left: 1px solid var(--border2);
   z-index: 100;
-  transform: translateX(-100%);
+  transform: translateX(100%);
   transition: transform .26s cubic-bezier(.4,0,.2,1);
   display: flex;
   flex-direction: column;
-  box-shadow: 6px 0 28px rgba(0,0,0,.45);
+  box-shadow: -6px 0 28px rgba(0,0,0,.45);
 }
 .ev-drawer.open { transform: translateX(0); }
 .ev-backdrop {
@@ -185,105 +186,131 @@
   let allItems = [];
   let activeIdx = null;
 
+  /* ── Hoist drawer + backdrop to <body> so position:fixed works correctly.
+       #content has animation:fadeUp which leaves transform:translateY(0) on it,
+       creating a containing block that breaks fixed positioning. ── */
+  const drawerEl  = document.getElementById('ev-drawer');
+  const backdropEl = document.getElementById('ev-backdrop');
+  document.body.appendChild(drawerEl);
+  document.body.appendChild(backdropEl);
+
   /* ── Drawer ── */
   function openDrawer(idx) {
-    activeIdx = idx;
-    document.querySelectorAll('.evlog').forEach((el, i) => el.classList.toggle('active', i === idx));
+    try {
+      activeIdx = idx;
+      document.querySelectorAll('.evlog').forEach((el, i) => el.classList.toggle('active', i === idx));
 
-    const ev = allItems[idx];
-    const n  = evNormalize(ev);
-    const raw = n.raw || ev;
-    const hash = ev.sha256 || (raw && raw.sha256) || '';
-    const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
+      const ev = allItems[idx];
+      if (!ev) return;
+      const n  = evNormalize(ev);
+      const raw = n.raw || {};
+      const hash = ev.sha256 || raw.sha256 || '';
+      const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
 
-    $('#ev-drawer-sid').textContent = n.source_ip || '—';
+      drawerEl.querySelector('#ev-drawer-sid').textContent = n.source_ip || '—';
 
-    const rows = [];
+      const rows = [];
 
-    /* Hero */
-    rows.push(`<div class="ev-d-hero">
-      <div class="ev-d-ip">${esc(n.source_ip || '—')}</div>
-      <span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span>
-    </div>`);
-
-    /* Credentials */
-    if (n.username || n.password) {
-      rows.push(`<div class="ev-d-cred">
-        👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}
+      /* Hero */
+      rows.push(`<div class="ev-d-hero">
+        <div class="ev-d-ip">${esc(n.source_ip || '—')}</div>
+        <span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span>
       </div>`);
+
+      /* Credentials */
+      if (n.username || n.password) {
+        rows.push(`<div class="ev-d-cred">
+          👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}
+        </div>`);
+      }
+
+      /* Command */
+      if (n.command) {
+        rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
+      }
+
+      /* HTTP */
+      if (n.http_path) {
+        rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
+      }
+
+      /* Event details */
+      rows.push(`<div class="ev-d-section">Événement</div>`);
+      const evFields = [
+        ['Horodatage', fmt.date(n.timestamp)],
+        ['Action',     n.event_action || n.message || '—'],
+        ['Honeypot',   n.honeypot],
+        ['IP source',  n.source_ip],
+        ['Protocole',  n.protocol],
+        ['Port dest',  n.dest_port],
+        ['IP dest',    n.dest_ip],
+        ['Session',    n.session_id],
+        ['Sévérité',   n.severity],
+      ];
+      rows.push(evFields.filter(([,v]) => v != null && v !== '').map(([k,v]) =>
+        `<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`
+      ).join(''));
+
+      /* Geo */
+      const geo = (raw.source && typeof raw.source === 'object' && raw.source.geo) || raw.geo || {};
+      if (geo.country_name || geo.city_name) {
+        rows.push(`<div class="ev-d-section">Géolocalisation</div>`);
+        [['Pays', geo.country_name], ['Ville', geo.city_name], ['Région', geo.region_name],
+         ['ASN', raw.source && typeof raw.source === 'object' && raw.source.as && raw.source.as.number]
+        ].filter(([,v])=>v).forEach(([k,v])=>{
+          rows.push(`<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`);
+        });
+      }
+
+      /* SHA-256 */
+      if (hash) {
+        rows.push(`<div class="ev-d-section">Intégrité</div>`);
+        rows.push(`<div class="ev-d-hash">SHA-256 · ${esc(hash)}</div>`);
+      }
+
+      /* Raw JSON toggle — use event delegation to avoid getElementById issues */
+      rows.push(`
+        <button class="ev-d-raw-toggle" data-raw-toggle>Voir JSON brut ▾</button>
+        <pre class="ev-d-raw" data-raw-pre>${esc(JSON.stringify(raw, null, 2))}</pre>
+      `);
+
+      const body = drawerEl.querySelector('#ev-drawer-body');
+      body.innerHTML = rows.join('');
+
+      /* event delegation for raw toggle */
+      body.addEventListener('click', function handler(e) {
+        const btn = e.target.closest('[data-raw-toggle]');
+        if (!btn) return;
+        const pre = body.querySelector('[data-raw-pre]');
+        if (!pre) return;
+        pre.classList.toggle('show');
+        btn.textContent = pre.classList.contains('show') ? 'Masquer JSON ▴' : 'Voir JSON brut ▾';
+        body.removeEventListener('click', handler);
+        body.addEventListener('click', handler);
+      }, {once: false});
+
+      drawerEl.classList.add('open');
+      backdropEl.classList.add('show');
+    } catch(err) {
+      console.error('[evidence drawer]', err);
+      const body = drawerEl && drawerEl.querySelector('#ev-drawer-body');
+      if (body) body.innerHTML = `<div class="alert err" style="margin:12px">${esc(String(err))}</div>`;
+      if (drawerEl) drawerEl.classList.add('open');
+      if (backdropEl) backdropEl.classList.add('show');
     }
-
-    /* Command */
-    if (n.command) {
-      rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
-    }
-
-    /* HTTP */
-    if (n.http_path) {
-      rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
-    }
-
-    /* Event details */
-    rows.push(`<div class="ev-d-section">Événement</div>`);
-    const evFields = [
-      ['Horodatage', fmt.date(n.timestamp)],
-      ['Action',     n.event_action || n.message || '—'],
-      ['Honeypot',   n.honeypot],
-      ['IP source',  n.source_ip],
-      ['Protocole',  n.protocol],
-      ['Port dest',  n.dest_port],
-      ['IP dest',    n.dest_ip],
-      ['Session',    n.session_id],
-      ['Sévérité',   n.severity],
-    ];
-    rows.push(evFields.filter(([,v]) => v != null && v !== '').map(([k,v]) =>
-      `<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`
-    ).join(''));
-
-    /* Geo */
-    const geo = (raw.source && raw.source.geo) || raw.geo || {};
-    if (geo.country_name || geo.city_name) {
-      rows.push(`<div class="ev-d-section">Géolocalisation</div>`);
-      [['Pays', geo.country_name], ['Ville', geo.city_name], ['Région', geo.region_name], ['ASN', raw.source && raw.source.as && raw.source.as.number]].filter(([,v])=>v).forEach(([k,v])=>{
-        rows.push(`<div class="ev-d-row"><div class="ev-d-k">${esc(k)}</div><div class="ev-d-v">${esc(String(v))}</div></div>`);
-      });
-    }
-
-    /* SHA-256 */
-    if (hash) {
-      rows.push(`<div class="ev-d-section">Intégrité</div>`);
-      rows.push(`<div class="ev-d-hash">SHA-256 · ${esc(hash)}</div>`);
-    }
-
-    /* Raw JSON toggle */
-    rows.push(`
-      <button class="ev-d-raw-toggle" id="ev-d-raw-btn">Voir JSON brut ▾</button>
-      <pre class="ev-d-raw" id="ev-d-raw">${esc(JSON.stringify(raw, null, 2))}</pre>
-    `);
-
-    $('#ev-drawer-body').innerHTML = rows.join('');
-
-    $('#ev-d-raw-btn').addEventListener('click', () => {
-      const el = $('#ev-d-raw');
-      const btn = $('#ev-d-raw-btn');
-      el.classList.toggle('show');
-      btn.textContent = el.classList.contains('show') ? 'Masquer JSON ▴' : 'Voir JSON brut ▾';
-    });
-
-    $('#ev-drawer').classList.add('open');
-    $('#ev-backdrop').classList.add('show');
   }
 
   function closeDrawer() {
     activeIdx = null;
     document.querySelectorAll('.evlog').forEach(el => el.classList.remove('active'));
-    $('#ev-drawer').classList.remove('open');
-    $('#ev-backdrop').classList.remove('show');
+    drawerEl.classList.remove('open');
+    backdropEl.classList.remove('show');
   }
 
-  $('#ev-drawer-close').addEventListener('click', closeDrawer);
-  $('#ev-backdrop').addEventListener('click', closeDrawer);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+  drawerEl.querySelector('#ev-drawer-close').addEventListener('click', closeDrawer);
+  backdropEl.addEventListener('click', closeDrawer);
+  const _keyHandler = e => { if (e.key === 'Escape') closeDrawer(); };
+  document.addEventListener('keydown', _keyHandler);
 
   /* ── Load ── */
   async function load() {
@@ -344,6 +371,13 @@
   $('#ev-hp').addEventListener('change', load);
   $('#ev-limit').addEventListener('change', load);
   $('#ev-refresh').addEventListener('click', load);
+
+  window.__pageCleanup = () => {
+    document.removeEventListener('keydown', _keyHandler);
+    if (drawerEl && drawerEl.parentNode === document.body) drawerEl.remove();
+    if (backdropEl && backdropEl.parentNode === document.body) backdropEl.remove();
+  };
+
   await load();
 })();
 </script>
