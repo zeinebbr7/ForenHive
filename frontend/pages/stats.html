@@ -1,107 +1,105 @@
 <div class="page-head">
   <div>
     <div class="section-tag" style="margin-bottom:8px"> Analytics</div>
-    <h2 class="page-title">Statistiques <span>détaillées</span></h2>
-    <div class="page-sub">Données issues d'Elasticsearch · <span id="stats-total">—</span> événements au total.</div>
+    <h2 class="page-title">Attack <span>Statistics</span></h2>
+    <div class="page-sub">Live data from Elasticsearch · interactive charts powered by Recharts.</div>
   </div>
-  <div class="page-actions">
-    <span id="stats-badge" class="badge blue" style="font-size:12px">Chargement…</span>
-  </div>
-</div>
-
-<!-- Row 1 : Évolution horaire + Répartition source -->
-<div class="grid-2 mb-20">
-  <div class="card">
-    <div class="card-h">
-      <div class="card-t">Évolution horaire</div>
-      <div class="card-sub">24 dernières heures</div>
-    </div>
-    <div style="position:relative;height:220px;margin-top:12px">
-      <canvas id="chart-hourly"></canvas>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-h">
-      <div class="card-t">Répartition par source</div>
-      <div class="card-sub">Honeypots + capteurs</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:24px;margin-top:12px">
-      <div style="position:relative;width:180px;height:180px;flex-shrink:0">
-        <canvas id="chart-split"></canvas>
-      </div>
-      <div id="split-legend" style="flex:1;display:flex;flex-direction:column;gap:10px"></div>
-    </div>
+  <div class="page-actions" style="gap:8px">
+    <select class="form-s" id="st-hp" style="min-width:130px">
+      <option value="">All honeypots</option>
+      <option value="cowrie"> Cowrie</option>
+      <option value="dionaea"> Dionaea</option>
+      <option value="galah"> Galah</option>
+    </select>
+    <span id="st-badge" class="badge blue" style="font-size:12px">Loading…</span>
   </div>
 </div>
 
-<!-- Row 2 : Top IPs + Top ports -->
-<div class="grid-2 mb-20">
-  <div class="card">
-    <div class="card-h">
-      <div class="card-t">Top IPs sources</div>
-      <div class="card-sub" id="ips-sub">Cowrie · Dionaea · Galah</div>
-    </div>
-    <div style="position:relative;height:220px;margin-top:12px">
-      <canvas id="chart-ips"></canvas>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-h">
-      <div class="card-t">Top ports ciblés</div>
-      <div class="card-sub">ports ciblés · Cowrie · Dionaea · Galah</div>
-    </div>
-    <div style="position:relative;height:220px;margin-top:12px">
-      <canvas id="chart-ports"></canvas>
-    </div>
-  </div>
+<div id="stats-root" style="width:100%">
+  <div class="alert info" style="margin:20px 0">Loading statistics…</div>
 </div>
 
-<!-- Row 3 : Sévérité -->
-<div class="card mb-20">
-  <div class="card-h">
-    <div class="card-t">Distribution par sévérité</div>
-    <div class="card-sub">classification moteur forensique</div>
-  </div>
-  <div style="display:flex;align-items:center;gap:24px;margin-top:12px;flex-wrap:wrap">
-    <div style="position:relative;width:160px;height:160px;flex-shrink:0">
-      <canvas id="chart-sev"></canvas>
-    </div>
-    <div id="sev-kpis" style="display:flex;gap:12px;flex-wrap:wrap;flex:1"></div>
-  </div>
-</div>
+<style>
+.st-tooltip {
+  background: #0d111e !important;
+  border: 1px solid #1e2538 !important;
+  border-radius: 6px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  color: #e0e6f0 !important;
+  padding: 8px 12px !important;
+}
+.st-tooltip .recharts-tooltip-label {
+  color: #8892a4;
+  margin-bottom: 4px;
+}
+.recharts-default-legend { padding-top: 8px !important; }
+.recharts-legend-item-text { font-family: 'JetBrains Mono', monospace !important; font-size: 11px !important; }
+.st-kpi-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+.st-kpi { flex:1; min-width:140px; background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+.st-kpi-label { font-size:10px; color:var(--text3); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; font-family:'JetBrains Mono',monospace; }
+.st-kpi-val { font-family:'Rajdhani',sans-serif; font-size:32px; font-weight:700; line-height:1; }
+.st-kpi-sub { font-size:11px; color:var(--text3); font-family:'JetBrains Mono',monospace; margin-top:4px; }
+.st-chart-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:18px 20px; }
+.st-chart-title { font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:700; color:var(--text1); margin-bottom:2px; }
+.st-chart-sub { font-size:11px; color:var(--text3); font-family:'JetBrains Mono',monospace; margin-bottom:14px; }
+.st-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+.st-legend { display:flex; flex-direction:column; gap:8px; }
+.st-legend-row { display:flex; align-items:center; gap:10px; }
+.st-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.st-legend-label { font-size:12px; flex:1; }
+.st-legend-val { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text2); }
+.st-split-wrap { display:flex; align-items:center; gap:24px; }
+.st-sev-wrap { display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+.st-sev-kpis { display:flex; gap:12px; flex-wrap:wrap; flex:1; }
+.st-sev-kpi { flex:1; min-width:110px; background:var(--card-bg); border:1px solid; border-radius:8px; padding:12px 14px; text-align:center; }
+.st-sev-kpi-label { font-size:10px; color:var(--text3); letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; font-family:'JetBrains Mono',monospace; }
+.st-sev-kpi-val { font-family:'Rajdhani',sans-serif; font-size:28px; font-weight:700; line-height:1; }
+.st-sev-kpi-pct { font-size:11px; color:var(--text3); font-family:'JetBrains Mono',monospace; margin-top:4px; }
+@media (max-width: 900px) { .st-grid-2 { grid-template-columns: 1fr; } }
+</style>
 
 <script>
 (async function(){
-  const { SOURCE_META, flag, fmt, esc, $, evNormalize } = FH;
+  const { SOURCE_META, fmt, esc, $, evNormalize, flag } = FH;
+  const R  = window.React;
+  const RD = window.ReactDOM;
+  const RC = window.Recharts;
 
-  /* ── Chart.js global defaults (dark theme) ── */
-  Chart.defaults.color = '#8892a4';
-  Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-  Chart.defaults.font.family = "'JetBrains Mono', monospace";
-  Chart.defaults.font.size = 11;
+  if (!R || !RD || !RC) {
+    $('#stats-root').innerHTML = '<div class="alert err">Recharts failed to load. Check your internet connection.</div>';
+    return;
+  }
+
+  const h = R.createElement;
 
   const COLORS = {
-    cowrie:   '#8C1A2B',
-    dionaea:  '#ff5050',
-    galah:    '#b464ff',
-    zeek:     '#50a0ff',
+    cowrie:  '#8C1A2B',
+    dionaea: '#ff5050',
+    galah:   '#b464ff',
+    zeek:    '#50a0ff',
+  };
+  const SEV_COLORS = {
     critical: '#ff5050',
-    high:     '#ff7070',
+    high:     '#ff9933',
     medium:   '#8C1A2B',
     low:      '#2dd4bf',
   };
+  const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
 
-  /* ── helper: destroy old chart if canvas reused ── */
-  function mkChart(id, cfg) {
-    const old = Chart.getChart(id);
-    if (old) old.destroy();
-    return new Chart(document.getElementById(id), cfg);
-  }
+  const TOOLTIP_STYLE = {
+    backgroundColor: '#0d111e',
+    border: '1px solid #1e2538',
+    borderRadius: '6px',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '11px',
+    color: '#e0e6f0',
+  };
+  const AXIS_TICK = { fontSize: 10, fill: '#8892a4', fontFamily: "'JetBrains Mono', monospace" };
 
-  /* ── filter public IPs (exclude RFC-1918 / link-local) ── */
   function isPublic(ip) {
     if (!ip) return false;
-    if (ip.includes(':')) return false; // IPv6 link-local
+    if (ip.includes(':')) return false;
     const [a, b] = ip.split('.').map(Number);
     if (a === 10) return false;
     if (a === 172 && b >= 16 && b <= 31) return false;
@@ -110,29 +108,26 @@
     return true;
   }
 
-  const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
+  /* ── Fetch all data ───────────────────────────────────────── */
+  let rawData = null;
+  let fetchError = null;
 
   try {
-    /* ── Fetch honeypot events only (3 parallel filtered requests) ── */
-    const [hourly, split, ...hpResults] = await Promise.all([
-      api.statsHourly(),
-      api.geoSplit(),
-      api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie'  }),
-      api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }),
-      api.attacks({ page_size: 100, page: 1, honeypot: 'galah'   }),
+    const [hourlyRes, splitRes, ...hpResults] = await Promise.all([
+      api.statsHourly().catch(() => []),
+      api.geoSplit().catch(() => ({ split: [] })),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie'  }).catch(() => ({ items: [], total: 0 })),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }).catch(() => ({ items: [], total: 0 })),
+      api.attacks({ page_size: 100, page: 1, honeypot: 'galah'   }).catch(() => ({ items: [], total: 0 })),
     ]);
 
-    /* ── Totals per honeypot ── */
     const hpTotals = {
       cowrie:  hpResults[0]?.total || 0,
       dionaea: hpResults[1]?.total || 0,
       galah:   hpResults[2]?.total || 0,
     };
     const grandTotal = Object.values(hpTotals).reduce((a,b) => a+b, 0);
-    $('#stats-total').textContent = grandTotal.toLocaleString('fr-FR');
-    $('#stats-badge').textContent = `${grandTotal.toLocaleString('fr-FR')} événements honeypots`;
 
-    /* ── Flatten all honeypot events ── */
     const seen = new Set();
     const allItems = [];
     for (const r of hpResults) {
@@ -141,86 +136,29 @@
       }
     }
 
-    /* ════════════════════════════════════════════
-       1. ÉVOLUTION HORAIRE — honeypots only
-    ════════════════════════════════════════════ */
-    const hourlyArr = Array.isArray(hourly) ? hourly : [];
-    const last24    = hourlyArr.slice(-24);
-    const labels    = last24.map(h => {
-      const d = new Date(h.hour);
-      return d.getUTCHours().toString().padStart(2,'0') + 'h';
-    });
+    /* Hourly chart data */
+    const hourlyArr = Array.isArray(hourlyRes) ? hourlyRes : [];
+    const last24 = hourlyArr.slice(-24);
+    const hourlyData = last24.map(entry => ({
+      hour: new Date(entry.hour).getUTCHours().toString().padStart(2,'0') + ':00',
+      cowrie:  (entry.by_honeypot || {}).cowrie  || 0,
+      dionaea: (entry.by_honeypot || {}).dionaea || 0,
+      galah:   (entry.by_honeypot || {}).galah   || 0,
+    }));
 
-    mkChart('chart-hourly', {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: HONEYPOTS.map(src => ({
-          label: SOURCE_META[src]?.label || src,
-          data: last24.map(h => (h.by_honeypot || {})[src] || 0),
-          backgroundColor: COLORS[src] + 'cc',
-          borderColor: COLORS[src],
-          borderWidth: 1,
-          borderRadius: 2,
-        })),
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16 } },
-          tooltip: { mode: 'index', intersect: false },
-        },
-        scales: {
-          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0 } },
-          y: { stacked: true, beginAtZero: true,
-               ticks: { precision: 0 },
-               grid: { color: 'rgba(255,255,255,0.05)' } },
-        },
-      },
-    });
-
-    /* ════════════════════════════════════════════
-       2. RÉPARTITION SOURCE — honeypots only
-    ════════════════════════════════════════════ */
-    const splitArr = (split?.split || [])
+    /* Source split data */
+    const splitRaw = (splitRes?.split || [])
       .filter(x => HONEYPOTS.includes(x.honeypot))
       .sort((a,b) => b.count - a.count);
+    const hpTotal = splitRaw.reduce((s,x) => s + x.count, 0) || 1;
+    const splitData = splitRaw.map(x => ({
+      name:     SOURCE_META[x.honeypot]?.label || x.honeypot,
+      honeypot: x.honeypot,
+      count:    x.count,
+      pct:      ((x.count / hpTotal) * 100).toFixed(1),
+    }));
 
-    /* Recalculate percent excluding Zeek */
-    const hpTotal = splitArr.reduce((s,x) => s + x.count, 0) || 1;
-    splitArr.forEach(x => { x.hpPercent = ((x.count / hpTotal) * 100).toFixed(1); });
-
-    const splitColors = splitArr.map(x => COLORS[x.honeypot] || '#8892a4');
-
-    mkChart('chart-split', {
-      type: 'doughnut',
-      data: {
-        labels: splitArr.map(x => SOURCE_META[x.honeypot]?.label || x.honeypot),
-        datasets: [{ data: splitArr.map(x => x.count),
-                     backgroundColor: splitColors.map(c => c+'cc'),
-                     borderColor: splitColors, borderWidth: 2, hoverOffset: 6 }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '68%',
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()} (${splitArr[ctx.dataIndex]?.hpPercent}%)` }
-        }},
-      },
-    });
-
-    /* Custom legend */
-    $('#split-legend').innerHTML = splitArr.map((x,i) => {
-      const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '' };
-      return `<div style="display:flex;align-items:center;gap:10px">
-        <span style="width:10px;height:10px;border-radius:50%;background:${splitColors[i]};flex-shrink:0"></span>
-        <span style="flex:1;font-size:12px">${meta.icon} <b>${meta.label}</b></span>
-        <span class="mono" style="font-size:12px;color:var(--text2)">${x.hpPercent}%</span>
-      </div>`;
-    }).join('');
-
-    /* ════════════════════════════════════════════
-       3. TOP IPs SOURCES — honeypot attackers
-    ════════════════════════════════════════════ */
+    /* Top IPs */
     const byIp = {};
     allItems.forEach(n => {
       const ip = n.source_ip;
@@ -229,150 +167,253 @@
       byIp[ip].count++;
       if (!byIp[ip].country && n.country) byIp[ip].country = n.country;
     });
+    const topIpsData = Object.entries(byIp)
+      .sort((a,b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([ip, d]) => ({
+        ip:    (d.country ? flag(d.country) + ' ' : '') + ip,
+        count: d.count,
+        color: COLORS[d.hp] || '#8892a4',
+        hp:    d.hp,
+      }));
 
-    const topIps = Object.entries(byIp).sort((a,b) => b[1].count - a[1].count).slice(0, 10);
-
-    if (topIps.length) {
-      const ipLabels = topIps.map(([ip, d]) => {
-        const f = d.country ? flag(d.country) + ' ' : '';
-        return f + ip;
-      });
-      const ipColors = topIps.map(([,d]) => COLORS[d.hp] || '#8892a4');
-
-      mkChart('chart-ips', {
-        type: 'bar',
-        data: {
-          labels: ipLabels,
-          datasets: [{
-            label: 'Événements',
-            data: topIps.map(([,d]) => d.count),
-            backgroundColor: ipColors.map(c => c + 'bb'),
-            borderColor: ipColors,
-            borderWidth: 1,
-            borderRadius: 3,
-          }],
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: {
-              label: ctx => ` ${ctx.raw} événement${ctx.raw > 1 ? 's' : ''}`,
-              title: ctx => topIps[ctx[0].dataIndex][0],
-            }},
-          },
-          scales: {
-            x: { beginAtZero: true, ticks: { precision: 0 },
-                 grid: { color: 'rgba(255,255,255,0.05)' } },
-            y: { grid: { display: false },
-                 ticks: { font: { size: 11 } } },
-          },
-        },
-      });
-    } else {
-      document.getElementById('chart-ips').parentElement.innerHTML =
-        '<div class="alert info" style="margin-top:12px">Aucune IP source dans les événements honeypots récents.</div>';
-    }
-
-    /* ════════════════════════════════════════════
-       4. TOP PORTS — horizontal bar
-    ════════════════════════════════════════════ */
+    /* Top ports */
     const byPort = {};
     allItems.forEach(n => {
       if (!n.dest_port) return;
-      const k = `${n.dest_port}`;
-      if (!byPort[k]) byPort[k] = { count: 0, proto: n.protocol || '—', hp: n.honeypot };
+      const k = `${n.dest_port}/${n.protocol || 'tcp'}`;
+      if (!byPort[k]) byPort[k] = { count: 0, hp: n.honeypot };
       byPort[k].count++;
     });
+    const topPortsData = Object.entries(byPort)
+      .sort((a,b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([port, d]) => ({
+        port,
+        count: d.count,
+        color: COLORS[d.hp] || '#50a0ff',
+      }));
 
-    const topPorts = Object.entries(byPort).sort((a,b) => b[1].count - a[1].count).slice(0, 10);
-    const portLabels = topPorts.map(([p, d]) => `${p}/${d.proto}`);
-    const portColors = topPorts.map(([,d]) => COLORS[d.hp] || '#50a0ff');
-
-    mkChart('chart-ports', {
-      type: 'bar',
-      data: {
-        labels: portLabels,
-        datasets: [{
-          label: 'Hits',
-          data: topPorts.map(([,d]) => d.count),
-          backgroundColor: portColors.map(c => c + 'bb'),
-          borderColor: portColors,
-          borderWidth: 1,
-          borderRadius: 3,
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.raw} hits` } },
-        },
-        scales: {
-          x: { beginAtZero: true, ticks: { precision: 0 },
-               grid: { color: 'rgba(255,255,255,0.05)' } },
-          y: { grid: { display: false } },
-        },
-      },
-    });
-
-    /* ════════════════════════════════════════════
-       5. SÉVÉRITÉ — doughnut + KPIs
-    ════════════════════════════════════════════ */
+    /* Severity */
     const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
     allItems.forEach(n => {
       const s = (n.severity || 'low').toLowerCase();
       if (s in bySev) bySev[s]++;
     });
+    const sevOrder = ['critical','high','medium','low'];
+    const sevLabels = { critical:'Critical', high:'High', medium:'Medium', low:'Low' };
+    const sevTotal = Object.values(bySev).reduce((a,b) => a+b, 0) || 1;
+    const sevData = sevOrder.map(k => ({ name: sevLabels[k], value: bySev[k], color: SEV_COLORS[k] }));
 
-    const sevOrder  = ['critical','high','medium','low'];
-    const sevLabels = ['Critique','Élevé','Moyen','Faible'];
-    const sevData   = sevOrder.map(k => bySev[k]);
-    const sevColors = sevOrder.map(k => COLORS[k]);
-    const totalSev  = sevData.reduce((a,b) => a+b, 0) || 1;
+    rawData = { grandTotal, hpTotals, hourlyData, splitData, topIpsData, topPortsData, sevData, bySev, sevTotal, allItems };
 
-    mkChart('chart-sev', {
-      type: 'doughnut',
-      data: {
-        labels: sevLabels,
-        datasets: [{ data: sevData, backgroundColor: sevColors.map(c => c+'cc'),
-                     borderColor: sevColors, borderWidth: 2, hoverOffset: 6 }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '65%',
-        plugins: { legend: { display: false } },
-      },
-    });
-
-    const sevMeta = { critical: '', high: '', medium: '', low: '' };
-    $('#sev-kpis').innerHTML = sevOrder.map((k, i) => `
-      <div class="card" style="padding:14px 18px;flex:1;min-width:120px;border-color:${sevColors[i]}33">
-        <div style="font-size:10px;color:var(--text3);letter-spacing:.06em;margin-bottom:6px">
-          ${sevMeta[k]} ${sevLabels[i].toUpperCase()}
-        </div>
-        <div style="font-size:32px;font-weight:700;color:${sevColors[i]};font-family:'Rajdhani',sans-serif">
-          ${bySev[k]}
-        </div>
-        <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:2px">
-          ${((bySev[k]/totalSev)*100).toFixed(1)}%
-        </div>
-      </div>`).join('');
-
+    const total = grandTotal.toLocaleString('en-US');
+    $('#st-badge').textContent = `${total} honeypot events`;
+    $('#st-badge').className = 'badge blue';
   } catch(e) {
-    console.error('Stats error:', e);
-    $('#stats-badge').textContent = 'Erreur';
-    $('#stats-badge').className = 'badge red';
-    document.querySelector('.page-sub').insertAdjacentHTML('afterend',
-      `<div class="alert err" style="margin-top:12px">${esc(e.message)}</div>`);
+    fetchError = e;
+    $('#st-badge').textContent = 'Error';
+    $('#st-badge').className = 'badge red';
   }
 
-  /* cleanup charts when page changes */
-  window.__pageCleanup = () => {
-    ['chart-hourly','chart-split','chart-ips','chart-ports','chart-sev'].forEach(id => {
-      const c = Chart.getChart(id); if (c) c.destroy();
+  /* ════════════════════════════════════════════════════════════
+     React component tree
+  ════════════════════════════════════════════════════════════ */
+  function StatsApp() {
+    const [hpFilter, setHpFilter] = R.useState('');
+
+    R.useEffect(() => {
+      const sel = document.getElementById('st-hp');
+      if (!sel) return;
+      const handler = () => setHpFilter(sel.value);
+      sel.addEventListener('change', handler);
+      return () => sel.removeEventListener('change', handler);
+    }, []);
+
+    if (fetchError) {
+      return h('div', { className: 'alert err' }, 'Failed to load statistics: ' + fetchError.message);
+    }
+    if (!rawData) {
+      return h('div', { className: 'alert info', style: { margin: '20px 0' } }, 'Loading…');
+    }
+
+    const { grandTotal, hpTotals, hourlyData, splitData, topIpsData, topPortsData, sevData, bySev, sevTotal, allItems } = rawData;
+
+    /* Filter data by honeypot */
+    const filteredItems = hpFilter ? allItems.filter(n => n.honeypot === hpFilter) : allItems;
+
+    const filteredHourly = hpFilter
+      ? hourlyData.map(row => ({ hour: row.hour, [hpFilter]: row[hpFilter] || 0 }))
+      : hourlyData;
+
+    const filteredSplit = hpFilter
+      ? splitData.filter(d => d.honeypot === hpFilter)
+      : splitData;
+
+    const filteredIps = hpFilter
+      ? topIpsData.filter(d => d.hp === hpFilter)
+      : topIpsData;
+
+    const filteredBySev = { critical: 0, high: 0, medium: 0, low: 0 };
+    filteredItems.forEach(n => {
+      const s = (n.severity || 'low').toLowerCase();
+      if (s in filteredBySev) filteredBySev[s]++;
     });
-  };
+    const filteredSevTotal = Object.values(filteredBySev).reduce((a,b) => a+b, 0) || 1;
+    const filteredSevData = ['critical','high','medium','low'].map(k => ({
+      name: { critical:'Critical', high:'High', medium:'Medium', low:'Low' }[k],
+      value: filteredBySev[k],
+      color: SEV_COLORS[k],
+    }));
+
+    const activeHPs = hpFilter ? [hpFilter] : HONEYPOTS;
+    const displayTotal = hpFilter ? (hpTotals[hpFilter] || 0) : grandTotal;
+
+    /* ── KPI Row ─────────────────────────────────────────── */
+    const kpiRow = h('div', { className: 'st-kpi-row' },
+      h('div', { className: 'st-kpi', style: { borderColor: 'var(--border2)' } },
+        h('div', { className: 'st-kpi-label' }, 'Total Events'),
+        h('div', { className: 'st-kpi-val', style: { color: 'var(--gold)' } }, displayTotal.toLocaleString('en-US')),
+        h('div', { className: 'st-kpi-sub' }, hpFilter ? SOURCE_META[hpFilter]?.label || hpFilter : 'all honeypots')
+      ),
+      ...(['cowrie','dionaea','galah']).map(hp =>
+        h('div', { key: hp, className: 'st-kpi', style: { borderColor: (COLORS[hp]||'#888') + '44', opacity: hpFilter && hpFilter !== hp ? 0.4 : 1 } },
+          h('div', { className: 'st-kpi-label' }, SOURCE_META[hp]?.label || hp),
+          h('div', { className: 'st-kpi-val', style: { color: COLORS[hp] } }, (hpTotals[hp]||0).toLocaleString('en-US')),
+          h('div', { className: 'st-kpi-sub' }, 'events captured')
+        )
+      )
+    );
+
+    /* ── Hourly chart (stacked bar) ──────────────────────── */
+    const hourlyCard = h('div', { className: 'st-chart-card' },
+      h('div', { className: 'st-chart-title' }, 'Hourly Activity'),
+      h('div', { className: 'st-chart-sub' }, 'Last 24 hours · events per honeypot'),
+      h(RC.ResponsiveContainer, { width: '100%', height: 220 },
+        h(RC.BarChart, { data: filteredHourly, margin: { top: 4, right: 8, bottom: 0, left: -10 } },
+          h(RC.CartesianGrid, { strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.05)', vertical: false }),
+          h(RC.XAxis, { dataKey: 'hour', tick: AXIS_TICK, tickLine: false, axisLine: false }),
+          h(RC.YAxis, { tick: AXIS_TICK, tickLine: false, axisLine: false, allowDecimals: false }),
+          h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE, cursor: { fill: 'rgba(255,255,255,0.04)' } }),
+          h(RC.Legend, { iconSize: 8, wrapperStyle: { fontSize: '11px', fontFamily: "'JetBrains Mono', monospace", paddingTop: '8px' } }),
+          ...activeHPs.map(hp =>
+            h(RC.Bar, { key: hp, dataKey: hp, stackId: 'a', fill: COLORS[hp] + 'cc', stroke: COLORS[hp], strokeWidth: 1, name: SOURCE_META[hp]?.label || hp, radius: hp === activeHPs[activeHPs.length - 1] ? [2,2,0,0] : [0,0,0,0] })
+          )
+        )
+      )
+    );
+
+    /* ── Source split (donut + legend) ───────────────────── */
+    const splitCard = h('div', { className: 'st-chart-card' },
+      h('div', { className: 'st-chart-title' }, 'Source Distribution'),
+      h('div', { className: 'st-chart-sub' }, 'Events per honeypot sensor'),
+      h('div', { className: 'st-split-wrap' },
+        h(RC.PieChart, { width: 180, height: 180 },
+          h(RC.Pie, {
+              data: filteredSplit, dataKey: 'count', nameKey: 'name',
+              cx: 85, cy: 85, innerRadius: 54, outerRadius: 80,
+              paddingAngle: 2,
+            },
+            ...filteredSplit.map((entry, i) =>
+              h(RC.Cell, { key: i, fill: COLORS[entry.honeypot] + 'cc', stroke: COLORS[entry.honeypot], strokeWidth: 1 })
+            )
+          ),
+          h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE })
+        ),
+        h('div', { className: 'st-legend', style: { flex: 1 } },
+          ...filteredSplit.map((entry, i) =>
+            h('div', { key: i, className: 'st-legend-row' },
+              h('span', { className: 'st-legend-dot', style: { background: COLORS[entry.honeypot] } }),
+              h('span', { className: 'st-legend-label' }, `${SOURCE_META[entry.honeypot]?.icon || ''} ${entry.name}`),
+              h('span', { className: 'st-legend-val' }, `${entry.pct}%`)
+            )
+          )
+        )
+      )
+    );
+
+    /* ── Top source IPs (horizontal bar) ─────────────────── */
+    const ipsCard = h('div', { className: 'st-chart-card' },
+      h('div', { className: 'st-chart-title' }, 'Top Source IPs'),
+      h('div', { className: 'st-chart-sub' }, 'Top 10 attacker IPs · ' + (hpFilter ? SOURCE_META[hpFilter]?.label || hpFilter : 'all honeypots')),
+      filteredIps.length === 0
+        ? h('div', { className: 'alert info', style: { marginTop: '12px' } }, 'No source IPs in recent events.')
+        : h(RC.ResponsiveContainer, { width: '100%', height: Math.max(180, filteredIps.length * 28 + 20) },
+            h(RC.BarChart, { data: filteredIps, layout: 'vertical', margin: { top: 0, right: 20, bottom: 0, left: 0 } },
+              h(RC.CartesianGrid, { strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.05)', horizontal: false }),
+              h(RC.XAxis, { type: 'number', tick: AXIS_TICK, tickLine: false, axisLine: false, allowDecimals: false }),
+              h(RC.YAxis, { type: 'category', dataKey: 'ip', width: 150, tick: { ...AXIS_TICK, fill: '#e0e6f0' }, tickLine: false, axisLine: false }),
+              h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE, formatter: (v) => [v + ' events', 'Count'] }),
+              h(RC.Bar, { dataKey: 'count', name: 'Events', radius: [0,3,3,0], barSize: 16 },
+                ...filteredIps.map((entry, i) =>
+                  h(RC.Cell, { key: i, fill: entry.color + 'bb' })
+                )
+              )
+            )
+          )
+    );
+
+    /* ── Top targeted ports (horizontal bar) ─────────────── */
+    const portsCard = h('div', { className: 'st-chart-card' },
+      h('div', { className: 'st-chart-title' }, 'Top Targeted Ports'),
+      h('div', { className: 'st-chart-sub' }, 'Top 10 destination ports · all honeypots'),
+      topPortsData.length === 0
+        ? h('div', { className: 'alert info', style: { marginTop: '12px' } }, 'No port data available.')
+        : h(RC.ResponsiveContainer, { width: '100%', height: Math.max(180, topPortsData.length * 28 + 20) },
+            h(RC.BarChart, { data: topPortsData, layout: 'vertical', margin: { top: 0, right: 20, bottom: 0, left: 0 } },
+              h(RC.CartesianGrid, { strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.05)', horizontal: false }),
+              h(RC.XAxis, { type: 'number', tick: AXIS_TICK, tickLine: false, axisLine: false, allowDecimals: false }),
+              h(RC.YAxis, { type: 'category', dataKey: 'port', width: 90, tick: { ...AXIS_TICK, fill: '#e0e6f0' }, tickLine: false, axisLine: false }),
+              h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE, formatter: (v) => [v + ' hits', 'Count'] }),
+              h(RC.Bar, { dataKey: 'count', name: 'Hits', radius: [0,3,3,0], barSize: 16 },
+                ...topPortsData.map((entry, i) =>
+                  h(RC.Cell, { key: i, fill: entry.color + 'bb' })
+                )
+              )
+            )
+          )
+    );
+
+    /* ── Severity distribution (donut + KPI cards) ────────── */
+    const sevCard = h('div', { className: 'st-chart-card', style: { marginTop: '14px' } },
+      h('div', { className: 'st-chart-title' }, 'Severity Distribution'),
+      h('div', { className: 'st-chart-sub' }, 'Event classification · forensic engine scoring'),
+      h('div', { className: 'st-sev-wrap' },
+        h(RC.PieChart, { width: 180, height: 180 },
+          h(RC.Pie, {
+              data: filteredSevData, dataKey: 'value', nameKey: 'name',
+              cx: 85, cy: 85, innerRadius: 50, outerRadius: 78,
+              paddingAngle: 2,
+            },
+            ...filteredSevData.map((entry, i) =>
+              h(RC.Cell, { key: i, fill: entry.color + 'cc', stroke: entry.color, strokeWidth: 1 })
+            )
+          ),
+          h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE })
+        ),
+        h('div', { className: 'st-sev-kpis' },
+          ...filteredSevData.map((entry, i) =>
+            h('div', { key: i, className: 'st-sev-kpi', style: { borderColor: entry.color + '44' } },
+              h('div', { className: 'st-sev-kpi-label' }, entry.name),
+              h('div', { className: 'st-sev-kpi-val', style: { color: entry.color } }, entry.value),
+              h('div', { className: 'st-sev-kpi-pct' }, ((entry.value / filteredSevTotal) * 100).toFixed(1) + '%')
+            )
+          )
+        )
+      )
+    );
+
+    return h('div', null,
+      kpiRow,
+      h('div', { className: 'st-grid-2' }, hourlyCard, splitCard),
+      h('div', { className: 'st-grid-2' }, ipsCard, portsCard),
+      sevCard
+    );
+  }
+
+  const root = RD.createRoot(document.getElementById('stats-root'));
+  root.render(h(StatsApp, null));
+
+  window.__pageCleanup = () => root.unmount();
 })();
 </script>

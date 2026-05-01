@@ -253,11 +253,16 @@
       const rec = await api.profile(ip);
       renderDetail(normalize(rec));
     } catch (e) {
+      if (e.status === 500 || e.status === 422) {
+        // Backend validation error — check if already in list
+        const listItem = STATE.profiles.find(p => p.source_ip === ip);
+        if (listItem) { renderDetail(normalize(listItem)); return; }
+      }
       let body;
       if (e.status === 404) {
         body = `<div class="alert info"><b>No profile for ${esc(ip)}.</b><br>Run the forensic engine to generate a dossier.</div>`;
-      } else if (e.status === 500) {
-        body = `<div class="alert err"><b>Backend error (500)</b><br>${esc(e.message)}<br><span class="mono" style="font-size:11px">Known bug: asn type in profiler — fix on backend side.</span></div>`;
+      } else if (e.status === 500 || e.status === 422) {
+        body = `<div class="alert err"><b>Backend error (${e.status})</b><br>${esc(e.message)}</div>`;
       } else {
         body = `<div class="alert err">${esc(e.message)}</div>`;
       }
@@ -308,6 +313,14 @@
       const rec = await api.profilingById(id);
       renderDetail(normalize(rec));
     } catch (e) {
+      if (e.status === 500 || e.status === 422) {
+        // Backend validation error — fall back to list data which is already loaded
+        const listItem = STATE.profiles.find(p => p.id === id);
+        if (listItem) {
+          renderDetail(normalize(listItem));
+          return;
+        }
+      }
       $('#p-detail').innerHTML = `<div class="card"><div class="alert err">${esc(e.message)}</div></div>`;
     }
   }
