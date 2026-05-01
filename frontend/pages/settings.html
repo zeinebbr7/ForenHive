@@ -45,7 +45,7 @@
 
   try {
     const me = await api.me();
-    const role = ROLES[me.role] || ROLES.viewer;
+    const role = ROLES[me.role] || ROLES.analyst;
     $('#s-avatar').textContent = role.icon;
     $('#s-name').textContent = me.email.split('@')[0];
     $('#s-email').textContent = me.email;
@@ -61,7 +61,7 @@
         $('#users-body').innerHTML = list.length ? `
           <table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Active</th><th>Created</th><th>Last Login</th></tr></thead>
           <tbody>${list.map(u => {
-            const r = ROLES[u.role] || ROLES.viewer;
+            const r = ROLES[u.role] || ROLES.analyst;
             return `<tr>
               <td class="mono">${esc(u.email)}</td>
               <td><span class="badge ${r.color}">${r.icon} ${r.label}</span></td>

@@ -3,15 +3,15 @@
 *{box-sizing:border-box;margin:0;padding:0}
 :root, :root[data-theme="dark"]{
   /* ForenHive palette — wine-red primary · navy bg · yellow accent (synced with landing v5) */
-  --bg:#060810;--bg2:#0B0E18;--bg3:#121622;--surface:#181C2A;--surface2:#212738;
+  --bg:#0e1117;--bg2:#141922;--bg3:#1a2030;--surface:#1e2535;--surface2:#252d3d;
   --gold:#8C1A2B;--gold2:#A62240;--gold-glow:rgba(140,26,43,0.18);
   --red:#6B0F1A;--red2:#C93D55;--blue:#1A4FBB;--blue2:#6AB0FF;
   --teal:#00BFA5;
   --accent-gold:#D4A84A;
   --yellow:#E8B84B;--yellow2:#FFC857;--yellow-glow:rgba(232,184,75,0.18);
   --purple:#7B2FBE;--purple2:#9F6AE0;
-  --text:#FFFFFF;--text2:#E8E8F0;--text3:#9AA0B4;
-  --border:rgba(140,26,43,0.12);--border2:rgba(140,26,43,0.28);
+  --text:#dde3ed;--text2:#b8c2d0;--text3:#7d8799;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
   --ring:rgba(140,26,43,0.45);
   --shadow-sm:0 1px 2px rgba(0,0,0,0.35);
   --shadow-md:0 6px 20px rgba(0,0,0,0.40);
@@ -44,7 +44,7 @@ body{background:var(--bg);font-family:'Inter',system-ui,sans-serif;color:var(--t
 
 /* textures réutilisables (landing) */
 body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5}
-.grid-bg{position:fixed;inset:0;background-image:linear-gradient(rgba(140,26,43,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(140,26,43,0.02) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+.grid-bg{position:fixed;inset:0;background-image:linear-gradient(rgba(212,168,74,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(212,168,74,0.08) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
 
 /* ═══ ANIMATIONS ═══ */
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}

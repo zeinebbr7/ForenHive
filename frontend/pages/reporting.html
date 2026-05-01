@@ -64,7 +64,7 @@
 
 /* ── Spinner ───────────────────────────────────────────────── */
 .rep-loading { flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#888;padding:40px;background:#1a1a1a;min-height:400px; }
-.rep-spinner { width:36px;height:36px;border:3px solid rgba(140,26,43,.2);border-top-color:#8C1A2B;border-radius:50%;animation:spin .8s linear infinite; }
+.rep-spinner { width:36px;height:36px;border:3px solid rgba(140,26,43,.2);border-top-color:#374151;border-radius:50%;animation:spin .8s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
 /* ── HTML Report Styles ────────────────────────────────────── */
@@ -82,11 +82,11 @@
   padding: 0;
   page-break-after: always;
 }
-.fh-page + .fh-page { border-top: 6px solid #8C1A2B; margin-top: 0; }
+.fh-page + .fh-page { border-top: 4px solid #e5e7eb; margin-top: 0; }
 
-/* Header bar */
+/* Header bar — keep brand red */
 .fh-header {
-  background: #8C1A2B;
+  background: #1e293b;
   color: #fff;
   display: flex;
   justify-content: space-between;
@@ -97,21 +97,21 @@
   letter-spacing: .05em;
 }
 .fh-header-brand { font-weight: 700; font-size: 13px; letter-spacing: .1em; }
-.fh-header-ref { opacity: .75; margin-top: 2px; }
+.fh-header-ref { opacity: .6; margin-top: 2px; }
 .fh-header-session { text-align: right; }
 .fh-header-session-id { font-weight: 700; }
 .fh-header-score { margin-top: 3px; }
 .fh-score-badge {
   display: inline-block;
-  background: rgba(255,255,255,.15);
-  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.25);
   border-radius: 4px;
   padding: 1px 8px;
   font-weight: 700;
 }
-.fh-score-badge.hi { background: rgba(220,50,50,.4); }
-.fh-score-badge.md { background: rgba(220,160,0,.3); }
-.fh-score-badge.lo { background: rgba(50,120,220,.3); }
+.fh-score-badge.hi { background: rgba(220,50,50,.5); }
+.fh-score-badge.md { background: rgba(220,140,0,.4); }
+.fh-score-badge.lo { background: rgba(50,120,220,.4); }
 
 /* Title block */
 .fh-title-block {
@@ -119,14 +119,14 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 2px solid #f0e6e8;
+  border-bottom: 1px solid #e5e7eb;
 }
 .fh-title-left {}
 .fh-platform-name {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .15em;
-  color: #8C1A2B;
+  color: #64748b;
   text-transform: uppercase;
   margin-bottom: 6px;
   font-family: 'JetBrains Mono', monospace;
@@ -145,7 +145,7 @@
   font-family: 'JetBrains Mono', monospace;
 }
 .fh-score-box {
-  background: #8C1A2B;
+  background: #374151;
   color: #fff;
   border-radius: 8px;
   padding: 12px 20px;
@@ -160,13 +160,13 @@
 }
 .fh-score-box-label {
   font-size: 9px;
-  opacity: .75;
+  opacity: .7;
   letter-spacing: .1em;
   margin-top: 4px;
 }
-.fh-score-box.hi { background: #c62828; }
-.fh-score-box.md { background: #8C1A2B; }
-.fh-score-box.lo { background: #1565C0; }
+.fh-score-box.hi { background: #b91c1c; }
+.fh-score-box.md { background: #b45309; }
+.fh-score-box.lo { background: #1d4ed8; }
 
 /* Metadata table */
 .fh-meta-grid {
@@ -174,26 +174,26 @@
   grid-template-columns: 1fr 1fr;
   gap: 0;
   margin: 0 28px 20px;
-  border: 1px solid #e0d0d2;
+  border: 1px solid #e5e7eb;
   border-radius: 6px;
   overflow: hidden;
 }
 .fh-meta-row {
   display: grid;
   grid-template-columns: 130px 1fr;
-  border-bottom: 1px solid #e0d0d2;
+  border-bottom: 1px solid #e5e7eb;
 }
 .fh-meta-row:last-child { border-bottom: none; }
 .fh-meta-key {
-  background: #f8f0f1;
+  background: #f3f4f6;
   padding: 7px 12px;
   font-size: 10px;
   font-weight: 700;
-  color: #8C1A2B;
+  color: #374151;
   letter-spacing: .05em;
   text-transform: uppercase;
   font-family: 'JetBrains Mono', monospace;
-  border-right: 1px solid #e0d0d2;
+  border-right: 1px solid #e5e7eb;
 }
 .fh-meta-val {
   padding: 7px 12px;
@@ -206,14 +206,14 @@
 /* About box */
 .fh-about {
   margin: 0 28px 20px;
-  background: #f8f8f8;
-  border-left: 3px solid #8C1A2B;
+  background: #f8fafc;
+  border-left: 3px solid #94a3b8;
   padding: 10px 14px;
   font-size: 11px;
   color: #444;
   line-height: 1.6;
 }
-.fh-about-title { font-weight: 700; color: #8C1A2B; margin-bottom: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.fh-about-title { font-weight: 700; color: #374151; margin-bottom: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 
 /* Section headers */
 .fh-section {
@@ -225,10 +225,10 @@
   gap: 10px;
   margin-bottom: 10px;
   padding-bottom: 6px;
-  border-bottom: 2px solid #8C1A2B;
+  border-bottom: 2px solid #e5e7eb;
 }
 .fh-section-num {
-  background: #8C1A2B;
+  background: #374151;
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
@@ -240,7 +240,7 @@
 .fh-section-title {
   font-size: 13px;
   font-weight: 700;
-  color: #8C1A2B;
+  color: #1e293b;
   text-transform: uppercase;
   letter-spacing: .08em;
 }
@@ -252,7 +252,7 @@
   font-size: 11px;
 }
 .fh-table th {
-  background: #8C1A2B;
+  background: #374151;
   color: #fff;
   text-align: left;
   padding: 6px 10px;
@@ -264,12 +264,12 @@
 }
 .fh-table td {
   padding: 6px 10px;
-  border-bottom: 1px solid #eedde0;
+  border-bottom: 1px solid #e5e7eb;
   vertical-align: top;
   font-family: 'JetBrains Mono', monospace;
   color: #1a1a1a;
 }
-.fh-table tr:nth-child(even) td { background: #fdf5f6; }
+.fh-table tr:nth-child(even) td { background: #f9fafb; }
 .fh-table tr:last-child td { border-bottom: none; }
 
 /* Two-col layout */
@@ -280,34 +280,34 @@
   font-size: 12px;
   line-height: 1.7;
   color: #333;
-  background: #fdf5f6;
-  border-left: 3px solid #e0b0b8;
+  background: #f8fafc;
+  border-left: 3px solid #94a3b8;
   padding: 10px 14px;
   border-radius: 0 4px 4px 0;
 }
 
 /* Key-value card */
 .fh-kv-card {
-  border: 1px solid #eedde0;
+  border: 1px solid #e5e7eb;
   border-radius: 6px;
   overflow: hidden;
 }
 .fh-kv-row {
   display: grid;
   grid-template-columns: 120px 1fr;
-  border-bottom: 1px solid #eedde0;
+  border-bottom: 1px solid #e5e7eb;
 }
 .fh-kv-row:last-child { border-bottom: none; }
 .fh-kv-key {
-  background: #f8f0f1;
+  background: #f3f4f6;
   padding: 6px 10px;
   font-size: 10px;
   font-weight: 700;
-  color: #8C1A2B;
+  color: #374151;
   letter-spacing: .04em;
   text-transform: uppercase;
   font-family: 'JetBrains Mono', monospace;
-  border-right: 1px solid #eedde0;
+  border-right: 1px solid #e5e7eb;
 }
 .fh-kv-val {
   padding: 6px 10px;
@@ -319,35 +319,35 @@
 
 /* Risk bar */
 .fh-risk-bar-wrap { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-.fh-risk-bar-bg { flex:1; height: 8px; background: #eedde0; border-radius: 4px; overflow: hidden; }
+.fh-risk-bar-bg { flex:1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
 .fh-risk-bar-fill { height: 100%; border-radius: 4px; }
-.fh-risk-bar-fill.hi { background: #c62828; }
-.fh-risk-bar-fill.md { background: #8C1A2B; }
-.fh-risk-bar-fill.lo { background: #1565C0; }
+.fh-risk-bar-fill.hi { background: #b91c1c; }
+.fh-risk-bar-fill.md { background: #b45309; }
+.fh-risk-bar-fill.lo { background: #1d4ed8; }
 
 /* Signal table */
-.fh-signal-present { color: #c62828; font-weight: 700; }
-.fh-signal-absent  { color: #999; }
+.fh-signal-present { color: #b91c1c; font-weight: 700; }
+.fh-signal-absent  { color: #9ca3af; }
 
 /* Cert footer */
 .fh-cert {
   margin: 0 28px 28px;
-  background: #1a1a1a;
+  background: #1e293b;
   color: #fff;
   border-radius: 8px;
   padding: 16px 20px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
 }
-.fh-cert-title { font-size: 12px; font-weight: 700; color: #e8a0a8; margin-bottom: 8px; letter-spacing: .08em; }
+.fh-cert-title { font-size: 12px; font-weight: 700; color: #93c5fd; margin-bottom: 8px; letter-spacing: .08em; }
 .fh-cert-row { display: flex; gap: 10px; margin: 3px 0; }
 .fh-cert-key { color: #888; min-width: 90px; }
 .fh-cert-val { color: #e0e0e0; word-break: break-all; }
 
 /* Page divider for print separation look */
 .fh-page-break {
-  height: 12px;
-  background: #8C1A2B;
+  height: 8px;
+  background: #e5e7eb;
   margin-top: 28px;
 }
 .fh-page-footer {
@@ -355,11 +355,11 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 28px;
-  background: #f8f0f1;
+  background: #f3f4f6;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
-  color: #999;
-  border-top: 1px solid #eedde0;
+  color: #9ca3af;
+  border-top: 1px solid #e5e7eb;
 }
 </style>
 
@@ -368,8 +368,6 @@
   const { fmt, esc, $ } = FH;
   let sessions  = [];
   let activeSid = null;
-  let blobUrl   = null;
-  let blobSha   = '';
 
   function scoreCls(s) { return s == null ? 'lo' : s < 40 ? 'lo' : s < 70 ? 'md' : 'hi'; }
   function scoreLabel(s) { return s == null ? '—' : s >= 70 ? 'CRITICAL' : s >= 40 ? 'ELEVATED' : 'MODERATE'; }
@@ -556,27 +554,27 @@
         </thead>
         <tbody>
           <tr>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">REFERENCE</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">REFERENCE</td>
             <td>${esc(ref)}</td>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">SOURCE IP</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">SOURCE IP</td>
             <td>${esc(ip)}</td>
           </tr>
           <tr>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">DATE</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">DATE</td>
             <td>${esc(now)}</td>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">HONEYPOT</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">HONEYPOT</td>
             <td>${esc(hp)}</td>
           </tr>
           <tr>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">SESSION ID</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">SESSION ID</td>
             <td style="font-size:10px">${esc(s.session_id)}</td>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">ANALYST</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">ANALYST</td>
             <td>ForenHive AI Engine</td>
           </tr>
           <tr>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">CLASSIFICATION</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">CLASSIFICATION</td>
             <td><span style="color:#c62828;font-weight:700">${esc(lbl)}</span></td>
-            <td class="fh-meta-key" style="background:#f8f0f1;color:#8C1A2B;font-weight:700">STARTED</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">STARTED</td>
             <td>${s.started_at ? esc(new Date(s.started_at).toISOString().replace('T',' ').slice(0,19)) : '—'}</td>
           </tr>
         </tbody>
@@ -601,7 +599,7 @@
         This forensic report documents an attack session originating from <strong>${esc(ip)}</strong>
         ${country !== '—' ? `(${esc(country)}${city !== '—' ? ', ' + esc(city) : ''})` : ''}.
         The session was captured by the <strong>${esc(hp)}</strong> honeypot and assigned a risk score of
-        <strong style="color:${cls==='hi'?'#c62828':cls==='md'?'#8C1A2B':'#1565C0'}">${sc != null ? sc + '/100' : '—'}</strong>
+        <strong style="color:${cls==='hi'?'#c62828':cls==='md'?'#b45309':'#1d4ed8'}">${sc != null ? sc + '/100' : '—'}</strong>
         (${esc(lbl)}).
         ${tech !== '—' ? `The primary identified technique is <strong>${esc(tech)}</strong>.` : ''}
         The current kill chain stage is <strong>${esc(stage || phase)}</strong>.
@@ -619,7 +617,7 @@
       </div>
       <div class="fh-two-col">
         <div class="fh-kv-card">
-          <div style="background:#8C1A2B;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+          <div style="background:#374151;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
             Geolocation &amp; Infrastructure
           </div>
           ${[
@@ -637,7 +635,7 @@
             </div>`).join('')}
         </div>
         <div class="fh-kv-card">
-          <div style="background:#8C1A2B;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+          <div style="background:#374151;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
             Reputation &amp; Anonymization
           </div>
           ${[
@@ -702,12 +700,12 @@
         <tbody>${mitreRows}</tbody>
       </table>
       <div style="margin-top:10px">
-        <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:6px;letter-spacing:.06em">KILL CHAIN PROGRESSION</div>
-        <div style="display:flex;gap:0;border:1px solid #eedde0;border-radius:6px;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:10px">
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px;letter-spacing:.06em">KILL CHAIN PROGRESSION</div>
+        <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:10px">
           ${['Reconnaissance','Weaponization','Delivery','Exploitation','Installation','C2','Actions'].map((p,i) => {
             const phases = ['reconnaissance','weaponization','delivery','exploitation','installation','command-and-control','actions on objectives'];
             const active = (phase||'').toLowerCase().includes(p.toLowerCase().split(' ')[0]) || phases.indexOf(phases[i]) <= phases.findIndex(x => (phase||'').toLowerCase().includes(x.split('-')[0]));
-            return `<div style="flex:1;padding:6px 4px;text-align:center;background:${active?'#8C1A2B':'#f8f0f1'};color:${active?'#fff':'#999'};border-right:1px solid #eedde0">${esc(p.split(' ')[0])}</div>`;
+            return `<div style="flex:1;padding:6px 4px;text-align:center;background:${active?'#1e293b':'#f3f4f6'};color:${active?'#fff':'#999'};border-right:1px solid #e5e7eb">${esc(p.split(' ')[0])}</div>`;
           }).join('')}
         </div>
       </div>
@@ -763,25 +761,25 @@
         <strong>Behavioral Pattern:</strong> ${(sc||0) >= 70 ? 'Systematic, goal-oriented, automated tooling' : (sc||0) >= 40 ? 'Semi-structured attack, opportunistic escalation' : 'Opportunistic scanning, low sophistication'}
       </div>
       <div style="margin-bottom:10px">
-        <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:4px">ORGANIZATION SCORE</div>
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">ORGANIZATION SCORE</div>
         <div class="fh-risk-bar-wrap">
           <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#999;min-width:80px">Disorganized</div>
           <div class="fh-risk-bar-bg"><div class="fh-risk-bar-fill ${orgCls}" style="width:${orgPct}%"></div></div>
           <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#999;min-width:80px;text-align:right">Organized</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${orgCls==='hi'?'#c62828':orgCls==='md'?'#8C1A2B':'#1565C0'};min-width:30px;text-align:right">${orgPct}%</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${orgCls==='hi'?'#c62828':orgCls==='md'?'#b45309':'#1d4ed8'};min-width:30px;text-align:right">${orgPct}%</div>
         </div>
       </div>
 
       <div class="fh-two-col" style="margin-top:10px">
         <div>
-          <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:4px">EXECUTED COMMANDS</div>
+          <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">EXECUTED COMMANDS</div>
           <table class="fh-table">
             <thead><tr><th>Command</th><th>Count</th></tr></thead>
             <tbody>${cmdRows}</tbody>
           </table>
         </div>
         <div>
-          <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:4px">LOCARD TRACES</div>
+          <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">LOCARD TRACES</div>
           <table class="fh-table">
             <thead><tr><th>Type</th><th>Value</th></tr></thead>
             <tbody>
@@ -806,8 +804,8 @@
         <tbody>${signalRows}</tbody>
         <tfoot>
           <tr>
-            <td colspan="3" style="text-align:right;font-weight:700;color:#8C1A2B;background:#f8f0f1">TOTAL RISK SCORE</td>
-            <td style="font-weight:700;font-size:14px;color:${cls==='hi'?'#c62828':cls==='md'?'#8C1A2B':'#1565C0'};background:#f8f0f1">${sc != null ? sc : '—'}/100</td>
+            <td colspan="3" style="text-align:right;font-weight:700;color:#374151;background:#f3f4f6">TOTAL RISK SCORE</td>
+            <td style="font-weight:700;font-size:14px;color:${cls==='hi'?'#c62828':cls==='md'?'#b45309':'#1d4ed8'};background:#f3f4f6">${sc != null ? sc : '—'}/100</td>
           </tr>
         </tfoot>
       </table>
@@ -839,14 +837,14 @@
       </div>
       <div class="fh-cert">
         <div class="fh-cert-title">INTEGRITY CERTIFICATION</div>
-        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">${blobSha || '[ Generated upon PDF download ]'}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">[ Computed when saved via browser print ]</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Timestamp</span><span class="fh-cert-val">${esc(now)}</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Standard</span><span class="fh-cert-val">RFC 3161 · freeTSA.org</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Platform</span><span class="fh-cert-val">ForenHive SOC v1.0 · ISET Radès PFE 2025/2026</span></div>
       </div>
 
       <div style="margin-top:12px">
-        <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:6px">INDICATORS OF COMPROMISE (IOCs)</div>
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px">INDICATORS OF COMPROMISE (IOCs)</div>
         <table class="fh-table">
           <thead><tr><th>Type</th><th>Value</th><th>Context</th><th>Confidence</th></tr></thead>
           <tbody>${iocRows}</tbody>
@@ -854,12 +852,12 @@
       </div>
 
       <div style="margin-top:12px">
-        <div style="font-size:10px;font-weight:700;color:#8C1A2B;font-family:'JetBrains Mono',monospace;margin-bottom:6px">SOC RECOMMENDATIONS</div>
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px">SOC RECOMMENDATIONS</div>
         <table class="fh-table">
           <thead><tr><th>Priority</th><th>Action</th></tr></thead>
           <tbody>
             ${(sc||0) >= 70 ? `<tr><td><span style="color:#c62828;font-weight:700">IMMEDIATE</span></td><td>Block IP ${esc(ip)} on all perimeter firewalls and notify SOC team</td></tr>` : ''}
-            ${(sc||0) >= 40 ? `<tr><td><span style="color:#8C1A2B;font-weight:700">HIGH</span></td><td>Submit ${esc(ip)} to AbuseIPDB and cross-reference threat intelligence feeds</td></tr>` : ''}
+            ${(sc||0) >= 40 ? `<tr><td><span style="color:#374151;font-weight:700">HIGH</span></td><td>Submit ${esc(ip)} to AbuseIPDB and cross-reference threat intelligence feeds</td></tr>` : ''}
             <tr><td><span style="color:#1565C0;font-weight:700">MEDIUM</span></td><td>Review authentication logs for related sessions from same /24 subnet</td></tr>
             <tr><td><span style="color:#555">LOW</span></td><td>Archive session data per GDPR Article 6(1)(f) — 90 day retention policy</td></tr>
           </tbody>
@@ -893,8 +891,8 @@
           ['Country',       country],
           ['Generated',     now],
         ].map(([k,v]) => `
-          <div style="display:flex;gap:8px;padding:6px 10px;background:#f8f0f1;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
-            <span style="color:#8C1A2B;font-weight:700;min-width:90px">${esc(k)}</span>
+          <div style="display:flex;gap:8px;padding:6px 10px;background:#f3f4f6;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
+            <span style="color:#374151;font-weight:700;min-width:90px">${esc(k)}</span>
             <span style="color:#1a1a1a">${esc(String(v))}</span>
           </div>`).join('')}
       </div>
@@ -916,22 +914,21 @@
     </div>
     <div style="padding:40px 28px;display:flex;flex-direction:column;align-items:center;gap:24px">
       <div style="font-size:48px">🔐</div>
-      <div style="font-size:18px;font-weight:800;color:#8C1A2B;letter-spacing:.05em;text-transform:uppercase">Report Integrity Certified</div>
+      <div style="font-size:18px;font-weight:800;color:#374151;letter-spacing:.05em;text-transform:uppercase">Report Integrity Certified</div>
       <div class="fh-cert" style="width:100%;max-width:600px">
         <div class="fh-cert-title">DIGITAL CERTIFICATION DETAILS</div>
         <div class="fh-cert-row"><span class="fh-cert-key">Reference</span><span class="fh-cert-val">${esc(ref)}</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Session</span><span class="fh-cert-val">${esc(s.session_id)}</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Generated</span><span class="fh-cert-val">${esc(now)}</span></div>
-        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">${blobSha || '[ Available in certified PDF version ]'}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">[ Computed when saved via browser print-to-PDF ]</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">RFC 3161</span><span class="fh-cert-val">freeTSA.org trusted timestamp authority</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Platform</span><span class="fh-cert-val">ForenHive SOC v1.0</span></div>
         <div class="fh-cert-row"><span class="fh-cert-key">Institution</span><span class="fh-cert-val">ISET Radès · RSI 2025/2026 · PFE</span></div>
       </div>
       <div style="font-size:11px;color:#888;text-align:center;max-width:500px;line-height:1.7">
         This forensic report was automatically generated by the ForenHive platform.
-        The certified PDF version includes a cryptographic SHA-256 hash and RFC 3161
-        trusted timestamp for legal chain of custody purposes.
-        Click <strong>⬇ Download PDF</strong> to obtain the digitally certified version.
+        Click <strong>⬇ Download PDF</strong> to open a print dialog — choose
+        <em>"Save as PDF"</em> in your browser to export this full visual report.
       </div>
     </div>
     <div class="fh-page-footer">
@@ -945,8 +942,7 @@
 
   /* ── Generate preview ──────────────────────────────────── */
   async function generatePreview(sid) {
-    if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; blobSha = ''; }
-    $('#rep-preview').innerHTML = `
+$('#rep-preview').innerHTML = `
       <div class="rep-loading">
         <div class="rep-spinner"></div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:12px">Building forensic report…</div>
@@ -960,9 +956,7 @@
     // Fetch profile data (best-effort)
     let profile = null;
     try {
-      if (api.profilingByIp) {
-        profile = await api.profilingByIp(s.source_ip);
-      }
+      if (s.source_ip) profile = await api.profile(s.source_ip);
     } catch(_) {}
 
     // Fetch timeline (best-effort)
@@ -972,29 +966,9 @@
       timeline = (tlRes && tlRes.events) || [];
     } catch(_) {}
 
-    // Kick off PDF generation in background (for SHA + download)
-    try {
-      const tok = api.token();
-      const res = await fetch(
-        api.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/generate',
-        { method: 'POST', headers: tok ? { 'Authorization': 'Bearer ' + tok } : {} }
-      );
-      if (res.ok) {
-        const blob = await res.blob();
-        blobUrl  = URL.createObjectURL(blob);
-        blobSha  = res.headers.get('x-pdf-sha256') || res.headers.get('X-PDF-SHA256') || res.headers.get('x-forenhive-sha256') || '';
-        $('#rep-download').disabled = false;
-        if (blobSha) {
-          $('#rep-status').style.display = 'block';
-          $('#rep-status').innerHTML = `SHA-256: <span style="color:var(--gold);word-break:break-all">${esc(blobSha)}</span> · <span style="color:var(--blue2)">RFC 3161 · freeTSA.org</span>`;
-        }
-      }
-    } catch(_) {
-      $('#rep-download').disabled = false; // allow manual retry
-    }
-
-    $('#rep-reload').disabled = false;
-    $('#rep-preview').innerHTML = buildReport(s, profile, timeline);
+    $('#rep-reload').disabled    = false;
+    $('#rep-download').disabled  = false;
+    $('#rep-preview').innerHTML  = buildReport(s, profile, timeline);
   }
 
   /* ── Select session ────────────────────────────────────── */
@@ -1015,48 +989,53 @@
     generatePreview(sid);
   }
 
-  /* ── Download certified PDF ────────────────────────────── */
-  $('#rep-download').addEventListener('click', async () => {
+  /* ── Print HTML report as PDF ─────────────────────────── */
+  $('#rep-download').addEventListener('click', () => {
     if (!activeSid) return;
-    if (blobUrl) {
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = 'ForenHive-' + activeSid + '.pdf';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      const btn = $('#rep-download');
-      const orig = btn.innerHTML;
-      btn.innerHTML = '✓ Downloaded';
-      setTimeout(() => { btn.innerHTML = orig; }, 2000);
-    } else {
-      // Fallback: fetch again
-      const btn = $('#rep-download');
-      btn.disabled = true;
-      btn.innerHTML = '…';
-      try {
-        const tok = api.token();
-        const res = await fetch(
-          api.base + '/api/reports/forensic/' + encodeURIComponent(activeSid) + '/generate',
-          { method: 'POST', headers: tok ? { 'Authorization': 'Bearer ' + tok } : {} }
-        );
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const blob = await res.blob();
-        blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl; a.download = 'ForenHive-' + activeSid + '.pdf';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        btn.innerHTML = '✓ Downloaded';
-        setTimeout(() => { btn.innerHTML = '⬇ Download PDF'; btn.disabled = false; }, 2000);
-      } catch(e) {
-        btn.innerHTML = '⬇ Download PDF'; btn.disabled = false;
-        alert('PDF generation failed: ' + e.message);
-      }
-    }
+    const reportEl = $('#rep-preview').querySelector('.fh-report');
+    if (!reportEl) return;
+
+    const fonts = `
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">`;
+
+    // Collect all .fh-* CSS from the current page's style tags
+    const allCss = Array.from(document.styleSheets)
+      .flatMap(ss => { try { return Array.from(ss.cssRules).map(r => r.cssText); } catch(_){ return []; } })
+      .filter(r => r.includes('fh-') || r.includes('@keyframes') || r.includes('*'))
+      .join('\n');
+
+    const printWin = window.open('', '_blank', 'width=960,height=800');
+    printWin.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8">
+      <title>ForenHive — ${activeSid}</title>
+      ${fonts}
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #fff; }
+        ${allCss}
+        .fh-report { box-shadow: none; margin: 0; max-width: 100%; }
+        .fh-page + .fh-page { page-break-before: always; border-top: none; }
+        @media print {
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .fh-page { page-break-after: always; }
+          .fh-page:last-child { page-break-after: avoid; }
+        }
+      </style>
+    </head><body>
+      ${reportEl.outerHTML}
+      <script>
+        window.addEventListener('load', () => {
+          setTimeout(() => { window.print(); window.close(); }, 800);
+        });
+      <\/script>
+    </body></html>`);
+    printWin.document.close();
   });
 
   $('#rep-reload').addEventListener('click', () => { if (activeSid) generatePreview(activeSid); });
   $('#rep-refresh').addEventListener('click', loadList);
-
-  window.__pageCleanup = () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
 
   await loadList();
 })();

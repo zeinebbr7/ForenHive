@@ -2,84 +2,257 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px"> Access Control</div>
     <h2 class="page-title">Access <span>Control</span></h2>
-    <div class="page-sub">RBAC System — JWT tokens · Roles: <span class="mono">ADMIN</span>, <span class="mono">ANALYST</span>, <span class="mono">VIEWER</span>.</div>
+    <div class="page-sub">RBAC · JWT tokens · Roles: <span class="mono">ADMIN</span> — full platform, <span class="mono">ANALYST</span> — forensic + monitoring.</div>
   </div>
   <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="ac-refresh">↺ Refresh</button>
     <button class="btn btn-gold btn-sm" id="ac-add"> Add User</button>
   </div>
 </div>
 
-<div class="kpi-grid">
-  <div class="kpi g"><div class="kpi-label">Users</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta">registered accounts</div></div>
-  <div class="kpi r"><div class="kpi-label">Admins</div><div class="kpi-val" id="kpi-admin">—</div><div class="kpi-delta">full access</div></div>
-  <div class="kpi b"><div class="kpi-label">Analysts</div><div class="kpi-val" id="kpi-analyst">—</div><div class="kpi-delta">read + write</div></div>
-  <div class="kpi p"><div class="kpi-label">Viewers</div><div class="kpi-val" id="kpi-viewer">—</div><div class="kpi-delta">read only</div></div>
+<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi g"><div class="kpi-label">Total Users</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta">registered accounts</div></div>
+  <div class="kpi r"><div class="kpi-label">Admins</div><div class="kpi-val" id="kpi-admin">—</div><div class="kpi-delta">full platform access</div></div>
+  <div class="kpi b"><div class="kpi-label">Analysts</div><div class="kpi-val" id="kpi-analyst">—</div><div class="kpi-delta">forensic + monitoring</div></div>
 </div>
 
-<div class="card">
-  <div class="card-h">
-    <div class="card-t">Users</div>
-    <div class="card-sub">Account list · role · activity</div>
+<div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
+
+  <!-- Users table -->
+  <div class="card">
+    <div class="card-h">
+      <div>
+        <div class="card-t">Users</div>
+        <div class="card-sub">Account list · role · activity</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="ac-search" class="form-i" type="search" placeholder="Filter by email or name…" style="width:200px;padding:6px 10px;font-size:12px"/>
+        <select id="ac-filter-role" class="form-s" style="width:120px;padding:6px 10px;font-size:12px">
+          <option value="">All roles</option>
+          <option value="admin">Admin</option>
+          <option value="analyst">Analyst</option>
+        </select>
+      </div>
+    </div>
+    <table class="tbl">
+      <thead><tr>
+        <th>User</th><th>Role</th><th>Status</th><th>Created</th><th>Last Login</th>
+      </tr></thead>
+      <tbody id="ac-rows"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text3)">Loading…</td></tr></tbody>
+    </table>
+    <div id="ac-empty" style="display:none;padding:24px;text-align:center;color:var(--text3);font-size:12px;font-family:'Share Tech Mono',monospace">No users match the current filter.</div>
   </div>
-  <table class="tbl">
-    <thead><tr>
-      <th>Email</th><th>Role</th><th>Created</th><th>Last Login</th><th>Status</th>
-    </tr></thead>
-    <tbody id="ac-rows"><tr><td colspan="5">Loading…</td></tr></tbody>
-  </table>
+
+  <!-- Roles & Permissions matrix -->
+  <div class="card">
+    <div class="card-h">
+      <div class="card-t">Roles &amp; Permissions</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:0">
+      <div style="display:grid;grid-template-columns:1fr 40px 40px;gap:4px;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+        <span style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:1px">Feature</span>
+        <span style="font-size:9px;color:var(--red2);font-family:'Share Tech Mono',monospace;text-transform:uppercase;text-align:center">ADM</span>
+        <span style="font-size:9px;color:var(--gold);font-family:'Share Tech Mono',monospace;text-transform:uppercase;text-align:center">ANL</span>
+      </div>
+      <div id="perm-rows"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
 (async function(){
   const { fmt, esc, $ } = FH;
+  const me = api.user();
 
+  /* ── Permissions matrix ── */
+  const PERMS = [
+    ['Dashboard',          true,  true ],
+    ['Alerts / Incidents', true,  true ],
+    ['Sessions',           true,  true ],
+    ['Timeline',           true,  true ],
+    ['Reconstruction',     true,  true ],
+    ['Evidence Logs',      true,  true ],
+    ['Profiling',          true,  true ],
+    ['Geo Map',            true,  true ],
+    ['Statistics',         true,  true ],
+    ['Reporting',          true,  true ],
+    ['Health Check',       true,  false],
+    ['Honeypots',          true,  false],
+    ['Access Control',     true,  false],
+  ];
+  $('#perm-rows').innerHTML = PERMS.map(([label, adm, anl]) => `
+    <div style="display:grid;grid-template-columns:1fr 40px 40px;gap:4px;padding:7px 0;border-bottom:1px solid rgba(140,26,43,0.05)">
+      <span style="font-size:12px;color:var(--text2)">${esc(label)}</span>
+      <span style="text-align:center;font-size:13px">${adm ? '<span style="color:var(--blue2)">✓</span>' : '<span style="color:var(--border2)">—</span>'}</span>
+      <span style="text-align:center;font-size:13px">${anl ? '<span style="color:var(--blue2)">✓</span>' : '<span style="color:var(--border2)">—</span>'}</span>
+    </div>
+  `).join('');
+
+  /* ── Helpers ── */
   function roleBadge(r) {
     const role = (r || '').toLowerCase();
     if (role === 'admin')   return '<span class="badge red"> ADMIN</span>';
     if (role === 'analyst') return '<span class="badge gold"> ANALYST</span>';
-    if (role === 'viewer')  return '<span class="badge blue"> VIEWER</span>';
     return '<span class="badge gray">'+esc(role||'—')+'</span>';
+  }
+
+  function initials(u) {
+    if (u.full_name) return u.full_name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    return u.email[0].toUpperCase();
+  }
+
+  function avatarColor(role) {
+    return role === 'admin' ? 'var(--red2)' : 'var(--gold)';
+  }
+
+  /* ── Render ── */
+  let allItems = [];
+
+  function renderRows() {
+    const q     = ($('#ac-search').value || '').toLowerCase();
+    const role  = $('#ac-filter-role').value;
+    const items = allItems.filter(u => {
+      if (role && (u.role||'').toLowerCase() !== role) return false;
+      if (q && !u.email.toLowerCase().includes(q) && !(u.full_name||'').toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    if (!items.length) {
+      $('#ac-rows').innerHTML = '';
+      $('#ac-empty').style.display = 'block';
+      return;
+    }
+    $('#ac-empty').style.display = 'none';
+    $('#ac-rows').innerHTML = items.map(u => {
+      const lastLogin = (u.last_login_at || u.last_login);
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:32px;height:32px;border-radius:50%;background:${avatarColor(u.role)};color:#060810;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Rajdhani',sans-serif;flex-shrink:0">${esc(initials(u))}</div>
+            <div>
+              <div style="font-weight:600;font-size:13px;color:var(--text)">${esc(u.full_name || u.email.split('@')[0])}</div>
+              <div style="font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace">${esc(u.email)}</div>
+            </div>
+          </div>
+        </td>
+        <td>${roleBadge(u.role)}</td>
+        <td><span class="badge ${u.is_active===false?'gray':'teal'}">${u.is_active===false?'● Disabled':'● Active'}</span></td>
+        <td class="mono" style="font-size:11px;color:var(--text3)">${fmt.date(u.created_at)}</td>
+        <td class="mono" style="font-size:11px;color:var(--text3)">${lastLogin ? fmt.ago(lastLogin)+' ago' : '—'}</td>
+      </tr>`;
+    }).join('');
   }
 
   async function load() {
     try {
       const list = await api.users();
-      const items = Array.isArray(list) ? list : (list.items || []);
-      $('#kpi-total').textContent = items.length;
-      const counts = { admin:0, analyst:0, viewer:0 };
-      items.forEach(u => { const r=(u.role||'').toLowerCase(); if (counts[r]!=null) counts[r]++; });
+      allItems = Array.isArray(list) ? list : (list.items || []);
+
+      $('#kpi-total').textContent   = allItems.length;
+      const counts = { admin:0, analyst:0 };
+      allItems.forEach(u => { const r=(u.role||'').toLowerCase(); if (counts[r]!=null) counts[r]++; });
       $('#kpi-admin').textContent   = counts.admin;
       $('#kpi-analyst').textContent = counts.analyst;
-      $('#kpi-viewer').textContent  = counts.viewer;
 
-      if (!items.length) {
-        $('#ac-rows').innerHTML = `<tr><td colspan="5"><div class="alert info">No users — the admin bootstrap account is created on first backend startup.</div></td></tr>`;
+      if (!allItems.length) {
+        $('#ac-rows').innerHTML = `<tr><td colspan="5"><div class="alert info" style="margin:8px">No users — the admin bootstrap account is created on first backend startup.</div></td></tr>`;
         return;
       }
-      $('#ac-rows').innerHTML = items.map(u => `<tr>
-        <td><b>${esc(u.email)}</b></td>
-        <td>${roleBadge(u.role)}</td>
-        <td class="mono" style="font-size:11px">${fmt.date(u.created_at)}</td>
-        <td class="mono" style="font-size:11px">${(u.last_login_at || u.last_login) ? fmt.date(u.last_login_at || u.last_login) : '—'}</td>
-        <td><span class="badge ${u.is_active===false?'gray':'teal'}">${u.is_active===false?'Disabled':'Active'}</span></td>
-      </tr>`).join('');
+      renderRows();
     } catch (e) {
-      $('#ac-rows').innerHTML = `<tr><td colspan="5"><div class="alert err">${esc(e.message)} — user management requires the ADMIN role.</div></td></tr>`;
+      $('#ac-rows').innerHTML = `<tr><td colspan="5"><div class="alert err" style="margin:8px">${esc(e.message)} — user management requires the ADMIN role.</div></td></tr>`;
     }
   }
 
+  /* ── Filters ── */
+  $('#ac-search').addEventListener('input', renderRows);
+  $('#ac-filter-role').addEventListener('change', renderRows);
+  $('#ac-refresh').addEventListener('click', load);
+
+  /* ── Add User modal ── */
   $('#ac-add').addEventListener('click', () => {
-    if (typeof openModal !== 'function') {
-      alert('Create user — available via API: POST /api/auth/users');
-      return;
-    }
+    if (typeof openModal !== 'function') return;
     openModal(`
-      <div class="modal-h"><div class="card-t">New User</div><button class="drawer-close" onclick="closeModal()"></button></div>
-      <div class="alert info">Create user — backend endpoint to expose (POST /api/auth/users). Button present for demo.</div>
-      <div class="flex gap-8" style="justify-content:flex-end;margin-top:12px">
-        <button class="btn btn-gh btn-sm" onclick="closeModal()">Close</button>
+      <div class="modal-h">
+        <div class="card-t"> New User</div>
+        <button class="drawer-close" onclick="closeModal()">✕</button>
       </div>
+      <form id="create-user-form" autocomplete="off" style="display:flex;flex-direction:column;gap:14px">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Email *</label>
+            <input id="cu-email" type="email" required placeholder="analyst@forenhive.io" class="form-i" style="font-size:13px"/>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Full Name</label>
+            <input id="cu-name" type="text" placeholder="Jane Doe" class="form-i" style="font-size:13px"/>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Password *</label>
+            <input id="cu-pass" type="password" required placeholder="Min. 8 characters" class="form-i" style="font-size:13px"/>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Role</label>
+            <select id="cu-role" class="form-s" style="font-size:13px">
+              <option value="analyst">ANALYST</option>
+              <option value="admin">ADMIN</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="cu-role-hint" style="padding:10px 12px;border-radius:6px;background:rgba(26,79,187,0.08);border:1px solid rgba(26,79,187,0.2);font-size:11px;color:var(--blue2);font-family:'Share Tech Mono',monospace">
+          ANALYST — access to forensic analysis, monitoring and reporting modules.
+        </div>
+
+        <div id="cu-err" style="display:none"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px;border-top:1px solid var(--border)">
+          <button type="button" class="btn btn-gh btn-sm" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-gold btn-sm" id="cu-submit"> Create User</button>
+        </div>
+      </form>
     `);
+
+    const hints = {
+      analyst: 'ANALYST — access to forensic analysis, monitoring and reporting modules.',
+      admin:   'ADMIN — full platform access including honeypot management and access control.',
+    };
+    document.getElementById('cu-role').addEventListener('change', function() {
+      document.getElementById('cu-role-hint').textContent = hints[this.value] || '';
+    });
+
+    document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn   = document.getElementById('cu-submit');
+      const errEl = document.getElementById('cu-err');
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Creating…';
+      try {
+        await api._call('/api/auth/users', {
+          method: 'POST',
+          body: {
+            email:     document.getElementById('cu-email').value.trim(),
+            password:  document.getElementById('cu-pass').value,
+            full_name: document.getElementById('cu-name').value.trim() || null,
+            role:      document.getElementById('cu-role').value,
+          },
+        });
+        closeModal();
+        await load();
+      } catch(err) {
+        errEl.className = 'alert err';
+        errEl.textContent = err.message || 'Failed to create user.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = ' Create User';
+      }
+    });
   });
 
   await load();

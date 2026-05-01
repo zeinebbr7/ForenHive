@@ -3,36 +3,34 @@
 ═══════════════════════════════════════════════════════════════ */
 
 const ROLES = {
-  admin:   { label: 'Admin',   color: 'gold',    icon: '' },
-  analyst: { label: 'Analyst', color: 'blue',    icon: '' },
-  viewer:  { label: 'Viewer',  color: 'purple',  icon: '' },
-  user:    { label: 'User',    color: 'purple',  icon: '' },
+  admin:   { label: 'Admin',   color: 'gold', icon: '' },
+  analyst: { label: 'Analyst', color: 'blue', icon: '' },
 };
 
 const NAV_GROUPS = [
   { label: null, items: [
-    { id: 'dashboard', label: 'Home', icon: '', roles: ['admin','analyst','viewer','user'] },
+    { id: 'dashboard', label: 'Home', icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Monitoring', items: [
-    { id: 'alerts',   label: 'Alerts / Incidents', icon: '', roles: ['admin','analyst','viewer'] },
-    { id: 'sessions', label: 'Sessions',           icon: '', roles: ['admin','analyst','viewer'] },
-    { id: 'health',   label: 'Health Check',       icon: '', roles: ['admin','analyst'] },
+    { id: 'alerts',   label: 'Alerts / Incidents', icon: '', roles: ['admin','analyst'] },
+    { id: 'sessions', label: 'Sessions',           icon: '', roles: ['admin','analyst'] },
+    { id: 'health',   label: 'Health Check',       icon: '', roles: ['admin'] },
   ]},
   { label: 'Forensic Analysis', items: [
-    { id: 'timeline',       label: 'Timeline',              icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'timeline',       label: 'Timeline',              icon: '', roles: ['admin','analyst'] },
     { id: 'reconstruction', label: 'Attack Reconstruction', icon: '', roles: ['admin','analyst'] },
     { id: 'evidence',       label: 'Evidence Logs',         icon: '', roles: ['admin','analyst'] },
     { id: 'profiling',      label: 'Profiling',             icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [
-    { id: 'geomap', label: 'Geo Map',    icon: '', roles: ['admin','analyst','viewer'] },
-    { id: 'stats',  label: 'Statistics', icon: '', roles: ['admin','analyst','viewer'] },
+    { id: 'geomap', label: 'Geo Map',    icon: '', roles: ['admin','analyst'] },
+    { id: 'stats',  label: 'Statistics', icon: '', roles: ['admin','analyst'] },
   ]},
-  { label: null, items: [
-    { id: 'reporting', label: 'Reporting', icon: '', roles: ['admin','analyst','viewer','user'] },
+  { label: 'Reports', items: [
+    { id: 'reporting', label: 'Reporting', icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Honeypot Management', items: [
-    { id: 'honeypots', label: 'Honeypots', icon: '', roles: ['admin','analyst'] },
+    { id: 'honeypots', label: 'Honeypots', icon: '', roles: ['admin'] },
   ]},
   { label: 'Access Control', items: [
     { id: 'access', label: 'Access Control', icon: '', roles: ['admin'] },
@@ -229,7 +227,7 @@ async function initAppShell() {
   const user = Auth.require(); if (!user) return;
   try { const me = await api.me(); api.setSession(null, me); } catch(e) { /* offline — use cached */ }
   const cur = Auth.current();
-  const role = ROLES[cur.role] || ROLES.viewer;
+  const role = ROLES[cur.role] || ROLES.analyst;
   $('#sb-role').className = `sb-role ${cur.role}`;
   $('#sb-role').innerHTML = `<span class="sb-role-dot"></span>${role.label}`;
   $('#tb-avatar').textContent = role.icon;
