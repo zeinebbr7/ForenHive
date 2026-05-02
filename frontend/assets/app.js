@@ -9,12 +9,11 @@ const ROLES = {
 
 const NAV_GROUPS = [
   { label: null, items: [
-    { id: 'dashboard', label: 'Home', icon: '', roles: ['admin','analyst'] },
+    { id: 'stats', label: 'Dashboard', icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Monitoring', items: [
-    { id: 'alerts',   label: 'Alerts / Incidents', icon: '', roles: ['admin','analyst'] },
-    { id: 'sessions', label: 'Sessions',           icon: '', roles: ['admin','analyst'] },
-    { id: 'health',   label: 'Health Check',       icon: '', roles: ['admin'] },
+    { id: 'alerts', label: 'Alerts / Incidents', icon: '', roles: ['admin','analyst'] },
+    { id: 'health', label: 'Health Check',       icon: '', roles: ['admin'] },
   ]},
   { label: 'Forensic Analysis', items: [
     { id: 'timeline',       label: 'Timeline',              icon: '', roles: ['admin','analyst'] },
@@ -23,8 +22,7 @@ const NAV_GROUPS = [
     { id: 'profiling',      label: 'Profiling',             icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [
-    { id: 'geomap', label: 'Geo Map',    icon: '', roles: ['admin','analyst'] },
-    { id: 'stats',  label: 'Statistics', icon: '', roles: ['admin','analyst'] },
+    { id: 'geomap', label: 'Geo Map', icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Reports', items: [
     { id: 'reporting', label: 'Reporting', icon: '', roles: ['admin','analyst'] },
@@ -160,11 +158,11 @@ const Router = {
   pages: ['dashboard','alerts','sessions','health','timeline','reconstruction','evidence','profiling','geomap','stats','reporting','honeypots','access','settings','config'],
   current: null,
   async go(page, push = true) {
-    if (!this.pages.includes(page)) page = 'dashboard';
+    if (!this.pages.includes(page)) page = 'stats';
     const user = Auth.current();
     if (!user) { Auth.require(); return; }
     const nav = NAV.find(n => n.id === page);
-    if (!nav || !nav.roles.includes(user.role)) page = 'dashboard';
+    if (!nav || !nav.roles.includes(user.role)) page = 'stats';
     if (push) history.replaceState({page}, '', '#'+page);
     const content = $('#content');
     content.classList.remove('visible');
@@ -191,8 +189,8 @@ const Router = {
     }
   },
   init() {
-    window.addEventListener('hashchange', () => this.go(location.hash.slice(1) || 'dashboard', false));
-    const start = location.hash.slice(1) || 'dashboard';
+    window.addEventListener('hashchange', () => this.go(location.hash.slice(1) || 'stats', false));
+    const start = location.hash.slice(1) || 'stats';
     this.go(start, true);
   }
 };

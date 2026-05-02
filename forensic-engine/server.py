@@ -39,7 +39,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("forensic-server")
 
-INTERVAL_MINUTES = int(os.environ.get("ENGINE_INTERVAL_MINUTES", "10"))
+INTERVAL_MINUTES = int(os.environ.get("ENGINE_INTERVAL_MINUTES", "1440"))  # default: 24 h
 
 # Prevents overlapping engine runs when a cycle takes longer than the interval
 _engine_lock = threading.Lock()
@@ -209,6 +209,30 @@ def mitre_map(req: MitreRequest) -> Dict[str, Any]:
     except Exception as exc:
         log.warning("mitre_map failed: %s", exc)
         return {"techniques": []}
+
+
+# ── Manual trigger ───────────────────────────────────────────────────────────
+
+@app.post("/run-now")
+def run_now() -> Dict[str, Any]:
+    """Trigger an immediate engine run. Returns 409 if a run is already in progress."""
+    if _engine_lock.locked():
+        raise HTTPException(status_code=409, detail="Engine run already in progress")
+
+    def _run():
+        with _engine_lock:
+            log.info("=== Forensic engine run START (manual trigger) ===")
+            try:
+                subprocess.run(["python", "engine.py"], check=False, timeout=3600)
+                log.info("=== Forensic engine run DONE (manual trigger) ===")
+            except subprocess.TimeoutExpired:
+                log.error("Manual engine run timed out after 1 h.")
+            except Exception as exc:
+                log.error("Manual engine run error: %s", exc)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return {"triggered": True, "message": "Forensic engine run started"}
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

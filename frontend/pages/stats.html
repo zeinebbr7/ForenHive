@@ -1,7 +1,7 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px"> Analytics</div>
-    <h2 class="page-title">Attack <span>Statistics</span></h2>
+    <div class="section-tag" style="margin-bottom:8px"> SOC Platform</div>
+    <h2 class="page-title">Dash<span>board</span></h2>
     <div class="page-sub">Live data from Elasticsearch · interactive charts powered by Recharts.</div>
   </div>
   <div class="page-actions" style="gap:8px">
@@ -11,6 +11,7 @@
       <option value="dionaea"> Dionaea</option>
       <option value="galah"> Galah</option>
     </select>
+    <button class="btn btn-gh btn-sm" id="st-run-engine" title="Trigger an immediate C3 forensic analysis run"> Run Analysis</button>
     <span id="st-badge" class="badge blue" style="font-size:12px">Loading…</span>
   </div>
 </div>
@@ -415,5 +416,25 @@
   root.render(h(StatsApp, null));
 
   window.__pageCleanup = () => root.unmount();
+
+  const runBtn = document.getElementById('st-run-engine');
+  if (runBtn) {
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true; runBtn.innerHTML = '⟳ Starting…';
+      try {
+        const res = await api.forensicRunNow();
+        if (res && res.triggered) {
+          runBtn.innerHTML = ' Running…';
+          setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 8000);
+        } else {
+          runBtn.innerHTML = '⚠ Already running';
+          setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 3000);
+        }
+      } catch (e) {
+        runBtn.innerHTML = '⚠ Already running';
+        setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 3000);
+      }
+    });
+  }
 })();
 </script>

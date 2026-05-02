@@ -21,7 +21,6 @@
       <div class="grid-2">
         <div class="form-g"><label class="form-l">Critical score threshold</label><input class="form-i" type="number" min="0" max="100" id="a-threshold"></div>
         <div class="form-g"><label class="form-l">Recipient email</label><input class="form-i" type="email" id="a-email"></div>
-        <div class="form-g" style="grid-column:1/-1"><label class="form-l">Slack Webhook</label><input class="form-i" id="a-slack" placeholder="https://hooks.slack.com/services/…"></div>
       </div>
       <div class="flex items-c" style="justify-content:space-between;margin-top:14px">
         <div><b>Enable alerting</b><div class="text-3 mono" style="font-size:11px">triggers backend notifications</div></div>
@@ -86,8 +85,7 @@
     const cfg = await api.alertConfig();
     $('#alert-status').innerHTML = `<div class="alert ok"> Alert config loaded from backend</div>`;
     $('#a-threshold').value = cfg.threshold ?? cfg.critical_threshold ?? 80;
-    $('#a-email').value = cfg.email || cfg.notify_email || '';
-    $('#a-slack').value = cfg.slack_webhook || cfg.webhook || '';
+    $('#a-email').value = (cfg.recipients && cfg.recipients[0]) || cfg.email || cfg.notify_email || '';
     $('#a-enabled').checked = cfg.enabled !== false;
   } catch (e) {
     $('#alert-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
@@ -96,10 +94,10 @@
   $('#a-save').addEventListener('click', async () => {
     const btn = $('#a-save'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '⟳ Saving…';
     try {
+      const emailVal = $('#a-email').value.trim();
       await api.setAlertConfig({
         threshold: parseInt($('#a-threshold').value, 10),
-        email: $('#a-email').value.trim(),
-        slack_webhook: $('#a-slack').value.trim(),
+        recipients: emailVal ? [emailVal] : [],
         enabled: $('#a-enabled').checked,
       });
       btn.innerHTML = ' Saved'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);

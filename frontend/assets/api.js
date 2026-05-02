@@ -107,6 +107,7 @@ const api = {
     const qs = new URLSearchParams(params).toString();
     return this._call('/api/forensics/yara' + (qs ? '?' + qs : ''));
   },
+  forensicRunNow() { return this._call('/api/forensics/run', { method: 'POST' }); },
 
   /* ─── reports ─── */
   reports(params = {}) {

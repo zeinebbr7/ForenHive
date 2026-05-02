@@ -145,3 +145,9 @@ async def yara_scan(sha256: str) -> YaraScanResponse:
 @router.get("/yara")
 async def yara_dionaea_scan(limit: int = Query(50, ge=1, le=500)):
     return {"results": await get_forensic_engine().scan_all_dionaea(limit=limit)}
+
+
+@router.post("/run")
+async def trigger_engine_run():
+    """Trigger an immediate forensic engine run (non-blocking)."""
+    return await get_forensic_engine().run_now()
