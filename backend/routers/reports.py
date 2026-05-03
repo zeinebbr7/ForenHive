@@ -211,7 +211,6 @@ async def _build_forensic_context(session_id: str) -> dict:
             evidence = "wget/curl capturé par Dionaea"
         mitre_rows.append({"id": t_id, "technique": name, "tactic": tactic, "confidence": "100%", "evidence": evidence})
 
-    # Add from commands if not already present
     for c in cmds:
         inp = c.get("input", "")
         if any(x in inp for x in ["wget", "curl", "tftp"]) and "T1105" not in mitre_seen:
@@ -234,14 +233,14 @@ async def _build_forensic_context(session_id: str) -> dict:
     # ── Kill chain stage ──────────────────────────────────
     kc_reached = 0
     if logins:
-        kc_reached = max(kc_reached, 3)  # exploitation
+        kc_reached = max(kc_reached, 3)
     if auth_success:
         kc_reached = max(kc_reached, 3)
     if cmds:
-        kc_reached = max(kc_reached, 4)  # installation
+        kc_reached = max(kc_reached, 4)
     for c in cmds:
         if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
-            kc_reached = max(kc_reached, 5)  # C2
+            kc_reached = max(kc_reached, 5)
 
     # ── Score signals ──────────────────────────────────────
     score_signals = _build_score_signals(profile_dict, detail)
@@ -274,9 +273,28 @@ async def _build_forensic_context(session_id: str) -> dict:
         "kc_stages_labels": _KC_LABELS,
         "org_score_pct": org_score_pct,
         "auth_success": auth_success,
-        # Jinja2 helper
         "enumerate": enumerate,
     }
+
+
+# ─── Coarse kill-chain helper (needed before router routes) ──────────────────
+
+def _phase_from_techniques(mitre: List[str]) -> str | None:
+    """Coarse kill-chain phase from MITRE technique prefixes."""
+    if not mitre:
+        return None
+    pfx = {t[:5] for t in mitre if isinstance(t, str)}
+    if pfx & {"T1595", "T1590", "T1589"}: return "reconnaissance"
+    if pfx & {"T1587", "T1588"}:          return "weaponization"
+    if pfx & {"T1566"}:                   return "delivery"
+    if pfx & {"T1190", "T1110", "T1203"}: return "exploitation"
+    if pfx & {"T1547", "T1543"}:          return "installation"
+    if pfx & {"T1071", "T1095"}:          return "command_and_control"
+    if pfx & {"T1021", "T1550"}:          return "lateral_movement"
+    return "actions_on_objectives"
+
+
+# ─── Router ───────────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 limiter = Limiter(key_func=get_remote_address)
@@ -302,63 +320,13 @@ async def list_reports(limit: int = Query(100, ge=1, le=500)) -> ReportListRespo
     return ReportListResponse(total=total, items=items)
 
 
-@router.get("/{report_id}/download")
-async def download_report(report_id: str):
-    svc = get_reports()
-    meta = await svc.get_meta(report_id)
-    if not meta:
-        raise HTTPException(status_code=404, detail="report not found")
-    try:
-        path = svc.resolve_pdf_path(meta)
-    except FileNotFoundError:
-        raise HTTPException(status_code=410, detail="report file missing on disk")
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="report path rejected")
-    return FileResponse(
-        path=str(path),
-        media_type="application/pdf",
-        filename=f"{meta.id}.pdf",
-        headers={"X-ForenHive-SHA256": meta.sha256},
-    )
-
-
-@router.post("/{report_id}/stix")
-async def export_stix(report_id: str):
-    bundle = await get_reports().stix_for(report_id)
-    if bundle is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return JSONResponse(
-        bundle,
-        headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
-    )
-
-
-# ─── Forensic per-session reports (Sprint 4 surface used by the SPA) ────────
-
-
-def _phase_from_techniques(mitre: List[str]) -> str | None:
-    """Coarse kill-chain phase from MITRE technique prefixes."""
-    if not mitre:
-        return None
-    pfx = {t[:5] for t in mitre if isinstance(t, str)}
-    if pfx & {"T1595", "T1590", "T1589"}: return "reconnaissance"
-    if pfx & {"T1587", "T1588"}:          return "weaponization"
-    if pfx & {"T1566"}:                   return "delivery"
-    if pfx & {"T1190", "T1110", "T1203"}: return "exploitation"
-    if pfx & {"T1547", "T1543"}:          return "installation"
-    if pfx & {"T1071", "T1095"}:          return "command_and_control"
-    if pfx & {"T1021", "T1550"}:          return "lateral_movement"
-    return "actions_on_objectives"
-
+# ─── Routes statiques forensic — AVANT les routes dynamiques /{report_id} ────
 
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
     """List sessions in the flat shape the dashboard reconstruction/reporting
     pages expect: session_id, source_ip, honeypot_type, risk_score,
     kill_chain_phase, primary_technique, started_at.
-
-    Backed by /api/sessions data. When the forensic engine has not produced
-    enriched fields yet, sensible defaults are used.
     """
     rows = await get_es().sessions(limit=limit, active_only=False)
     out: List[Dict[str, Any]] = []
@@ -381,7 +349,7 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
 
 @router.post("/forensic/{session_id}/generate")
 async def forensic_generate(request: Request, session_id: str):
-    """Generate and download a forensic PDF for one session using the rich forensic template."""
+    """Generate and download a forensic PDF for one session."""
     try:
         from weasyprint import HTML as WeasyprintHTML
     except ImportError:
@@ -436,7 +404,7 @@ async def forensic_generate(request: Request, session_id: str):
 
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
-    """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""
+    """Full forensic HTML dossier for a single session."""
     detail = await get_es().session_detail(session_id)
     if not detail:
         raise HTTPException(status_code=404, detail="session not found")
@@ -457,3 +425,36 @@ async def forensic_preview(session_id: str):
         log.exception("template render failed")
         raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
     return HTMLResponse(html_body)
+
+
+# ─── Routes dynamiques /{report_id} — APRÈS les routes statiques ─────────────
+
+@router.get("/{report_id}/download")
+async def download_report(report_id: str):
+    svc = get_reports()
+    meta = await svc.get_meta(report_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="report not found")
+    try:
+        path = svc.resolve_pdf_path(meta)
+    except FileNotFoundError:
+        raise HTTPException(status_code=410, detail="report file missing on disk")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="report path rejected")
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"{meta.id}.pdf",
+        headers={"X-ForenHive-SHA256": meta.sha256},
+    )
+
+
+@router.post("/{report_id}/stix")
+async def export_stix(report_id: str):
+    bundle = await get_reports().stix_for(report_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return JSONResponse(
+        bundle,
+        headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
+    )

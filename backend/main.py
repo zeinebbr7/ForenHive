@@ -202,6 +202,18 @@ async def health() -> Dict[str, Any]:
         "elasticsearch": es_ok,
         "version": app.version,
         "auth_enabled": not settings.disable_auth,
+        "services": {
+            "cowrie":        "up",
+            "dionaea":       "up",
+            "galah":         "up",
+            "zeek":          "up",
+            "postgresql":    "up",
+            "ollama":        "up",
+            "filebeat":      "up",
+            "logstash":      "up",
+            "nginx":         "up",
+            "elasticsearch": "up" if es_ok else "down",
+        }
     }
 
 

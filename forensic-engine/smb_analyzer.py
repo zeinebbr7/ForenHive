@@ -9,6 +9,7 @@ Extracts and correlates SMB honeypot evidence from:
 Produces one "suspect profile" per source IP, enriches each with
 IPEnricher (GeoIP + AbuseIPDB + Shodan InternetDB), and indexes
 results to Elasticsearch index "forenhive-smb-analysis".
+Also persists profiles to PostgreSQL forensic_sessions table.
 
 Usage (inside forensic-engine container):
     python smb_analyzer.py [--days N] [--no-enrich] [--no-es]
@@ -25,6 +26,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import psycopg2
+import psycopg2.extras
 from elasticsearch import Elasticsearch
 
 import config
@@ -76,6 +79,125 @@ SRVSVC_OPS = {
     32: ("NetPathCompare",        "MS08-067"),
     34: ("NetNameCanonicalize",   ""),
 }
+
+
+# ── PostgreSQL helper ──────────────────────────────────────────────────────────
+
+def _pg_conn():
+    return psycopg2.connect(
+        host=config.PG_HOST,
+        port=config.PG_PORT,
+        dbname=config.PG_DB,
+        user=config.PG_USER,
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", ""),
+    )
+
+
+def save_profiles_to_pg(profiles: list) -> int:
+    """
+    Persist SMB suspect profiles to PostgreSQL forensic_sessions table.
+    Uses session_id = 'smb-{source_ip}' to avoid conflicts with
+    Cowrie/Dionaea/Galah sessions.
+    Returns the number of rows upserted.
+    """
+    if not profiles:
+        return 0
+
+    saved = 0
+    try:
+        with _pg_conn() as conn:
+            with conn.cursor() as cur:
+                for p in profiles:
+                    ip         = p["source_ip"]
+                    session_id = f"smb-{ip}"
+                    risk_score = p["risk"]["score"]
+                    first_seen = p.get("first_seen")
+                    last_seen  = p.get("last_seen")
+
+                    # Build MITRE techniques from SMB activity
+                    mitre = []
+                    smb   = p.get("smb_activity", {})
+                    if smb.get("share_enumerated"):
+                        mitre.append("T1021.002")   # SMB/Windows Admin Shares
+                    if smb.get("epmapper_prescan", 0) > 0:
+                        mitre.append("T1046")        # Network Service Discovery
+                    ops = smb.get("dcerpc_operations", [])
+                    if any(o.get("advisory") for o in ops):
+                        mitre.append("T1210")        # Exploitation of Remote Services
+                    if smb.get("file_transfers", {}).get("count", 0) > 0:
+                        mitre.append("T1105")        # Ingress Tool Transfer
+                    ntlm_attempts = p.get("ntlm_auth", {}).get("attempts", 0)
+                    if ntlm_attempts > 0:
+                        mitre.append("T1110.001")    # Brute Force: Password Guessing
+
+                    # Kill chain phase
+                    if "T1210" in mitre or "T1105" in mitre:
+                        kill_chain_phase = "exploitation"
+                        kill_chain_stage = 4
+                    elif "T1021.002" in mitre:
+                        kill_chain_phase = "lateral_movement"
+                        kill_chain_stage = 7
+                    elif "T1046" in mitre:
+                        kill_chain_phase = "reconnaissance"
+                        kill_chain_stage = 1
+                    else:
+                        kill_chain_phase = "reconnaissance"
+                        kill_chain_stage = 1
+
+                    primary_technique = mitre[0] if mitre else "T1021.002"
+
+                    enrichment_data = {
+                        **p.get("enrichment", {}),
+                        "smb_activity":   smb,
+                        "ntlm_auth":      p.get("ntlm_auth", {}),
+                        "risk_indicators": p["risk"]["indicators"],
+                        "risk_level":     p["risk"]["level"],
+                        "source":         "smb_analyzer",
+                    }
+
+                    cur.execute(
+                        """
+                        INSERT INTO forensic_sessions
+                            (session_id, honeypot_type, source_ip,
+                             started_at, ended_at,
+                             risk_score, mitre_techniques, enrichment_data,
+                             kill_chain_phase, kill_chain_stage,
+                             primary_technique, forensic_narrative,
+                             created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                        ON CONFLICT (session_id) DO UPDATE
+                            SET risk_score         = EXCLUDED.risk_score,
+                                enrichment_data    = EXCLUDED.enrichment_data,
+                                mitre_techniques   = EXCLUDED.mitre_techniques,
+                                kill_chain_phase   = EXCLUDED.kill_chain_phase,
+                                kill_chain_stage   = EXCLUDED.kill_chain_stage,
+                                primary_technique  = EXCLUDED.primary_technique,
+                                forensic_narrative = EXCLUDED.forensic_narrative,
+                                updated_at         = NOW()
+                        """,
+                        (
+                            session_id,
+                            "dionaea",
+                            ip,
+                            first_seen,
+                            last_seen,
+                            risk_score,
+                            json.dumps(mitre),
+                            json.dumps(enrichment_data),
+                            kill_chain_phase,
+                            kill_chain_stage,
+                            primary_technique,
+                            f"SMB forensic analysis: {', '.join(p['risk']['indicators'][:2]) or 'no indicators'}",
+                        ),
+                    )
+                    saved += 1
+            conn.commit()
+        log.info(f"PostgreSQL: {saved}/{len(profiles)} SMB profiles saved to forensic_sessions")
+    except Exception as e:
+        log.warning(f"PostgreSQL SMB persistence failed: {e}")
+
+    return saved
+
 
 # ── Step 1 — Dionaea SQLite extraction ─────────────────────────────────────────
 
@@ -303,8 +425,8 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
 
 # ── Step 3 — Risk scoring ──────────────────────────────────────────────────────
 
-def _compute_risk(smb: dict, ntlm: dict, enrichment: dict) -> tuple[int, list]:
-    """Returns (score 0-100, threat_indicators list)."""
+def _compute_risk(smb: dict, ntlm: dict, enrichment: dict) -> tuple:
+    """Returns (score 0-100, risk_level, threat_indicators list)."""
     score      = 0
     indicators = []
 
@@ -478,6 +600,9 @@ def index_profiles(es: Elasticsearch, profiles: list):
         log.warning(f"ES bulk errors: {errors}")
     log.info(f"Indexed {success}/{len(profiles)} profiles → {ES_INDEX}")
 
+    # ── Also persist to PostgreSQL forensic_sessions ──────────────────────────
+    save_profiles_to_pg(profiles)
+
 
 # ── Step 6 — Pretty printer ────────────────────────────────────────────────────
 
@@ -567,6 +692,8 @@ def main():
                         help="Skip IP enrichment (faster, offline)")
     parser.add_argument("--no-es",     action="store_true",
                         help="Skip Elasticsearch indexing")
+    parser.add_argument("--no-pg",     action="store_true",
+                        help="Skip PostgreSQL persistence")
     parser.add_argument("--json-out",  metavar="FILE",
                         help="Write full JSON report to FILE")
     args = parser.parse_args()
@@ -609,13 +736,19 @@ def main():
         try:
             es = Elasticsearch(config.ES_URL, request_timeout=30)
             if es.ping():
-                index_profiles(es, profiles)
+                index_profiles(es, profiles)   # index_profiles now also calls save_profiles_to_pg
             else:
-                log.warning(f"Elasticsearch unreachable at {config.ES_URL} — skipping indexing")
+                log.warning(f"Elasticsearch unreachable at {config.ES_URL} — skipping ES indexing")
+                if not args.no_pg:
+                    save_profiles_to_pg(profiles)
         except Exception as e:
             log.warning(f"ES indexing failed: {e}")
+            if not args.no_pg:
+                save_profiles_to_pg(profiles)
     else:
         log.info("ES indexing skipped (--no-es)")
+        if not args.no_pg:
+            save_profiles_to_pg(profiles)
 
     # ── 6. Print report ───────────────────────────────────────────────────────
     print_report(profiles)

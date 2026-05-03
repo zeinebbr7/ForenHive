@@ -284,4 +284,3 @@ volumes:
     name: llm_ollama-models
   galah-logs:
   zeek-spool:
-  reports-data:

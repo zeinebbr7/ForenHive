@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     pg_password: str = ""
 
     # Elasticsearch
-    es_host: str = "http://elasticsearch:9200"
+    es_host: str = "http://forenhive-elasticsearch:9200"
     es_index_cowrie: str = "cowrie-*"
     es_index_dionaea: str = "dionaea-*"
     es_index_galah: str = "galah-*"
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     es_index_reports: str = "forenhive-reports"
     es_request_timeout: int = 30
 
-    ollama_host: str = "http://ollama:11434"
+    ollama_host: str = "http://forenhive-ollama:11434"
     ollama_model: str = "mistral:7b"
     ollama_timeout: int = 30
     ollama_cache_ttl: int = 3600

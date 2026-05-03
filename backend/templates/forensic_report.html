@@ -881,6 +881,19 @@ body {
           {% for h in profile.get('ioc_hashes', [])[:3] %}
           <tr><th>SHA-256</th><td class="mono" style="font-size:7.5pt;word-break:break-all;">{{ h }}</td></tr>
           {% endfor %}
+          {% if profile.get('vt_results') %}
+          {% for sha, vt in profile.get('vt_results', {}).items() %}
+          <tr>
+            <th>VirusTotal</th>
+            <td>
+              <span style="color:{% if vt.get('malicious', 0) > 0 %}#C62828{% else %}#2E7D32{% endif %}">
+                {{ vt.get('malicious', 0) }} moteur(s) détectent ce fichier comme malveillant
+              </span>
+              {% if vt.get('names') %} · {{ vt.get('names')[0] }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% endif %}
         </table>
         {% endif %}
       </div>

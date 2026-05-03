@@ -140,5 +140,13 @@ async def build_profile(ip: str) -> AttackerProfile:
         sessions=list(sessions.values())[:25],
     )
 
+    # ── VirusTotal lookup pour les hashes capturés ────────────────────────────
+    vt_results = {}
+    for sha in list(set(ioc_hashes))[:5]:  # max 5 pour éviter rate limit
+        vt = await enrichment.virustotal_hash(sha)
+        if vt:
+            vt_results[sha] = vt
+    profile.vt_results = vt_results
+
     profile.mistral_analysis = await get_ollama().analyze_profile(profile.model_dump())
     return profile

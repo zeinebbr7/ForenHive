@@ -46,20 +46,29 @@
 
   async function load() {
     $('#hp-grid').innerHTML = `<div class="alert info">Loading…</div>`;
-    let attacks = { items: [] }, health = {};
-    try { attacks = await api.attacks({ page_size: 500 }); } catch(e){}
-    try { health  = await api.health(); } catch(e){}
+    let health = {};
+    try { health = await api.health(); } catch(e){}
 
-    const items = (attacks && attacks.items) || [];
     const stats = {};
     HONEYPOTS.forEach(h => stats[h.id] = { count: 0, last: 0 });
-    items.forEach(ev => {
-      const hp = ev.honeypot || (ev.raw && ev.raw['honeypot.type']);
-      if (!hp || !stats[hp]) return;
-      stats[hp].count++;
-      const t = +new Date(ev.timestamp || (ev.raw && ev.raw['@timestamp']) || 0);
-      if (t > stats[hp].last) stats[hp].last = t;
-    });
+    try {
+      const [r_cowrie, r_dionaea, r_galah] = await Promise.all([
+        api.attacks({ page_size: 1, honeypot: 'cowrie'  }).catch(() => ({ total: 0, items: [] })),
+        api.attacks({ page_size: 1, honeypot: 'dionaea' }).catch(() => ({ total: 0, items: [] })),
+        api.attacks({ page_size: 1, honeypot: 'galah'   }).catch(() => ({ total: 0, items: [] })),
+      ]);
+      stats['cowrie'].count  = r_cowrie.total  || 0;
+      stats['dionaea'].count = r_dionaea.total || 0;
+      stats['galah'].count   = r_galah.total   || 0;
+      // last event timestamp
+      const setLast = (r, hp) => {
+        const ev = r.items && r.items[0];
+        if (ev) stats[hp].last = +new Date(ev.timestamp || 0);
+      };
+      setLast(r_cowrie,  'cowrie');
+      setLast(r_dionaea, 'dionaea');
+      setLast(r_galah,   'galah');
+    } catch(e){ console.error('honeypot stats failed', e); }
 
     const services = (health && health.services) || {};
     $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
