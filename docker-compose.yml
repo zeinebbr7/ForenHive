@@ -156,12 +156,14 @@ services:
     build: ./forensic-engine
     container_name: forenhive-forensic-engine
     restart: unless-stopped
+    ports:
+      - "8001:8001"
     volumes:
       - dionaea-malware:/opt/dionaea/var/lib/dionaea:ro
       - zeek-logs:/usr/local/zeek/logs:ro
       - ./forensic-engine/yara_rules:/app/yara_rules:ro
-      - /usr/share/logstash/vendor/bundle/jruby/3.1.0/gems/logstash-filter-geoip-7.3.4-java/vendor/GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro
-      - /usr/share/logstash/vendor/bundle/jruby/3.1.0/gems/logstash-filter-geoip-7.3.4-java/vendor/GeoLite2-ASN.mmdb:/app/GeoLite2-ASN.mmdb:ro
+      - ./geoip/GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro
+      - ./geoip/GeoLite2-ASN.mmdb:/app/GeoLite2-ASN.mmdb:ro
     networks:
       - backend-net
     env_file:
@@ -180,28 +182,21 @@ services:
       - PG_PASSWORD=${POSTGRES_PASSWORD}
       - ABUSEIPDB_KEY=${ABUSEIPDB_API_KEY}
       - VIRUSTOTAL_KEY=${VIRUSTOTAL_API_KEY}
-    ports:
-      - "8001:8001"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+      - ENGINE_INTERVAL_MINUTES=1440
     depends_on:
       - elasticsearch
       - postgresql
 
-  # ── BACKEND API ──────────────────────────────────────
-  backend:
+  # ── BACKEND API (FastAPI, async SQLAlchemy + ES) ─────
+  forenhive-backend:
     build: ./backend
     container_name: forenhive-backend
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - ES_HOST=http://elasticsearch:9200
-      - OLLAMA_HOST=http://ollama:11434
+      - ES_HOST=http://forenhive-elasticsearch:9200
+      - OLLAMA_HOST=http://forenhive-ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b}
       - REPORTS_DIR=/reports
       - PG_HOST=forenhive-postgresql
@@ -211,9 +206,9 @@ services:
       - PG_PASSWORD=${POSTGRES_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@forenhive.local}
-      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2026}
       - FORENSIC_ENGINE_URL=http://forensic-engine:8001
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100:9000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100,http://172.16.1.100:9000,http://172.16.1.100:3000}
     ports:
       - "8000:8000"
     volumes:
@@ -221,8 +216,8 @@ services:
     networks:
       - backend-net
     depends_on:
-      - elasticsearch
       - postgresql
+      - elasticsearch
       - ollama
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
@@ -230,18 +225,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-
-  # ── FRONTEND ─────────────────────────────────────────
-  frontend:
-    build: ./frontend
-    container_name: forenhive-frontend
-    restart: unless-stopped
-    ports:
-      - "9000:80"
-    networks:
-      - backend-net
-    depends_on:
-      - backend
 
   # ── LLM ──────────────────────────────────────────────
   ollama:
@@ -254,6 +237,21 @@ services:
       - "11434:11434"
     networks:
       - backend-net
+
+  # ── FRONTEND (nginx serving SPA) ─────────────────────
+  forenhive-frontend:
+    image: nginx:alpine
+    container_name: forenhive-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - backend-net
+    depends_on:
+      - forenhive-backend
 
 # ── RÉSEAUX ──────────────────────────────────────────
 networks:
@@ -280,6 +278,7 @@ volumes:
     name: zeek_zeek-logs
   elasticsearch-data:
   postgresql-data:
+  reports-data:
   ollama-models:
     external: true
     name: llm_ollama-models

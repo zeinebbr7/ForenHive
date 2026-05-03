@@ -80,20 +80,25 @@ async def timeline(
             ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
         except Exception:
             ts = datetime.now(tz=timezone.utc)
+        honeypot_raw = s.get("honeypot", "unknown")
+        honeypot_str = (honeypot_raw.get("type") if isinstance(honeypot_raw, dict) else honeypot_raw) or "unknown"
+        session_raw = s.get("session") or s.get("session_id")
+        session_str = (session_raw.get("id") if isinstance(session_raw, dict) else session_raw) or None
         detail = (
             s.get("input")
             or s.get("command")
             or s.get("message")
             or (s.get("url") or {}).get("path")
             or s.get("eventid")
+            or (s.get("event") or {}).get("id")
         )
         events.append(
             TimelineEvent(
                 timestamp=ts,
-                honeypot=s.get("honeypot", "unknown"),
+                honeypot=honeypot_str,
                 source_ip=(s.get("source") or {}).get("ip") or s.get("src_ip"),
-                event_type=s.get("eventid") or (s.get("event") or {}).get("type"),
-                session_id=s.get("session") or s.get("session_id"),
+                event_type=s.get("eventid") or (s.get("event") or {}).get("id"),
+                session_id=session_str,
                 detail=str(detail) if detail is not None else None,
                 severity=str(s.get("severity")) if s.get("severity") is not None else None,
             )
@@ -140,3 +145,9 @@ async def yara_scan(sha256: str) -> YaraScanResponse:
 @router.get("/yara")
 async def yara_dionaea_scan(limit: int = Query(50, ge=1, le=500)):
     return {"results": await get_forensic_engine().scan_all_dionaea(limit=limit)}
+
+
+@router.post("/run")
+async def trigger_engine_run():
+    """Trigger an immediate forensic engine run (non-blocking)."""
+    return await get_forensic_engine().run_now()

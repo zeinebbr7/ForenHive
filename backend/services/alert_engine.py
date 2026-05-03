@@ -9,8 +9,12 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import select
+
 from config import get_settings
+from db import session_scope
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
+from models_sql.user import User
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
 from services.email_service import get_email
@@ -289,6 +293,19 @@ class AlertEngine:
             )
             return record
 
+    @staticmethod
+    async def _all_user_emails() -> List[str]:
+        """Return emails of all active admins and analysts from PostgreSQL."""
+        try:
+            async with session_scope() as db:
+                result = await db.execute(
+                    select(User.email).where(User.is_active == True)
+                )
+                return [row[0] for row in result.all()]
+        except Exception as exc:
+            log.warning("could not fetch user emails from DB: %s", exc)
+            return []
+
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
         subject = f"[FORENHIVE ALERT] {record.severity.upper()} — {record.threat_type} Detected"
         ctx = {
@@ -308,10 +325,17 @@ class AlertEngine:
             "mistral_analysis": record.mistral_analysis or "",
             "timestamp": record.timestamp.isoformat(),
         }
+        # Always notify every active user in the platform
+        db_emails = await self._all_user_emails()
+        recipients = list({*record.recipients, *db_emails})
+        if not recipients:
+            log.warning("alert dispatch skipped — no recipients configured")
+            return False, "no recipients"
         try:
             await asyncio.to_thread(
-                get_email().send_alert, record.recipients, subject, ctx
+                get_email().send_alert, recipients, subject, ctx
             )
+            log.info("alert dispatched to %d recipient(s): %s", len(recipients), recipients)
             return True, None
         except Exception as exc:
             log.error("alert dispatch failed: %s", exc)

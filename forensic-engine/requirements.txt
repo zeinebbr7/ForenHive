@@ -8,5 +8,5 @@ shodan==1.31.0
 ipwhois==1.2.0
 rfc3161-client==0.1.2
 fastapi==0.111.0
-uvicorn[standard]==0.29.0
+uvicorn==0.29.0
 pydantic==2.7.1

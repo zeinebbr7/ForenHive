@@ -65,6 +65,13 @@ class ForensicEngineClient:
             log.warning("MITRE mapping failed: %s", exc)
             return []
 
+    async def run_now(self) -> Dict[str, Any]:
+        try:
+            return await self._post("/run-now", {})
+        except Exception as exc:
+            log.warning("manual engine trigger failed: %s", exc)
+            return {"triggered": False, "message": str(exc)}
+
 
 _svc: Optional[ForensicEngineClient] = None
 
