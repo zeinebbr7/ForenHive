@@ -83,17 +83,20 @@ async def timeline(
         detail = (
             s.get("input")
             or s.get("command")
+            or s.get("http.request.uri")
+            or s.get("uri")
             or s.get("message")
-            or (s.get("url") or {}).get("path")
+            or s.get("event.id")
             or s.get("eventid")
         )
+        # ES stores fields as flat dot-notation ("source.ip", "honeypot.type")
         events.append(
             TimelineEvent(
                 timestamp=ts,
-                honeypot=s.get("honeypot", "unknown"),
-                source_ip=(s.get("source") or {}).get("ip") or s.get("src_ip"),
-                event_type=s.get("eventid") or (s.get("event") or {}).get("type"),
-                session_id=s.get("session") or s.get("session_id"),
+                honeypot=s.get("honeypot.type") or s.get("honeypot", "unknown"),
+                source_ip=s.get("source.ip") or s.get("src_ip"),
+                event_type=s.get("event.id") or s.get("eventid") or s.get("event.action"),
+                session_id=s.get("session.id") or s.get("session") or s.get("session_id"),
                 detail=str(detail) if detail is not None else None,
                 severity=str(s.get("severity")) if s.get("severity") is not None else None,
             )

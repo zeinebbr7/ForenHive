@@ -5,8 +5,10 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy import select, text
 
 from config import get_settings
+from db import get_sessionmaker
 from models.report import (
     ReportListResponse,
     ReportMeta,
@@ -91,28 +93,37 @@ def _phase_from_techniques(mitre: List[str]) -> str | None:
 
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
-    """List sessions in the flat shape the dashboard reconstruction/reporting
-    pages expect: session_id, source_ip, honeypot_type, risk_score,
-    kill_chain_phase, primary_technique, started_at.
+    """List enriched forensic sessions from PostgreSQL (scored by the forensic engine)."""
+    async with get_sessionmaker()() as db:
+        result = await db.execute(
+            text(
+                """
+                SELECT session_id, honeypot_type, source_ip, risk_score,
+                       kill_chain_phase, kill_chain_stage, primary_technique,
+                       started_at, mitre_techniques
+                FROM forensic_sessions
+                ORDER BY risk_score DESC NULLS LAST, started_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        )
+        rows = result.mappings().all()
 
-    Backed by /api/sessions data. When the forensic engine has not produced
-    enriched fields yet, sensible defaults are used.
-    """
-    rows = await get_es().sessions(limit=limit, active_only=False)
     out: List[Dict[str, Any]] = []
     for r in rows:
-        mitre = r.get("mitre_techniques") or r.get("techniques") or []
+        mitre = r["mitre_techniques"] or []
         if isinstance(mitre, dict):
-            mitre = []
+            mitre = list(mitre.values())
         out.append({
-            "session_id":        r.get("session_id"),
-            "source_ip":         r.get("source_ip"),
-            "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
-            "risk_score":        r.get("risk_score"),
-            "kill_chain_phase":  r.get("kill_chain_phase") or _phase_from_techniques(mitre),
-            "kill_chain_stage":  r.get("kill_chain_stage"),
-            "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
-            "started_at":        r.get("started_at"),
+            "session_id":        r["session_id"],
+            "source_ip":         r["source_ip"],
+            "honeypot_type":     r["honeypot_type"],
+            "risk_score":        r["risk_score"],
+            "kill_chain_phase":  r["kill_chain_phase"] or _phase_from_techniques(mitre),
+            "kill_chain_stage":  r["kill_chain_stage"],
+            "primary_technique": r["primary_technique"] or (mitre[0] if mitre else None),
+            "started_at":        r["started_at"].isoformat() if r["started_at"] else None,
         })
     return out
 

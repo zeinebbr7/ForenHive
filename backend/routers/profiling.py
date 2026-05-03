@@ -2,7 +2,9 @@ import ipaddress
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import text
 
+from db import get_sessionmaker
 from models.report import AttackerProfile
 from services.elasticsearch import get_es
 from services.profiler import build_profile
@@ -27,23 +29,34 @@ async def list_profiles(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, 
 
 @router.get("/stats/summary")
 async def stats_summary() -> Dict[str, Any]:
-    """Severity-band counts + average risk across the top attackers."""
-    rows = await get_es().top_attackers(limit=200)
-    counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    total = len(rows)
-    score_sum = 0.0
-    for r in rows:
-        sev = r.get("severity", "LOW")
-        if sev in counts:
-            counts[sev] += 1
-        score_sum += float(r.get("risk_score") or 0)
+    """Severity-band counts + average risk from PostgreSQL forensic_sessions."""
+    async with get_sessionmaker()() as db:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*)                                        AS total,
+                    COUNT(*) FILTER (WHERE risk_score >= 80)       AS critical,
+                    COUNT(*) FILTER (WHERE risk_score >= 60
+                                      AND risk_score <  80)        AS high,
+                    COUNT(*) FILTER (WHERE risk_score >= 40
+                                      AND risk_score <  60)        AS medium,
+                    COUNT(*) FILTER (WHERE risk_score <  40
+                                      OR  risk_score IS NULL)      AS low,
+                    COALESCE(ROUND(AVG(risk_score)::numeric, 1), 0) AS avg_score
+                FROM forensic_sessions
+                """
+            )
+        )
+        row = result.mappings().one()
+
     return {
-        "total": total,
-        "critical": counts["CRITICAL"],
-        "high": counts["HIGH"],
-        "medium": counts["MEDIUM"],
-        "low": counts["LOW"],
-        "avg_score": round(score_sum / total, 1) if total else 0,
+        "total":     int(row["total"]),
+        "critical":  int(row["critical"]),
+        "high":      int(row["high"]),
+        "medium":    int(row["medium"]),
+        "low":       int(row["low"]),
+        "avg_score": float(row["avg_score"]),
     }
 
 
