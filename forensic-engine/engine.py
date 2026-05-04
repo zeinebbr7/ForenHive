@@ -449,7 +449,8 @@ def _save_session(session: dict):
                          created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (session_id) DO UPDATE
-                        SET risk_score         = EXCLUDED.risk_score,
+                        SET source_ip          = COALESCE(EXCLUDED.source_ip, forensic_sessions.source_ip),
+                            risk_score         = EXCLUDED.risk_score,
                             enrichment_data    = EXCLUDED.enrichment_data,
                             mitre_techniques   = EXCLUDED.mitre_techniques,
                             kill_chain_phase   = EXCLUDED.kill_chain_phase,

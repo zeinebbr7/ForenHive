@@ -163,7 +163,8 @@ async def _build_forensic_context(session_id: str) -> dict:
         _pg_session_row(session_id),
     )
     detail = detail or {}
-    source_ip: Optional[str] = detail.get("source_ip")
+    # Fall back to PG source_ip when ES has no session (e.g. Dionaea)
+    source_ip: Optional[str] = detail.get("source_ip") or pg_row.get("source_ip")
 
     profile_dict: dict = {}
     if source_ip:
@@ -186,15 +187,28 @@ async def _build_forensic_context(session_id: str) -> dict:
     if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
-    # Pull geo from engine enrichment cache if profiler returned nothing
+    # Pull all enrichment fields from PG cache if profiler returned nothing
     enrich = pg_row.get("enrichment_data") or {}
     geo = enrich.get("geo") or {}
+    privacy = enrich.get("privacy") or {}
+    rep = enrich.get("reputation") or {}
     if not profile_dict.get("country") and geo.get("country"):
         profile_dict["country"] = geo["country"]
     if not profile_dict.get("city") and geo.get("city"):
         profile_dict["city"] = geo["city"]
     if not profile_dict.get("country_iso") and geo.get("country_code"):
         profile_dict["country_iso"] = geo["country_code"]
+    if not profile_dict.get("asn") and geo.get("asn"):
+        profile_dict["asn"] = geo["asn"]
+    if not profile_dict.get("as_org") and geo.get("org"):
+        profile_dict["as_org"] = geo["org"]
+    if not profile_dict.get("is_tor") and privacy.get("is_tor"):
+        profile_dict["is_tor"] = privacy["is_tor"]
+    if not profile_dict.get("is_vpn") and privacy.get("is_vpn"):
+        profile_dict["is_vpn"] = privacy["is_vpn"]
+    if not profile_dict.get("abuseipdb_score") and rep.get("abuse_score"):
+        profile_dict["abuseipdb_score"] = rep["abuse_score"]
+        profile_dict["abuseipdb_reports"] = rep.get("total_reports")
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
@@ -377,59 +391,83 @@ async def list_reports(limit: int = Query(100, ge=1, le=500)) -> ReportListRespo
 
 # ─── Routes statiques forensic — AVANT les routes dynamiques /{report_id} ────
 
-async def _pg_scored_sessions() -> Dict[str, Dict[str, Any]]:
-    """Read risk_score + MITRE data from PostgreSQL forensic_sessions table."""
+async def _pg_all_sessions(limit: int) -> List[Dict[str, Any]]:
+    """Read all forensic_sessions rows from PostgreSQL (scored sessions with full metadata)."""
     try:
         from sqlalchemy import text
         from db import session_scope
         async with session_scope() as sess:
             result = await sess.execute(text(
-                "SELECT session_id, risk_score, kill_chain_phase, kill_chain_stage, "
-                "primary_technique, mitre_techniques FROM forensic_sessions"
-            ))
-            return {
-                row.session_id: {
-                    "risk_score":        row.risk_score,
-                    "kill_chain_phase":  row.kill_chain_phase,
-                    "kill_chain_stage":  row.kill_chain_stage,
-                    "primary_technique": row.primary_technique,
-                    "mitre_techniques":  row.mitre_techniques or [],
-                }
-                for row in result.fetchall()
-            }
+                "SELECT session_id, honeypot_type, source_ip, started_at, "
+                "risk_score, kill_chain_phase, kill_chain_stage, primary_technique, "
+                "mitre_techniques FROM forensic_sessions "
+                "ORDER BY risk_score DESC NULLS LAST LIMIT :lim"
+            ), {"lim": limit})
+            return [dict(row._mapping) for row in result.fetchall()]
     except Exception as exc:
         log.warning("Could not read forensic_sessions from PostgreSQL: %s", exc)
-        return {}
+        return []
 
 
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
-    """List sessions in the flat shape the dashboard reconstruction/reporting
-    pages expect: session_id, source_ip, honeypot_type, risk_score,
-    kill_chain_phase, primary_technique, started_at.
-    Merges ES session metadata with PostgreSQL forensic engine scored data.
+    """List sessions leading with PostgreSQL scored data, supplemented by ES metadata.
+    Includes Dionaea (no session.id in ES) and handles session_id mismatches.
     """
-    rows, pg_scores = await asyncio.gather(
+    pg_sessions, es_rows = await asyncio.gather(
+        _pg_all_sessions(limit),
         get_es().sessions(limit=limit, active_only=False),
-        _pg_scored_sessions(),
     )
+
+    # Build ES lookup by session_id and by source_ip (for fallback)
+    es_by_sid: Dict[str, Any] = {r["session_id"]: r for r in es_rows}
+    es_by_ip:  Dict[str, Any] = {}
+    for r in es_rows:
+        ip = r.get("source_ip")
+        if ip and ip not in es_by_ip:
+            es_by_ip[ip] = r
+
     out: List[Dict[str, Any]] = []
-    for r in rows:
-        sid = r.get("session_id")
-        pg = pg_scores.get(sid, {})
-        mitre = pg.get("mitre_techniques") or r.get("mitre_techniques") or r.get("techniques") or []
+    seen_sids: set = set()
+
+    # 1. PG scored sessions first (has risk_score, kill_chain, etc.)
+    for pg in pg_sessions:
+        sid = pg["session_id"]
+        seen_sids.add(sid)
+        es = es_by_sid.get(sid) or es_by_ip.get(pg.get("source_ip") or "") or {}
+        mitre = pg.get("mitre_techniques") or []
         if isinstance(mitre, dict):
-            mitre = []
+            mitre = list(mitre.keys())
         out.append({
             "session_id":        sid,
-            "source_ip":         r.get("source_ip"),
-            "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
-            "risk_score":        pg.get("risk_score") or r.get("risk_score"),
-            "kill_chain_phase":  pg.get("kill_chain_phase") or r.get("kill_chain_phase") or _phase_from_techniques(mitre),
-            "kill_chain_stage":  pg.get("kill_chain_stage") or r.get("kill_chain_stage"),
-            "primary_technique": pg.get("primary_technique") or (mitre[0] if mitre else r.get("primary_technique")),
-            "started_at":        r.get("started_at"),
+            "source_ip":         pg.get("source_ip"),
+            "honeypot_type":     pg.get("honeypot_type") or es.get("honeypot"),
+            "risk_score":        pg.get("risk_score"),
+            "kill_chain_phase":  pg.get("kill_chain_phase"),
+            "kill_chain_stage":  pg.get("kill_chain_stage"),
+            "primary_technique": pg.get("primary_technique") or (mitre[0] if mitre else None),
+            "started_at":        pg.get("started_at") or es.get("started_at"),
         })
+
+    # 2. ES sessions not yet in PG (no engine score yet)
+    for r in es_rows:
+        sid = r.get("session_id")
+        if sid and sid not in seen_sids:
+            seen_sids.add(sid)
+            mitre = r.get("mitre_techniques") or r.get("techniques") or []
+            if isinstance(mitre, dict):
+                mitre = []
+            out.append({
+                "session_id":        sid,
+                "source_ip":         r.get("source_ip"),
+                "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
+                "risk_score":        None,
+                "kill_chain_phase":  _phase_from_techniques(mitre),
+                "kill_chain_stage":  None,
+                "primary_technique": mitre[0] if mitre else None,
+                "started_at":        r.get("started_at"),
+            })
+
     return out
 
 
@@ -441,8 +479,10 @@ async def forensic_generate(request: Request, session_id: str):
     except ImportError:
         raise HTTPException(status_code=503, detail="WeasyPrint not installed")
 
+    # Session must exist in ES or PG; Dionaea has no session.id in ES so we allow PG-only
     detail = await get_es().session_detail(session_id)
-    if not detail:
+    pg_check = await _pg_session_row(session_id)
+    if not detail and not pg_check:
         raise HTTPException(status_code=404, detail="session not found")
 
     try:
@@ -490,8 +530,10 @@ async def forensic_generate(request: Request, session_id: str):
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
     """Full forensic HTML dossier for a single session."""
+    # Dionaea sessions have no session.id in ES — allow PG-only sessions through
     detail = await get_es().session_detail(session_id)
-    if not detail:
+    pg_check = await _pg_session_row(session_id)
+    if not detail and not pg_check:
         raise HTTPException(status_code=404, detail="session not found")
     try:
         ctx = await _build_forensic_context(session_id)
