@@ -121,21 +121,21 @@ class ESClient:
         )
         if isinstance(level, int):
             if level >= 4:
-                return Severity.CRITICAL
+                return Severity.critical
             if level == 3:
-                return Severity.HIGH
+                return Severity.high
             if level == 2:
-                return Severity.MEDIUM
-            return Severity.LOW
+                return Severity.medium
+            return Severity.low
         if isinstance(level, str):
             level = level.lower()
             if level in ("critical", "emerg", "alert"):
-                return Severity.CRITICAL
+                return Severity.critical
             if level in ("high", "error", "err"):
-                return Severity.HIGH
+                return Severity.high
             if level in ("medium", "warn", "warning"):
-                return Severity.MEDIUM
-        return Severity.LOW
+                return Severity.medium
+        return Severity.low
 
     @staticmethod
     def _f(src: Dict[str, Any], *keys: str):
@@ -419,7 +419,9 @@ class ESClient:
         """
         body = {
             "size": 0,
-            "query": {"bool": {"must": [{"exists": {"field": "source.ip"}}]}},
+            "query": {"bool": {"must": [{"exists": {"field": "source.ip"}}], "filter": [
+                {"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}
+            ]}},
             "aggs": {
                 "ips": {
                     "terms": {"field": "source.ip.keyword", "size": limit},
@@ -661,7 +663,9 @@ class ESClient:
     async def events_for_ip(self, ip: str, size: int = 200) -> List[Dict[str, Any]]:
         body = {
             "size": size,
-            "query": {"term": {"source.ip": ip}},
+            "query": {"bool": {"must": [{"term": {"source.ip": ip}}], "filter": [
+                {"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}
+            ]}},
             "sort": [{"@timestamp": {"order": "desc"}}],
         }
         resp = await self.client.search(
@@ -675,7 +679,9 @@ class ESClient:
     async def profile_aggregates(self, ip: str) -> Dict[str, Any]:
         body = {
             "size": 0,
-            "query": {"term": {"source.ip": ip}},
+            "query": {"bool": {"must": [{"term": {"source.ip": ip}}], "filter": [
+                {"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}
+            ]}},
             "aggs": {
                 "first_seen": {"min": {"field": "@timestamp"}},
                 "last_seen": {"max": {"field": "@timestamp"}},

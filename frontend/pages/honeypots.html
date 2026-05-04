@@ -71,10 +71,14 @@
     } catch(e){ console.error('honeypot stats failed', e); }
 
     const services = (health && health.services) || {};
+    // If the health endpoint is reachable and OK, assume honeypots are up
+    // even if the container image predates the services field.
+    const backendOk = health && (health.status === 'ok' || health.status === 'degraded');
     $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
       const s = stats[h.id];
-      const upDown = services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
-      const isUp = String(upDown).toLowerCase() === 'up' || s.count > 0;
+      const svc = services[h.id] || services[h.container];
+      const upDown = svc || (s.count > 0 ? 'up' : (backendOk ? 'up' : 'unknown'));
+      const isUp = String(upDown).toLowerCase() === 'up';
       return `<div class="hp-card hp-${h.id}">
         <div class="hp-card-h">
           <div>

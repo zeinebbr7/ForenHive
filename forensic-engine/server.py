@@ -214,16 +214,17 @@ def mitre_map(req: MitreRequest) -> Dict[str, Any]:
 # ── Manual trigger ───────────────────────────────────────────────────────────
 
 @app.post("/run-now")
-def run_now() -> Dict[str, Any]:
-    """Trigger an immediate engine run. Returns 409 if a run is already in progress."""
+def run_now(hours: int = 24) -> Dict[str, Any]:
+    """Trigger an immediate engine run. Returns 409 if a run is already in progress.
+    Pass ?hours=N to override the lookback window (default 24h)."""
     if _engine_lock.locked():
         raise HTTPException(status_code=409, detail="Engine run already in progress")
 
     def _run():
         with _engine_lock:
-            log.info("=== Forensic engine run START (manual trigger) ===")
+            log.info(f"=== Forensic engine run START (manual trigger, last {hours}h) ===")
             try:
-                subprocess.run(["python", "engine.py"], check=False, timeout=3600)
+                subprocess.run(["python", "engine.py", "--hours", str(hours)], check=False, timeout=3600)
                 log.info("=== Forensic engine run DONE (manual trigger) ===")
             except subprocess.TimeoutExpired:
                 log.error("Manual engine run timed out after 1 h.")
@@ -232,7 +233,7 @@ def run_now() -> Dict[str, Any]:
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
-    return {"triggered": True, "message": "Forensic engine run started"}
+    return {"triggered": True, "message": f"Forensic engine run started (last {hours}h)"}
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

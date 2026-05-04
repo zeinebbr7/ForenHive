@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -127,9 +128,41 @@ def _build_score_signals(profile: dict, detail: dict) -> List[dict]:
     return signals
 
 
+async def _pg_session_row(session_id: str) -> Dict[str, Any]:
+    """Read one forensic_sessions row from PostgreSQL by session_id."""
+    try:
+        from sqlalchemy import text
+        from db import session_scope
+        async with session_scope() as sess:
+            result = await sess.execute(
+                text("SELECT risk_score, kill_chain_phase, kill_chain_stage, "
+                     "primary_technique, mitre_techniques, forensic_narrative, enrichment_data "
+                     "FROM forensic_sessions WHERE session_id = :sid LIMIT 1"),
+                {"sid": session_id}
+            )
+            row = result.fetchone()
+            if row:
+                return {
+                    "risk_score":         row.risk_score,
+                    "kill_chain_phase":   row.kill_chain_phase,
+                    "kill_chain_stage":   row.kill_chain_stage,
+                    "primary_technique":  row.primary_technique,
+                    "mitre_techniques":   row.mitre_techniques or [],
+                    "forensic_narrative": row.forensic_narrative,
+                    "enrichment_data":    row.enrichment_data or {},
+                }
+    except Exception as exc:
+        log.warning("Could not read forensic_sessions for %s: %s", session_id, exc)
+    return {}
+
+
 async def _build_forensic_context(session_id: str) -> dict:
     es = get_es()
-    detail = await es.session_detail(session_id) or {}
+    detail, pg_row = await asyncio.gather(
+        es.session_detail(session_id),
+        _pg_session_row(session_id),
+    )
+    detail = detail or {}
     source_ip: Optional[str] = detail.get("source_ip")
 
     profile_dict: dict = {}
@@ -140,8 +173,28 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
-    risk_score = int(profile_dict.get("risk_score") or 0)
+    # Prefer PostgreSQL engine-scored risk over live re-computation
+    risk_score = int(pg_row.get("risk_score") or profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
+
+    # Merge PostgreSQL MITRE into profile so score signals and report sections see them
+    pg_mitre = pg_row.get("mitre_techniques") or []
+    if pg_mitre:
+        profile_dict["mitre_techniques"] = sorted(set(pg_mitre + (profile_dict.get("mitre_techniques") or [])))
+
+    # Pull Ollama narrative stored by the engine (avoids another live LLM call)
+    if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
+        profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
+
+    # Pull geo from engine enrichment cache if profiler returned nothing
+    enrich = pg_row.get("enrichment_data") or {}
+    geo = enrich.get("geo") or {}
+    if not profile_dict.get("country") and geo.get("country"):
+        profile_dict["country"] = geo["country"]
+    if not profile_dict.get("city") and geo.get("city"):
+        profile_dict["city"] = geo["city"]
+    if not profile_dict.get("country_iso") and geo.get("country_code"):
+        profile_dict["country_iso"] = geo["country_code"]
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
@@ -181,7 +234,7 @@ async def _build_forensic_context(session_id: str) -> dict:
     ended = detail.get("ended_at")
     if ended:
         timeline.append({"ts": str(ended), "source": "SESSION", "action": "Session fermée",
-                         "detail": f"Durée : {detail.get('duration_seconds', 0):.1f}s", "mitre": ""})
+                         "detail": f"Durée : {float(detail.get('duration_seconds') or 0):.1f}s", "mitre": ""})
 
     try:
         timeline.sort(key=lambda x: x.get("ts") or "")
@@ -231,7 +284,10 @@ async def _build_forensic_context(session_id: str) -> dict:
         mitre_rows.append({"id": "T1059.004", "technique": "Unix Shell", "tactic": "Execution", "confidence": "100%", "evidence": f"{len(cmds)} commandes exécutées"})
 
     # ── Kill chain stage ──────────────────────────────────
-    kc_reached = 0
+    # Use PostgreSQL engine stage as baseline (it uses MITRE-mapped phase)
+    pg_kc_stage = pg_row.get("kill_chain_stage")
+    kc_reached = (_KC_STAGES.index(pg_row["kill_chain_phase"]) + 1
+                  if pg_row.get("kill_chain_phase") in _KC_STAGES else 0)
     if logins:
         kc_reached = max(kc_reached, 3)
     if auth_success:
@@ -273,7 +329,6 @@ async def _build_forensic_context(session_id: str) -> dict:
         "kc_stages_labels": _KC_LABELS,
         "org_score_pct": org_score_pct,
         "auth_success": auth_success,
-        "enumerate": enumerate,
     }
 
 
@@ -322,26 +377,57 @@ async def list_reports(limit: int = Query(100, ge=1, le=500)) -> ReportListRespo
 
 # ─── Routes statiques forensic — AVANT les routes dynamiques /{report_id} ────
 
+async def _pg_scored_sessions() -> Dict[str, Dict[str, Any]]:
+    """Read risk_score + MITRE data from PostgreSQL forensic_sessions table."""
+    try:
+        from sqlalchemy import text
+        from db import session_scope
+        async with session_scope() as sess:
+            result = await sess.execute(text(
+                "SELECT session_id, risk_score, kill_chain_phase, kill_chain_stage, "
+                "primary_technique, mitre_techniques FROM forensic_sessions"
+            ))
+            return {
+                row.session_id: {
+                    "risk_score":        row.risk_score,
+                    "kill_chain_phase":  row.kill_chain_phase,
+                    "kill_chain_stage":  row.kill_chain_stage,
+                    "primary_technique": row.primary_technique,
+                    "mitre_techniques":  row.mitre_techniques or [],
+                }
+                for row in result.fetchall()
+            }
+    except Exception as exc:
+        log.warning("Could not read forensic_sessions from PostgreSQL: %s", exc)
+        return {}
+
+
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
     """List sessions in the flat shape the dashboard reconstruction/reporting
     pages expect: session_id, source_ip, honeypot_type, risk_score,
     kill_chain_phase, primary_technique, started_at.
+    Merges ES session metadata with PostgreSQL forensic engine scored data.
     """
-    rows = await get_es().sessions(limit=limit, active_only=False)
+    rows, pg_scores = await asyncio.gather(
+        get_es().sessions(limit=limit, active_only=False),
+        _pg_scored_sessions(),
+    )
     out: List[Dict[str, Any]] = []
     for r in rows:
-        mitre = r.get("mitre_techniques") or r.get("techniques") or []
+        sid = r.get("session_id")
+        pg = pg_scores.get(sid, {})
+        mitre = pg.get("mitre_techniques") or r.get("mitre_techniques") or r.get("techniques") or []
         if isinstance(mitre, dict):
             mitre = []
         out.append({
-            "session_id":        r.get("session_id"),
+            "session_id":        sid,
             "source_ip":         r.get("source_ip"),
             "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
-            "risk_score":        r.get("risk_score"),
-            "kill_chain_phase":  r.get("kill_chain_phase") or _phase_from_techniques(mitre),
-            "kill_chain_stage":  r.get("kill_chain_stage"),
-            "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
+            "risk_score":        pg.get("risk_score") or r.get("risk_score"),
+            "kill_chain_phase":  pg.get("kill_chain_phase") or r.get("kill_chain_phase") or _phase_from_techniques(mitre),
+            "kill_chain_stage":  pg.get("kill_chain_stage") or r.get("kill_chain_stage"),
+            "primary_technique": pg.get("primary_technique") or (mitre[0] if mitre else r.get("primary_technique")),
             "started_at":        r.get("started_at"),
         })
     return out
@@ -369,7 +455,6 @@ async def forensic_generate(request: Request, session_id: str):
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
-    env.globals["enumerate"] = enumerate
     try:
         html_body = env.get_template("forensic_report.html").render(**ctx)
     except Exception as exc:
@@ -418,7 +503,6 @@ async def forensic_preview(session_id: str):
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
-    env.globals["enumerate"] = enumerate
     try:
         html_body = env.get_template("forensic_report.html").render(**ctx)
     except Exception as exc:
