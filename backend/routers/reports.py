@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import ipaddress
 import json
 import logging
 import tempfile
@@ -84,48 +85,62 @@ def _mitre_lookup(tech_id: str):
 
 
 def _build_score_signals(profile: dict, detail: dict) -> List[dict]:
-    signals = []
-    abuse = int(profile.get("abuseipdb_score") or 0)
-    if abuse:
-        pts = min(39, abuse * 39 // 100)
-        signals.append({"name": "AbuseIPDB score réputation", "source": "AbuseIPDB", "points": pts, "max": 40, "value": f"{abuse}/100"})
+    """Return all 18 RiskScorer signals with actual breakdown points."""
+    from services.alert_engine import RiskScorer
 
     logins = detail.get("login_attempts") or []
-    n_auth = len(logins)
-    auth_success = any(a.get("success") for a in logins)
-    if auth_success:
-        signals.append({"name": "Login réussi / compromission", "source": "Cowrie", "points": 25, "max": 25, "value": "Compromission confirmée"})
-    elif n_auth > 0:
-        pts = min(25, n_auth * 25 // 500)
-        signals.append({"name": f"Volume logins ({n_auth})", "source": "Cowrie", "points": pts, "max": 25, "value": f"{n_auth} tentatives"})
+    n_failed = sum(1 for a in logins if not a.get("success"))
+    cmds_raw = detail.get("commands") or []
+    cmd_texts = [c.get("input", "") if isinstance(c, dict) else str(c) for c in cmds_raw]
 
-    yara = profile.get("yara_matches") or []
-    if yara:
-        signals.append({"name": "YARA match — famille critique", "source": "YARA", "points": 30, "max": 30, "value": yara[0]})
+    ctx = {
+        "failed_auth_count":       n_failed,
+        "is_tor":                  bool(profile.get("is_tor")),
+        "abuseipdb_score":         profile.get("abuseipdb_score"),
+        "yara_match":              (profile.get("yara_matches") or [None])[0],
+        "mitre_techniques":        profile.get("mitre_techniques") or [],
+        "country_iso":             profile.get("country_iso") or "",
+        "new_ip":                  False,
+        "payload":                 " ".join(cmd_texts),
+        "commands":                cmd_texts,
+        "http_path":               None,
+        "unique_dest_ports":       0,
+        "command_count":           len(cmds_raw),
+        "download_attempt":        bool(detail.get("downloads")),
+        "session_duration_seconds": float(detail.get("duration_seconds") or 0),
+    }
+    _, breakdown = RiskScorer.score(ctx)
 
-    hashes = profile.get("ioc_hashes") or []
-    if hashes:
-        signals.append({"name": "Malware capturé (SHA-256)", "source": "Dionaea", "points": 20, "max": 30, "value": hashes[0][:20] + "..."})
+    _SIGNAL_META = {
+        "failed_auth_count":     ("Tentatives auth échouées",         "Cowrie",    10),
+        "known_tor_exit":        ("Nœud Tor / anonymiseur exit",      "IPLocate",  10),
+        "abuseipdb_score":       ("Score de réputation AbuseIPDB",    "AbuseIPDB", 10),
+        "yara_match":            ("Correspondance règle YARA",        "YARA",      10),
+        "mitre_technique_count": ("Techniques MITRE ATT&CK détectées","Moteur",     8),
+        "geo_risk":              ("Géographie à haut risque",         "GeoIP",      6),
+        "new_ip":                ("Première apparition de l'IP",      "Historique", 3),
+        "payload_entropy":       ("Entropie élevée du payload",       "Analyse",    5),
+        "brute_force_pattern":   ("Pattern brute-force SSH/Telnet",   "Cowrie",     8),
+        "c2_ioc_match":          ("Correspondance IOC / C2",          "Intel",      8),
+        "port_scan_pattern":     ("Scan de ports multi-services",     "Zeek",       6),
+        "exploit_cve_match":     ("Tentative d'exploit CVE",          "Analyse",    7),
+        "time_of_day_anomaly":   ("Anomalie horaire (nuit/weekend)",  "Temporal",   2),
+        "session_duration":      ("Durée de session anormale",        "Cowrie",     4),
+        "command_count":         ("Volume de commandes shell",        "Cowrie",     5),
+        "download_attempt":      ("Tentative de téléchargement",      "Cowrie",     4),
+        "privilege_escalation":  ("Escalade de privilèges",          "Cowrie",     6),
+        "lateral_movement":      ("Mouvement latéral détecté",       "Cowrie",     6),
+    }
 
-    if profile.get("is_tor"):
-        signals.append({"name": "Nœud Tor exit", "source": "IPLocate", "points": 15, "max": 15, "value": "OUI — exit node"})
-    if profile.get("is_vpn"):
-        signals.append({"name": "VPN détecté", "source": "IPLocate", "points": 10, "max": 10, "value": "OUI"})
-
-    cmds = detail.get("commands") or []
-    if cmds:
-        pts = min(10, len(cmds))
-        signals.append({"name": "Commandes shell exécutées", "source": "Cowrie", "points": pts, "max": 10, "value": f"{len(cmds)} commandes"})
-
-    mitre = profile.get("mitre_techniques") or []
-    if mitre:
-        pts = min(15, len(mitre) * 3)
-        signals.append({"name": "Techniques MITRE ATT&CK", "source": "Moteur", "points": pts, "max": 15, "value": ", ".join(mitre[:3])})
-
-    if (profile.get("session_count") or 0) > 1:
-        signals.append({"name": "Récidivisme (sessions antérieures)", "source": "PostgreSQL", "points": 10, "max": 10, "value": f"{profile.get('session_count')} sessions"})
-
-    return signals
+    return [
+        {
+            "name":   _SIGNAL_META[sig][0],
+            "source": _SIGNAL_META[sig][1],
+            "max":    _SIGNAL_META[sig][2],
+            "points": breakdown.get(sig, 0),
+        }
+        for sig in RiskScorer.SIGNALS
+    ]
 
 
 async def _pg_session_row(session_id: str) -> Dict[str, Any]:
@@ -183,9 +198,8 @@ async def _build_forensic_context(session_id: str) -> dict:
     if pg_mitre:
         profile_dict["mitre_techniques"] = sorted(set(pg_mitre + (profile_dict.get("mitre_techniques") or [])))
 
-    # Pull Ollama narrative stored by the engine (avoids another live LLM call)
-    if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
-        profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
+    # Keep both Ollama outputs separate — do NOT merge them
+    forensic_narrative = pg_row.get("forensic_narrative") or None
 
     # Pull all enrichment fields from PG cache if profiler returned nothing
     enrich = pg_row.get("enrichment_data") or {}
@@ -343,6 +357,8 @@ async def _build_forensic_context(session_id: str) -> dict:
         "kc_stages_labels": _KC_LABELS,
         "org_score_pct": org_score_pct,
         "auth_success": auth_success,
+        "forensic_narrative": forensic_narrative,
+        "mapping_source": enrich.get("mapping_source") or "",
     }
 
 
@@ -391,6 +407,28 @@ async def list_reports(limit: int = Query(100, ge=1, le=500)) -> ReportListRespo
 
 # ─── Routes statiques forensic — AVANT les routes dynamiques /{report_id} ────
 
+_PRIVATE_NETS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+]
+
+def _is_private(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _PRIVATE_NETS)
+    except ValueError:
+        return False
+
+def _is_noise(source_ip: Optional[str], risk_score) -> bool:
+    """Filter out zero-score private-IP sessions (internal network scan noise)."""
+    if not source_ip:
+        return False
+    score = risk_score if risk_score is not None else 0
+    return _is_private(source_ip) and score == 0
+
+
 async def _pg_all_sessions(limit: int) -> List[Dict[str, Any]]:
     """Read all forensic_sessions rows from PostgreSQL (scored sessions with full metadata)."""
     try:
@@ -434,13 +472,16 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
     for pg in pg_sessions:
         sid = pg["session_id"]
         seen_sids.add(sid)
-        es = es_by_sid.get(sid) or es_by_ip.get(pg.get("source_ip") or "") or {}
+        src_ip = pg.get("source_ip")
+        if _is_noise(src_ip, pg.get("risk_score")):
+            continue
+        es = es_by_sid.get(sid) or es_by_ip.get(src_ip or "") or {}
         mitre = pg.get("mitre_techniques") or []
         if isinstance(mitre, dict):
             mitre = list(mitre.keys())
         out.append({
             "session_id":        sid,
-            "source_ip":         pg.get("source_ip"),
+            "source_ip":         src_ip,
             "honeypot_type":     pg.get("honeypot_type") or es.get("honeypot"),
             "risk_score":        pg.get("risk_score"),
             "kill_chain_phase":  pg.get("kill_chain_phase"),
@@ -454,12 +495,15 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
         sid = r.get("session_id")
         if sid and sid not in seen_sids:
             seen_sids.add(sid)
+            src_ip = r.get("source_ip")
+            if _is_noise(src_ip, None):
+                continue
             mitre = r.get("mitre_techniques") or r.get("techniques") or []
             if isinstance(mitre, dict):
                 mitre = []
             out.append({
                 "session_id":        sid,
-                "source_ip":         r.get("source_ip"),
+                "source_ip":         src_ip,
                 "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
                 "risk_score":        None,
                 "kill_chain_phase":  _phase_from_techniques(mitre),

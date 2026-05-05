@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -76,12 +77,22 @@ async def build_profile(ip: str) -> AttackerProfile:
     honeypots = _list("honeypots", limit=10)
 
     enrichment = get_enrichment()
-    iplocate = await enrichment.iplocate(ip)
-    abuseipdb = await enrichment.abuseipdb(ip)
+    iplocate, abuseipdb, shodan_data, whois_data = await asyncio.gather(
+        enrichment.iplocate(ip),
+        enrichment.abuseipdb(ip),
+        enrichment.shodan_internetdb(ip),
+        enrichment.whois(ip),
+    )
+
+    def _to_asn_int(val) -> int | None:
+        try:
+            return int(str(val).lstrip("ASas").strip()) if val else None
+        except (ValueError, TypeError):
+            return None
 
     country = iplocate.get("country") or _first("country")
     country_iso = iplocate.get("country_iso") or _first("country_iso")
-    asn = iplocate.get("asn") or _first("asn")
+    asn = _to_asn_int(iplocate.get("asn") or _first("asn"))
     as_org = iplocate.get("as_org") or _first("as_org")
 
     top_commands = [c for c, _ in Counter(commands_all).most_common(10)]
@@ -138,6 +149,8 @@ async def build_profile(ip: str) -> AttackerProfile:
         top_commands=top_commands,
         recent_events=events[:25],
         sessions=list(sessions.values())[:25],
+        shodan_data=shodan_data or {},
+        whois_data=whois_data or {},
     )
 
     # ── VirusTotal lookup pour les hashes capturés ────────────────────────────

@@ -180,12 +180,16 @@ class ESClient:
         f = self._f
 
         # Geo: handle {"source": {"geo": {...}}} and {"source.geo": {...}}
+        # Zeek events store geo as {"source.geo": {"ip": ..., "geo": {...}}} with an extra nesting level
         geo_src = f(src, "source", "geo") or src.get("source.geo") or src.get("geoip") or {}
         asn_src = f(src, "source", "as") or src.get("source.as") or {}
         if not isinstance(geo_src, dict):
             geo_src = {}
         if not isinstance(asn_src, dict):
             asn_src = {}
+        # Unwrap Zeek's extra geo nesting: {"ip":..., "geo": {"country_name":..., "location":...}}
+        if isinstance(geo_src.get("geo"), dict):
+            geo_src = geo_src["geo"]
 
         geo = None
         if geo_src or asn_src:

@@ -272,6 +272,8 @@ body {
   padding: 5pt 6pt;
   vertical-align: top;
   font-weight: 700;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 /* Data table */
@@ -713,7 +715,7 @@ body {
         <tr><th>IP source</th><td>{{ session.get('source_ip') or profile.get('ip', '—') }}</td></tr>
         <tr><th>Localisation</th><td>{{ profile.get('city') or '—' }}{% if profile.get('country') %}, {{ profile.get('country') }}{% endif %}</td></tr>
         <tr><th>ASN</th><td>{{ profile.get('asn') or '—' }}{% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}</td></tr>
-        <tr><th>Organisation</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
+        <tr><th>Organisation</th><td>{{ profile.get('as_org') or (profile.get('whois_data') or {}).get('asn_description') or '—' }}</td></tr>
         <tr><th>Honeypot ciblé</th><td>{{ (session.get('honeypot') or '—') | upper }}</td></tr>
         <tr><th>Port cible</th><td>{{ session.get('source_port') or '—' }}</td></tr>
       </table>
@@ -739,6 +741,62 @@ body {
     </div>
   </div>
 </div>
+
+<!-- ── Section 02b — WHOIS & Shodan ── -->
+{% set whois = profile.get('whois_data') or {} %}
+{% set shodan = profile.get('shodan_data') or {} %}
+{% if whois or shodan %}
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">02b</span>
+    <div>
+      <div class="section-title">Infrastructure passive — WHOIS / RDAP &amp; Shodan InternetDB</div>
+      <div class="section-sub">Enregistrement réseau · Ports exposés · Vulnérabilités connues</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <!-- WHOIS -->
+    <div class="box">
+      <div class="box-title">WHOIS / RDAP</div>
+      <table class="kv-table">
+        <tr><th>Réseau</th><td>{{ whois.get('network_name') or '—' }}</td></tr>
+        <tr><th>CIDR</th><td class="mono">{{ whois.get('network_cidr') or '—' }}</td></tr>
+        <tr><th>Type</th><td>{{ whois.get('network_type') or '—' }}</td></tr>
+        <tr><th>ASN</th><td class="mono">{{ whois.get('asn') or '—' }}</td></tr>
+        <tr><th>Organisation</th><td>{{ whois.get('asn_description') or '—' }}</td></tr>
+        <tr><th>Enregistrement</th><td class="mono">{{ (whois.get('registration') or '—')[:10] }}</td></tr>
+        <tr><th>Contact abus</th>
+          <td>{% if whois.get('abuse_contact') %}
+            {% for mail in whois.get('abuse_contact') %}{{ mail }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% else %}—{% endif %}</td></tr>
+      </table>
+    </div>
+
+    <!-- Shodan InternetDB -->
+    <div class="box">
+      <div class="box-title">Shodan InternetDB</div>
+      <table class="kv-table">
+        <tr><th>Ports ouverts</th>
+          <td class="mono">{% if shodan.get('open_ports') %}{{ shodan.get('open_ports') | join(', ') }}{% else %}—{% endif %}</td></tr>
+        <tr><th>CVEs connues</th>
+          <td>{% if shodan.get('vulns') %}
+            {% for v in shodan.get('vulns')[:5] %}<span class="badge badge-warn" style="font-size:7pt">{{ v }}</span> {% endfor %}
+            {% if shodan.get('vulns') | length > 5 %}+{{ shodan.get('vulns') | length - 5 }} autres{% endif %}
+          {% else %}<span class="badge badge-ok">Aucune</span>{% endif %}</td></tr>
+        <tr><th>Hostnames</th>
+          <td class="mono" style="font-size:7.5pt">{% if shodan.get('hostnames') %}{{ shodan.get('hostnames')[:3] | join(', ') }}{% else %}—{% endif %}</td></tr>
+        <tr><th>Tags</th>
+          <td>{% if shodan.get('tags') %}
+            {% for t in shodan.get('tags') %}<span class="badge badge-info" style="font-size:7pt">{{ t }}</span> {% endfor %}
+          {% else %}—{% endif %}</td></tr>
+        <tr><th>CPEs</th>
+          <td class="mono" style="font-size:7pt">{% if shodan.get('cpes') %}{{ shodan.get('cpes')[:2] | join(', ') }}{% else %}—{% endif %}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <!-- ── Section 03 — Timeline ── -->
 <div class="section page-break">
@@ -793,7 +851,16 @@ body {
     <span class="section-num">04</span>
     <div>
       <div class="section-title">Analyse MITRE ATT&amp;CK · Kill Chain</div>
-      <div class="section-sub">{{ mitre_rows | length }} technique(s) identifiée(s) · Mapping hybride déterministe + LLM</div>
+      <div class="section-sub">
+        {{ mitre_rows | length }} technique(s) identifiée(s)
+        {% if mapping_source %}
+          · <span style="display:inline-block;padding:1pt 5pt;border-radius:3pt;font-size:7pt;font-weight:700;letter-spacing:0.5pt;
+              {% if 'llm' in mapping_source %}background:#fff3e0;color:#b36000;border:0.5pt solid #b36000;
+              {% else %}background:#e8f5e9;color:#2E7D32;border:0.5pt solid #2E7D32;{% endif %}">
+            {{ mapping_source | upper }}
+          </span>
+        {% endif %}
+      </div>
     </div>
   </div>
 
@@ -987,13 +1054,29 @@ body {
     </div>
   </div>
 
-  <!-- Narrative Mistral 7B -->
+  <!-- 6.A — Threat actor assessment (ollama_service.py) -->
   {% if profile.get('mistral_analysis') %}
   <div style="margin-top:10pt;">
     <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:5pt;">
-      Analyse narrative · Mistral 7B local (offline)
+      6.A · Évaluation threat actor — Mistral 7B (sophistication, intention, modus operandi)
     </div>
     <div class="narrative-box">{{ profile.get('mistral_analysis') }}</div>
+  </div>
+  {% endif %}
+
+  <!-- 6.B — MITRE ATT&CK forensic narrative (forensic-engine/ollama_mitre.py) -->
+  {% if forensic_narrative %}
+  <div style="margin-top:10pt;">
+    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:5pt;">
+      6.B · Narration forensique MITRE ATT&amp;CK — Mistral 7B (kill chain, TTPs, chronologie)
+    </div>
+    <div class="narrative-box">{{ forensic_narrative }}</div>
+  </div>
+  {% endif %}
+
+  {% if not profile.get('mistral_analysis') and not forensic_narrative %}
+  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;margin-top:10pt;">
+    Analyse Mistral 7B non disponible pour cette session.
   </div>
   {% endif %}
 </div>
