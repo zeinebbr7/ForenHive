@@ -959,10 +959,20 @@ body {
           <tr>
             <th>VirusTotal</th>
             <td>
-              <span style="color:{% if vt.get('malicious', 0) > 0 %}#C62828{% else %}#2E7D32{% endif %}">
-                {{ vt.get('malicious', 0) }} moteur(s) détectent ce fichier comme malveillant
+              {% if vt.get('found') == false %}
+              <span style="color:#E65100;font-style:italic;">
+                Fichier non répertorié sur VirusTotal — analyse YARA locale uniquement
               </span>
-              {% if vt.get('names') %} · {{ vt.get('names')[0] }}{% endif %}
+              {% elif vt.get('malicious', 0) > 0 %}
+              <span style="color:#C62828;font-weight:700;">
+                {{ vt.get('malicious') }} moteur(s) détectent ce fichier comme malveillant
+              </span>
+              {% if vt.get('names') %} · <em>{{ vt.get('names')[0] }}</em>{% endif %}
+              {% else %}
+              <span style="color:#2E7D32;">
+                {{ vt.get('malicious', 0) }} moteur(s) — fichier connu et propre
+              </span>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

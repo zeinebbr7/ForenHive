@@ -12,11 +12,6 @@ from services.elasticsearch import get_es
 
 log = logging.getLogger(__name__)
 
-_FALLBACK_MSG = (
-    "Mistral 7B analysis unavailable; showing structured metadata only. "
-    "The source IP exhibits activity consistent with reconnaissance or "
-    "brute-force behaviour; manual triage recommended."
-)
 
 PROMPT_TEMPLATE = """You are a senior threat intelligence analyst.
 Given the attacker metadata below, produce a concise 2-3 sentence
@@ -117,10 +112,10 @@ class OllamaService:
                 data = resp.json()
                 text = (data.get("response") or "").strip()
                 if not text:
-                    text = _FALLBACK_MSG
+                    return None
         except Exception as exc:
             log.warning("Ollama call failed for %s: %s", ip, exc)
-            text = _FALLBACK_MSG
+            return None
 
         await self._store_cache(ip, text, profile.get("risk_score", 0))
         return text
