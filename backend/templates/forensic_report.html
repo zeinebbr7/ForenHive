@@ -228,11 +228,13 @@ body {
 
 /* Two-column layout */
 .two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12pt;
+  display: table;
+  width: 100%;
+  border-spacing: 12pt 0;
   margin: 8pt 0;
+  margin-left: -12pt;
 }
+.two-col > div { display: table-cell; width: 50%; vertical-align: top; }
 
 /* Box */
 .box {
@@ -252,12 +254,12 @@ body {
 }
 
 /* KV table (key-value rows) */
-.kv-table { width: 100%; border-collapse: collapse; }
+.kv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .kv-table tr { border-bottom: 0.4pt solid #f0f0f0; }
 .kv-table th {
-  width: 110pt;
+  width: 90pt;
   text-align: left;
-  font-size: 8pt;
+  font-size: 7.5pt;
   color: #888;
   font-weight: 400;
   text-transform: uppercase;
@@ -265,15 +267,17 @@ body {
   padding: 5pt 6pt;
   vertical-align: top;
   font-family: "DejaVu Sans Mono", monospace;
+  word-break: keep-all;
 }
 .kv-table td {
-  font-size: 9.5pt;
+  font-size: 9pt;
   color: #1a1a1a;
   padding: 5pt 6pt;
   vertical-align: top;
   font-weight: 700;
   word-break: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: none;
 }
 
 /* Data table */
@@ -482,11 +486,13 @@ body {
   margin-bottom: 18pt;
 }
 .cert-two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12pt;
+  display: table;
+  width: 100%;
+  border-spacing: 12pt 0;
   margin-bottom: 18pt;
+  margin-left: -12pt;
 }
+.cert-two-col > div { display: table-cell; width: 50%; vertical-align: top; }
 .cert-col-title { font-size: 8pt; color: #4CAF50; text-transform: uppercase; letter-spacing: 0.7pt; font-family: "DejaVu Sans Mono", monospace; font-weight: 700; margin-bottom: 6pt; }
 .sig-grid {
   display: grid;
@@ -715,7 +721,7 @@ body {
         <tr><th>IP source</th><td>{{ session.get('source_ip') or profile.get('ip', '—') }}</td></tr>
         <tr><th>Localisation</th><td>{{ profile.get('city') or '—' }}{% if profile.get('country') %}, {{ profile.get('country') }}{% endif %}</td></tr>
         <tr><th>ASN</th><td>{{ profile.get('asn') or '—' }}{% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}</td></tr>
-        <tr><th>Organisation</th><td>{{ profile.get('as_org') or (profile.get('whois_data') or {}).get('asn_description') or '—' }}</td></tr>
+        <tr><th>Organisation</th><td>{{ (profile.get('as_org') or (profile.get('whois_data') or {}).get('asn_description') or '—') | replace('Internet Assigned Numbers Authority (IANA)', 'IANA') }}</td></tr>
         <tr><th>Honeypot ciblé</th><td>{{ (session.get('honeypot') or '—') | upper }}</td></tr>
         <tr><th>Port cible</th><td>{{ session.get('source_port') or '—' }}</td></tr>
       </table>
@@ -1117,11 +1123,15 @@ body {
     </thead>
     <tbody>
     {% for sig in score_signals %}
+    {% set is_active = sig.points > 0 %}
     <tr>
       <td class="mono" style="color:#888;">{{ '%02d'|format(loop.index) }}</td>
-      <td style="font-size:8.5pt;">{{ sig.name }}</td>
+      <td style="font-size:8.5pt;">
+        <div style="font-weight:{{ '700' if is_active else '400' }};color:{{ '#1a1a1a' if is_active else '#888' }};">{{ sig.name }}</div>
+        {% if sig.detail %}<div style="font-size:7pt;color:#999;font-style:italic;margin-top:1pt;">{{ sig.detail }}</div>{% endif %}
+      </td>
       <td class="mono" style="font-size:8pt;color:#555;">{{ sig.source }}</td>
-      <td style="font-weight:700;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ sig.points }}</td>
+      <td style="font-weight:700;color:{{ risk_color if is_active else '#bbb' }};font-family:'DejaVu Sans Mono',monospace;">{{ sig.points }}</td>
       <td>
         <div style="display:flex;align-items:center;gap:5pt;">
           <div style="flex:1;height:6pt;background:#eee;border-radius:3pt;overflow:hidden;">
