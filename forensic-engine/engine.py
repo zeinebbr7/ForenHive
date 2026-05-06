@@ -212,7 +212,9 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
                     "total_bytes": {"sum": {"field": "network.bytes"}},
                     "first_seen":  {"min": {"field": "@timestamp"}},
                     "last_seen":   {"max": {"field": "@timestamp"}},
-                    "http_paths":  {"terms": {"field": "url.path.keyword", "size": 20}},
+                    "http_paths":   {"terms": {"field": "http.request.uri",        "size": 50}},
+                    "http_methods": {"terms": {"field": "http.request.method",     "size": 8}},
+                    "user_agents":  {"terms": {"field": "http.request.user_agent", "size": 10, "missing": "—"}},
                 }
             }
         }
@@ -225,9 +227,11 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
 
     sessions = []
     for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
-        source_ip  = bucket["key"]
-        dest_port  = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
-        http_paths = [p["key"] for p in bucket.get("http_paths", {}).get("buckets", [])]
+        source_ip    = bucket["key"]
+        dest_port    = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
+        http_paths   = [p["key"] for p in bucket.get("http_paths",   {}).get("buckets", [])]
+        http_methods = [p["key"] for p in bucket.get("http_methods", {}).get("buckets", [])]
+        user_agents  = [p["key"] for p in bucket.get("user_agents",  {}).get("buckets", [])]
         sessions.append({
             "session_id":       f"galah-{source_ip}",
             "honeypot_type":    "galah",
@@ -235,12 +239,14 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
             "login_attempts":   bucket["event_count"]["value"],
             "success_count":    0,
             "failed_count":     0,
-            "command_count":    0,
+            "command_count":    bucket["event_count"]["value"],  # each HTTP request = 1 attacker action
             "exfil_bytes":      int(bucket["total_bytes"]["value"] or 0),
             "destination_port": dest_port,
             "started_at":       bucket["first_seen"]["value_as_string"],
             "ended_at":         bucket["last_seen"]["value_as_string"],
             "http_paths":       http_paths,
+            "http_methods":     http_methods,
+            "user_agents":      user_agents,
         })
     return sessions
 

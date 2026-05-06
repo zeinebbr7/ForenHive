@@ -32,6 +32,8 @@ Docker bridge and loopback IPs are filtered upstream in engine.py.
 """
 
 import math
+import re
+from urllib.parse import unquote
 
 # ── Critical ports ─────────────────────────────────────────────────────────────
 CRITICAL_PORTS = {
@@ -587,6 +589,43 @@ def calculate_risk_score(session_data: dict) -> dict:
                   (f"session started at {hour_local:02d}:00 local time"
                    if hour_local >= 0 else "no timestamp available"),
         "available": hour_local >= 0,
+    }
+
+    # ── 19. Web attack signatures (Galah HTTP) — 0-30 pts ─────────────────────
+    http_paths   = [str(p) for p in (session_data.get("http_paths")   or [])]
+    http_methods = [str(p) for p in (session_data.get("http_methods") or [])]
+    web_corpus = " ".join(unquote(p).lower() for p in http_paths)
+    WEB_PATTERNS = [
+        ("sqli",            r"('|%27|--|union\s+select|or\s+1\s*=\s*1|sleep\(|benchmark\()", 8,  "T1190", "SQL Injection"),
+        ("rce_cmdi",        r"(;|\||&&|`|\$\(|cmd=|exec=|/bin/sh|/bin/bash|whoami|/etc/passwd)", 12, "T1059", "Command Injection"),
+        ("path_traversal",  r"(\.\./|\.\.\\|%2e%2e|/etc/passwd|/etc/shadow|/proc/self|/windows/win\.ini)", 8, "T1083", "Path Traversal"),
+        ("secret_hunt",     r"(\.env|\.git/|\.svn/|wp-config|config\.php\.bak|\.aws/|id_rsa|\.htpasswd)", 5, "T1083", "Secret/Backup Hunt"),
+        ("admin_probe",     r"(/wp-admin|/wp-login|/phpmyadmin|/administrator|/manager/html|/admin/|/login\.php)", 3, "T1190", "Admin Panel Probe"),
+        ("malware_drop",    r"(wget\s+http|curl\s+http|/tmp/|/dev/shm|\.sh\b|\.bin\b|drop\.sh|mal\.sh)", 10, "T1105", "Malware Drop"),
+        ("data_exfil",      r"(format=csv|export\?|/dump|/db\.sql|/backup\.zip|limit=\d{3,}|/api/.*users)", 5, "T1041", "Data Exfiltration"),
+        ("webshell",        r"(c99\.php|r57\.php|/shell\.php|/cmd\.php|cmd\.jsp|eval\()", 12, "T1505.003", "Webshell"),
+    ]
+    web_pts = 0
+    web_attacks_seen: list = []
+    for name, pat, pts, tech_id, label in WEB_PATTERNS:
+        if re.search(pat, web_corpus):
+            web_pts += pts
+            web_attacks_seen.append(label)
+            notes.append(f"web_attack:{name} ({tech_id})")
+    web_pts = min(web_pts, 30)
+    if web_pts:
+        score += web_pts
+        techniques.append("exploit_app")
+        attack_types.add("web_exploitation")
+        if "POST" in http_methods:
+            attack_types.add("active_exploitation")
+    breakdown["web_attack_signatures"] = {
+        "points": web_pts, "max": 30,
+        "detail": (", ".join(web_attacks_seen) + f" — {len(http_paths)} URI(s) inspectées"
+                   if web_attacks_seen else
+                   (f"{len(http_paths)} URI(s) inspectées — aucun pattern offensif"
+                    if http_paths else "no HTTP paths available")),
+        "available": bool(http_paths),
     }
 
     # ── Finalize ──────────────────────────────────────────────────────────────

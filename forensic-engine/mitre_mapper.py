@@ -291,11 +291,11 @@ def get_forensic_narrative(session: dict, technique_ids: list) -> str:
                 "stream":  False,
                 "options": {
                     "temperature": 0.1,
-                    "num_predict": 80,
-                    "stop": ["\n\n", "3."],
+                    "num_predict": 320,
+                    "stop": ["\n\n\n"],
                 },
             },
-            timeout=60,
+            timeout=120,
         )
         resp.raise_for_status()
         text = resp.json().get("response", "").strip()

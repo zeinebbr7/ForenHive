@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     es_request_timeout: int = 30
 
     ollama_host: str = "http://forenhive-ollama:11434"
-    ollama_model: str = "mistral:7b"
-    ollama_timeout: int = 30
+    ollama_model: str = "mistral"
+    ollama_timeout: int = 180
     ollama_cache_ttl: int = 3600
 
     risk_alert_threshold: int = 75

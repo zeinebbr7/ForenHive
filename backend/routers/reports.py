@@ -60,8 +60,8 @@ _MITRE_DB: Dict[str, tuple] = {
     "T1033":     ("System Owner/User Discovery",        "Discovery"),
 }
 
-_MONTHS_FR = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-              "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+_MONTHS_FR = ["", "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
 
 _KC_LABELS = ["Recon", "Weapon", "Delivery", "Exploit", "Install", "C2", "Lateral", "Actions"]
 _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
@@ -69,11 +69,11 @@ _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
 
 
 def _risk_label_color(score: int):
-    if score >= 80: return "CRITIQUE", "#C62828"
-    if score >= 60: return "ÉLEVÉ",    "#b36000"
-    if score >= 40: return "MOYEN",    "#1565C0"
-    if score >= 20: return "FAIBLE",   "#388E3C"
-    return "INFO", "#757575"
+    if score >= 80: return "CRITICAL", "#dc2626"
+    if score >= 60: return "HIGH",     "#ea580c"
+    if score >= 40: return "MEDIUM",   "#d97706"
+    if score >= 20: return "LOW",      "#0891b2"
+    return "INFO", "#475569"
 
 
 def _mitre_lookup(tech_id: str):
@@ -166,9 +166,19 @@ async def _build_forensic_context(session_id: str) -> dict:
         es.session_detail(session_id),
         _pg_session_row(session_id),
     )
-    detail = detail or {}
-    # Fall back to PG source_ip when ES has no session (e.g. Dionaea)
+    detail = dict(detail) if detail else {}
+    # Fall back to PG source_ip when ES has no session (e.g. Dionaea, Galah aggregates)
     source_ip: Optional[str] = detail.get("source_ip") or pg_row.get("source_ip")
+    # If detail has no source_ip but session_id encodes one (e.g. galah-198.20.69.74),
+    # parse it so the template can show the IP.
+    if not source_ip and session_id:
+        for prefix in ("galah-", "dionaea-", "cowrie-"):
+            if session_id.startswith(prefix):
+                candidate = session_id[len(prefix):]
+                # naive IPv4 sanity check
+                if candidate.count(".") == 3:
+                    source_ip = candidate
+                    break
 
     # If no direct PG match, try to find an aggregated session for the same IP.
     # This happens when the user clicks an ES sub-session (e.g. galah-XXX-00) but
@@ -238,9 +248,60 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["is_tor"] = privacy["is_tor"]
     if not profile_dict.get("is_vpn") and privacy.get("is_vpn"):
         profile_dict["is_vpn"] = privacy["is_vpn"]
-    if not profile_dict.get("abuseipdb_score") and rep.get("abuse_score"):
-        profile_dict["abuseipdb_score"] = rep["abuse_score"]
-        profile_dict["abuseipdb_reports"] = rep.get("total_reports")
+    if not profile_dict.get("abuseipdb_score") and rep.get("abuse_score") is not None:
+        profile_dict["abuseipdb_score"] = rep.get("abuse_score") or 0
+        profile_dict["abuseipdb_reports"] = rep.get("total_reports") or 0
+    # Shodan / WHOIS context (used in 02b section)
+    if enrich.get("infrastructure"):
+        profile_dict.setdefault("shodan_data", enrich.get("infrastructure"))
+    if enrich.get("whois"):
+        profile_dict.setdefault("whois_data", enrich.get("whois"))
+
+    # ── Fill the `session` (detail) object so template kv-rows are not "—" ──
+    # ES has no `galah-<ip>` session_id (Galah events use random sessionIDs); when
+    # the template falls through to session.get(...), provide PG/ES-aggregated
+    # fallbacks so IP SOURCE / HONEYPOT CIBLÉ / PORT CIBLE etc. render.
+    if not detail.get("source_ip") and source_ip:
+        detail["source_ip"] = source_ip
+    if not detail.get("honeypot"):
+        detail["honeypot"] = (pg_row.get("honeypot_type")
+                              or (session_id.split("-", 1)[0] if "-" in session_id else "unknown"))
+    # Source port + event/session counters — pull from ES first event for this IP
+    if source_ip:
+        try:
+            evs = await get_es().events_for_ip(source_ip, size=1)
+            if evs:
+                first = evs[0]
+                if not detail.get("source_port"):
+                    detail["source_port"] = (first.get("source_port")
+                                              or (first.get("source") or {}).get("port")
+                                              or first.get("destination.port")
+                                              or (first.get("destination") or {}).get("port"))
+        except Exception as exc:
+            log.debug("events_for_ip failed: %s", exc)
+        # Total events (ES count)
+        try:
+            _es_client = get_es()
+            _resp = await _es_client.client.count(
+                index=_es_client.settings.honeypot_indices,
+                body={"query": {"term": {"source.ip": source_ip}}},
+                ignore_unavailable=True,
+                allow_no_indices=True,
+            )
+            profile_dict.setdefault("event_count", int(_resp.get("count", 0)))
+        except Exception as exc:
+            log.debug("ES count failed: %s", exc)
+        # Total scored sessions for this IP (PG)
+        try:
+            from sqlalchemy import text as _sql_text
+            from db import session_scope as _sscope
+            async with _sscope() as _s:
+                _r = await _s.execute(_sql_text(
+                    "SELECT COUNT(*) FROM forensic_sessions WHERE source_ip = :ip"
+                ), {"ip": source_ip})
+                profile_dict.setdefault("session_count", int(_r.scalar() or 0))
+        except Exception as exc:
+            log.debug("PG session_count failed: %s", exc)
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
@@ -281,6 +342,44 @@ async def _build_forensic_context(session_id: str) -> dict:
     if ended:
         timeline.append({"ts": str(ended), "source": "SESSION", "action": "Session fermée",
                          "detail": f"Durée : {float(detail.get('duration_seconds') or 0):.1f}s", "mitre": ""})
+
+    # Fallback for Galah / Dionaea aggregate sessions: build timeline directly from
+    # ES events when ES `session_detail` returned nothing (no session.id match).
+    if not timeline and source_ip:
+        try:
+            evs = await get_es().events_for_ip(source_ip, size=50)
+            evs = sorted(evs, key=lambda e: str(e.get("@timestamp") or ""))
+            for ev in evs:
+                ts  = ev.get("@timestamp") or ev.get("timestamp") or ""
+                hp  = (ev.get("honeypot") or {}).get("type") if isinstance(ev.get("honeypot"), dict) else ev.get("honeypot.type")
+                hp  = hp or ev.get("honeypot") or "honeypot"
+                src = "HTTP" if hp == "galah" else hp.upper() if isinstance(hp, str) else "EVENT"
+                method = (ev.get("http") or {}).get("request", {}).get("method") if isinstance(ev.get("http"), dict) else ev.get("http.request.method")
+                uri    = (ev.get("http") or {}).get("request", {}).get("uri")    if isinstance(ev.get("http"), dict) else ev.get("http.request.uri")
+                ua     = (ev.get("http") or {}).get("request", {}).get("user_agent") if isinstance(ev.get("http"), dict) else ev.get("http.request.user_agent")
+                if uri:
+                    action = f"{method or 'GET'} {uri}"
+                    detail_txt = (ua or "")[:80]
+                    mitre_id = "T1190"
+                    uri_l = uri.lower()
+                    if any(p in uri_l for p in ("'", "%27", "union", "1=1", "select")):
+                        mitre_id = "T1190"
+                    elif any(p in uri_l for p in ("../", "%2e%2e", "/etc/passwd", "/proc/self")):
+                        mitre_id = "T1083"
+                    elif any(p in uri_l for p in (".env", ".git/", "wp-config", "backup.zip", "id_rsa")):
+                        mitre_id = "T1083"
+                    elif any(p in uri_l for p in ("cmd=", "exec=", "whoami", "/bin/sh")):
+                        mitre_id = "T1059"
+                    elif any(p in uri_l for p in (".sh", "wget+http", "curl+http", "/tmp/")):
+                        mitre_id = "T1105"
+                    timeline.append({"ts": str(ts), "source": src, "action": action,
+                                     "detail": detail_txt, "mitre": mitre_id})
+                else:
+                    timeline.append({"ts": str(ts), "source": src,
+                                     "action": ev.get("event.action") or ev.get("event", {}).get("action") or "event",
+                                     "detail": (ev.get("message") or "")[:120], "mitre": ""})
+        except Exception as exc:
+            log.debug("timeline fallback for %s failed: %s", source_ip, exc)
 
     try:
         timeline.sort(key=lambda x: x.get("ts") or "")

@@ -1,1338 +1,1766 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>ForenHive — Rapport Forensique {{ report_ref }}</title>
+<title>ForenHive — Forensic Report {{ report_ref }}</title>
 <style>
+/* ═══════════════════════════════════════════════════════════════════
+   ForenHive — Forensic Analysis Report
+   Style: Corporate SOC × Threat Intelligence
+   Layout: A4 / WeasyPrint print-ready
+═══════════════════════════════════════════════════════════════════ */
+
 @page {
   size: A4;
-  margin: 16mm 14mm 20mm;
+  margin: 18mm 14mm 18mm;
 }
-@page :first {
-  margin: 0;
-}
+@page :first { margin: 0; }
+
 @page body-page {
-  @bottom-left {
-    content: "ForenHive Platform v1.0 · ISET Radès RSI {{ now_year }} · Zeineb & Ismail";
-    font-size: 7pt; color: #999; font-family: "DejaVu Sans Mono", monospace;
-  }
-  @bottom-right {
-    content: "Page " counter(page) " / " counter(pages) " · CONFIDENTIEL";
-    font-size: 7pt; color: #999; font-family: "DejaVu Sans Mono", monospace;
+  @top-left {
+    content: "FORENHIVE · {{ report_ref }}";
+    font-size: 7pt;
+    color: #475569;
+    font-family: "DejaVu Sans Mono", monospace;
+    letter-spacing: 1pt;
   }
   @top-right {
-    content: "⬡ ForenHive · {{ report_ref }}";
-    font-size: 7pt; color: #8C1A2B; font-family: "DejaVu Sans Mono", monospace;
+    content: "TLP:AMBER+STRICT";
+    font-size: 7pt;
+    color: #b45309;
+    font-family: "DejaVu Sans Mono", monospace;
+    font-weight: 700;
+    letter-spacing: 1pt;
+  }
+  @bottom-left {
+    content: "ForenHive Platform v1.0 · ISET Radès · Standard Sharing Software (3S)";
+    font-size: 6.5pt;
+    color: #94a3b8;
+    font-family: "DejaVu Sans Mono", monospace;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " / " counter(pages);
+    font-size: 6.5pt;
+    color: #94a3b8;
+    font-family: "DejaVu Sans Mono", monospace;
   }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: "DejaVu Sans", Arial, sans-serif;
-  color: #1a1a1a;
-  font-size: 10pt;
-  line-height: 1.45;
+  font-family: "DejaVu Sans", "Helvetica", Arial, sans-serif;
+  color: #0f172a;
+  font-size: 9.5pt;
+  line-height: 1.5;
 }
 
-/* ══════════════════════════════════════
+/* ═══ Color tokens ═══ */
+/* navy-900 #0f172a · slate-800 #1e293b · slate-500 #64748b · slate-300 #cbd5e1
+   crimson #dc2626 · amber #d97706 · cyan #0891b2 · emerald #059669 */
+
+/* ════════════════════════════════════════════════════════════════
    COVER PAGE
-══════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════ */
 .cover {
   page: first;
   width: 210mm;
   min-height: 297mm;
-  padding: 16mm 14mm;
-  display: flex;
-  flex-direction: column;
+  padding: 0;
+  background: #0f172a;
+  color: #f1f5f9;
+  position: relative;
 }
-.cover-header {
+.cover-band {
+  background: {{ risk_color }};
+  height: 12mm;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 14mm;
+}
+.cover-band-inner {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 48mm;
-}
-.cover-logo-wrap {}
-.cover-logo {
-  font-size: 28pt;
-  font-weight: 900;
-  color: #8C1A2B;
-  letter-spacing: -0.5pt;
-}
-.cover-logo-hex { color: #8C1A2B; }
-.cover-tagline {
-  font-size: 7.5pt;
-  color: #888;
-  letter-spacing: 2.5pt;
-  text-transform: uppercase;
-  margin-top: 3pt;
-}
-.cover-company {
-  text-align: right;
+  width: 100%;
+  font-family: "DejaVu Sans Mono", monospace;
   font-size: 8pt;
-  color: #666;
-  line-height: 1.7;
+  letter-spacing: 2pt;
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
 }
-.cover-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+
+.cover-content { padding: 22mm 18mm; }
+
+.cover-header {
+  display: table;
+  width: 100%;
+  margin-bottom: 36mm;
+}
+.cover-header > div { display: table-cell; vertical-align: top; }
+.cover-logo {
+  font-size: 32pt;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: -0.6pt;
+  line-height: 1;
+}
+.cover-logo-mark { color: {{ risk_color }}; }
+.cover-tag {
+  font-size: 7pt;
+  letter-spacing: 3pt;
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 6pt;
+}
+.cover-org {
+  text-align: right;
+  font-size: 7.5pt;
+  color: #cbd5e1;
+  line-height: 1.7;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.cover-org strong { color: #fff; font-weight: 700; }
+
+.cover-title-block { margin-bottom: 18mm; }
+.cover-doc-type {
+  font-size: 8pt;
+  letter-spacing: 4pt;
+  color: {{ risk_color }};
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-bottom: 8pt;
+  border-left: 3pt solid {{ risk_color }};
+  padding-left: 10pt;
+}
+.cover-title {
+  font-size: 30pt;
+  font-weight: 900;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.8pt;
+  line-height: 1.05;
+  margin-bottom: 8pt;
+  padding-left: 10pt;
+}
+.cover-sub {
+  font-size: 10pt;
+  color: #94a3b8;
+  font-style: italic;
+  padding-left: 10pt;
+  line-height: 1.5;
+}
+
+/* Risk gauge + meta */
+.cover-risk-row {
+  display: table;
+  width: 100%;
+  margin-bottom: 18mm;
+}
+.cover-risk-row > div { display: table-cell; vertical-align: middle; }
+
+.cover-gauge {
+  width: 165pt;
+  padding-right: 18pt;
+}
+.cover-gauge-box {
+  background: rgba(255,255,255,0.04);
+  border: 0.6pt solid rgba(255,255,255,0.12);
+  border-radius: 8pt;
+  padding: 14pt 16pt;
   text-align: center;
 }
-.cover-section-tag {
-  color: #8C1A2B;
-  font-size: 7.5pt;
+.cover-gauge-tag {
+  font-size: 7pt;
+  letter-spacing: 2pt;
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-bottom: 4pt;
+}
+.cover-score {
+  font-size: 56pt;
+  font-weight: 900;
+  color: {{ risk_color }};
+  line-height: 1;
+}
+.cover-score-max { font-size: 14pt; color: #64748b; vertical-align: top; }
+.cover-score-label {
+  font-size: 11pt;
+  font-weight: 800;
+  color: {{ risk_color }};
   letter-spacing: 3pt;
   text-transform: uppercase;
   font-family: "DejaVu Sans Mono", monospace;
-  margin-bottom: 14pt;
+  margin-top: 4pt;
 }
-.cover-title {
+
+.cover-meta {
+  padding-left: 20pt;
+  border-left: 0.6pt solid rgba(255,255,255,0.1);
+}
+.cover-meta-row {
+  display: table;
+  width: 100%;
+  padding: 5pt 0;
+  border-bottom: 0.4pt solid rgba(255,255,255,0.06);
+}
+.cover-meta-row > div { display: table-cell; vertical-align: middle; }
+.cover-meta-key {
+  width: 105pt;
+  font-size: 7pt;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 1.2pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.cover-meta-val {
+  font-size: 9pt;
+  color: #f1f5f9;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-weight: 700;
+}
+
+.cover-footer-band {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: #020617;
+  padding: 10pt 18mm;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 7pt;
+  color: #64748b;
+  letter-spacing: 1.5pt;
+  display: table;
+}
+.cover-footer-band > span { display: table-cell; }
+.cover-footer-right { text-align: right; }
+
+/* ════════════════════════════════════════════════════════════════
+   BODY (interior pages)
+═══════════════════════════════════════════════════════════════ */
+.body-content { page: body-page; }
+.page-break { page-break-before: always; }
+.no-break { page-break-inside: avoid; }
+.section { margin-bottom: 14pt; }
+
+/* Section header */
+.section-head {
+  display: table;
+  width: 100%;
+  margin-bottom: 12pt;
+  padding-bottom: 6pt;
+  border-bottom: 1pt solid #e2e8f0;
+}
+.section-head > div { display: table-cell; vertical-align: middle; }
+.sec-num {
+  width: 36pt;
   font-size: 22pt;
   font-weight: 900;
+  color: {{ risk_color }};
+  font-family: "DejaVu Sans Mono", monospace;
+  line-height: 1;
+}
+.sec-title {
+  font-size: 13pt;
+  font-weight: 800;
+  color: #0f172a;
   text-transform: uppercase;
-  color: #111;
-  line-height: 1.15;
-  margin-bottom: 10pt;
   letter-spacing: 0.5pt;
+  line-height: 1.1;
 }
-.cover-subtitle {
-  font-size: 9.5pt;
-  font-style: italic;
-  color: #555;
-  margin-bottom: 28pt;
+.sec-sub {
+  font-size: 7.5pt;
+  color: #64748b;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 2pt;
+  letter-spacing: 0.4pt;
 }
-.cover-risk-box {
-  border: 2pt solid {{ risk_color }};
-  border-radius: 6pt;
-  padding: 14pt 24pt 12pt;
+
+/* Two-column responsive (table-based for WeasyPrint) */
+.col2 { display: table; width: 100%; border-spacing: 8pt 0; margin-left: -8pt; }
+.col2 > div { display: table-cell; width: 50%; vertical-align: top; }
+.col3 { display: table; width: 100%; border-spacing: 6pt 0; margin-left: -6pt; }
+.col3 > div { display: table-cell; width: 33.33%; vertical-align: top; }
+
+/* Card */
+.card {
+  border: 0.5pt solid #e2e8f0;
+  border-radius: 5pt;
+  background: #ffffff;
+  overflow: hidden;
+}
+.card-head {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 5pt 10pt;
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 1.4pt;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-weight: 700;
+  display: table;
+  width: 100%;
+}
+.card-head > span { display: table-cell; }
+.card-head .card-tag { text-align: right; color: #fbbf24; font-size: 6.5pt; letter-spacing: 1pt; }
+.card-body { padding: 9pt 11pt; }
+.card.alt .card-head { background: {{ risk_color }}; }
+.card.warn  { border-color: #fde68a; }
+.card.warn  .card-head { background: #b45309; }
+.card.danger { border-color: #fecaca; }
+.card.danger .card-head { background: #991b1b; }
+.card.ok    { border-color: #bbf7d0; }
+.card.ok    .card-head { background: #065f46; }
+
+/* KV table inside cards */
+.kv { width: 100%; border-collapse: collapse; }
+.kv tr { border-bottom: 0.4pt solid #f1f5f9; }
+.kv tr:last-child { border-bottom: none; }
+.kv th {
+  width: 35%;
+  text-align: left;
+  font-size: 7pt;
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: 0.6pt;
+  text-transform: uppercase;
+  padding: 5pt 8pt 5pt 0;
+  vertical-align: top;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.kv td {
+  font-size: 8.5pt;
+  color: #0f172a;
+  padding: 5pt 0;
+  vertical-align: top;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+/* Generic data table */
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+  margin: 6pt 0;
+  border: 0.5pt solid #e2e8f0;
+  border-radius: 4pt;
+  overflow: hidden;
+}
+table.data thead tr {
+  background: #0f172a;
+  color: #f8fafc;
+}
+table.data th {
+  padding: 6pt 8pt;
+  text-align: left;
+  font-weight: 700;
+  font-size: 7pt;
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+table.data td {
+  padding: 5pt 8pt;
+  border-bottom: 0.3pt solid #f1f5f9;
+  vertical-align: top;
+  font-size: 8pt;
+}
+table.data tbody tr:nth-child(even) { background: #f8fafc; }
+
+.mono { font-family: "DejaVu Sans Mono", monospace; }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2pt 6pt;
+  border-radius: 9pt;
+  font-size: 6.5pt;
+  font-weight: 800;
+  letter-spacing: 0.6pt;
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  border: 0.4pt solid;
+  white-space: nowrap;
+}
+.b-crit { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+.b-high { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.b-med  { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.b-low  { background: #ecfeff; color: #155e75; border-color: #a5f3fc; }
+.b-info { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+.b-ok   { background: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
+.b-warn { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+
+/* Highlight callout boxes */
+.callout {
+  border-left: 3pt solid #0891b2;
+  background: #ecfeff;
+  padding: 9pt 12pt;
+  border-radius: 0 4pt 4pt 0;
+  font-size: 9pt;
+  color: #0f172a;
+  margin: 8pt 0;
+  line-height: 1.55;
+}
+.callout.exec     { border-left-color: {{ risk_color }}; background: #fef9f9; }
+.callout.note     { border-left-color: #d97706; background: #fffbeb; }
+.callout.danger   { border-left-color: #dc2626; background: #fef2f2; }
+.callout.success  { border-left-color: #059669; background: #ecfdf5; }
+.callout-tag {
+  display: inline-block;
+  font-size: 6.5pt;
+  letter-spacing: 1.2pt;
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-weight: 800;
+  margin-bottom: 4pt;
+  padding: 1pt 6pt;
+  border-radius: 2pt;
+  background: rgba(0,0,0,0.05);
+  color: #334155;
+}
+.callout.danger .callout-tag { background: #fecaca; color: #7f1d1d; }
+.callout.note .callout-tag { background: #fde68a; color: #78350f; }
+.callout.success .callout-tag { background: #bbf7d0; color: #064e3b; }
+
+/* Kill chain pills */
+.kc-row {
+  display: table;
+  width: 100%;
+  border-spacing: 3pt 0;
+  margin: 8pt 0 4pt -3pt;
+}
+.kc-row > div { display: table-cell; }
+.kc-pill {
+  border: 0.5pt solid #cbd5e1;
+  border-radius: 14pt;
+  padding: 6pt 4pt;
   text-align: center;
-  margin-bottom: 28pt;
-  width: 155pt;
+  font-size: 6.5pt;
+  font-weight: 700;
+  font-family: "DejaVu Sans Mono", monospace;
+  color: #94a3b8;
+  background: #f8fafc;
+  text-transform: uppercase;
+  letter-spacing: 0.8pt;
 }
-.cover-score {
-  font-size: 52pt;
+.kc-pill.done {
+  background: {{ risk_color }};
+  color: #ffffff;
+  border-color: {{ risk_color }};
+}
+.kc-pill.current {
+  background: #0f172a;
+  color: #fbbf24;
+  border-color: #0f172a;
+}
+
+/* Score signal radar / decomposition */
+.score-block {
+  display: table;
+  width: 100%;
+  margin-bottom: 12pt;
+}
+.score-block > div { display: table-cell; vertical-align: middle; }
+.score-num-wrap {
+  width: 130pt;
+  text-align: center;
+  padding: 12pt;
+  border: 0.6pt solid #e2e8f0;
+  border-radius: 6pt;
+  background: #f8fafc;
+}
+.score-num {
+  font-size: 56pt;
   font-weight: 900;
   color: {{ risk_color }};
   line-height: 1;
   font-family: "DejaVu Sans", sans-serif;
 }
-.cover-score-max { font-size: 14pt; color: #888; vertical-align: bottom; }
-.cover-risk-label {
-  font-size: 11pt;
-  font-weight: 700;
+.score-num-max { font-size: 14pt; color: #94a3b8; }
+.score-num-tier {
+  font-size: 9.5pt;
+  font-weight: 800;
   color: {{ risk_color }};
-  letter-spacing: 2.5pt;
-  text-transform: uppercase;
-  margin-top: 4pt;
-  font-family: "DejaVu Sans Mono", monospace;
-}
-.cover-risk-sub { font-size: 7.5pt; color: #888; margin-top: 3pt; }
-.cover-meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8pt 24pt;
-  width: 280pt;
-  text-align: left;
-}
-.cover-meta-label {
-  font-size: 7pt;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 1pt;
-  margin-bottom: 1pt;
-  font-family: "DejaVu Sans Mono", monospace;
-}
-.cover-meta-value {
-  font-size: 10pt;
-  font-weight: 700;
-  font-family: "DejaVu Sans Mono", monospace;
-  color: #1a1a1a;
-}
-.cover-footer {
-  text-align: center;
-  font-size: 7pt;
-  color: #ccc;
   letter-spacing: 2pt;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 4pt;
   text-transform: uppercase;
-  margin-top: 10mm;
+}
+.score-bar-wrap {
+  padding-left: 18pt;
+}
+.score-bar-track {
+  height: 10pt;
+  background: #e2e8f0;
+  border-radius: 5pt;
+  overflow: hidden;
+}
+.score-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #059669 0%, #d97706 50%, #dc2626 100%);
+  border-radius: 5pt;
+}
+.score-bar-marker {
+  position: relative;
+  height: 12pt;
+  margin-top: -10pt;
+  margin-bottom: 2pt;
+}
+.score-marker {
+  position: absolute;
+  width: 2pt;
+  height: 14pt;
+  background: #0f172a;
+  margin-top: -2pt;
+}
+.score-bar-scale {
+  display: table;
+  width: 100%;
+  font-size: 6.5pt;
+  color: #94a3b8;
   font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 4pt;
 }
+.score-bar-scale > span { display: table-cell; text-align: center; }
+.score-bar-scale > span:first-child { text-align: left; }
+.score-bar-scale > span:last-child  { text-align: right; }
 
-/* ══════════════════════════════════════
-   BODY PAGES
-══════════════════════════════════════ */
-.body-content {
-  page: body-page;
+/* Signal table mini bars */
+.sig-bar {
+  height: 5pt;
+  background: #e2e8f0;
+  border-radius: 2.5pt;
+  overflow: hidden;
+  width: 100%;
 }
+.sig-bar-fill { height: 100%; background: {{ risk_color }}; border-radius: 2.5pt; }
 
-.page-break { page-break-before: always; }
-.section { margin-top: 0; margin-bottom: 18pt; }
-
-/* Section header */
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 8pt;
-  margin-bottom: 12pt;
-  border-bottom: 1.5pt solid #F9A825;
-  padding-bottom: 6pt;
+/* TOC */
+.toc-row {
+  display: table;
+  width: 100%;
+  padding: 6pt 0;
+  border-bottom: 0.3pt dotted #cbd5e1;
 }
-.section-num {
-  background: #8C1A2B;
-  color: #fff;
-  font-size: 8pt;
-  font-weight: 700;
-  padding: 2pt 7pt;
-  border-radius: 3pt;
+.toc-row > div { display: table-cell; vertical-align: baseline; }
+.toc-num {
+  width: 32pt;
+  color: {{ risk_color }};
   font-family: "DejaVu Sans Mono", monospace;
+  font-weight: 800;
+  font-size: 9pt;
 }
-.section-title {
-  font-size: 12.5pt;
-  font-weight: 700;
-  color: #1a1a1a;
-  text-transform: uppercase;
-  letter-spacing: 0.5pt;
-}
-.section-sub {
-  font-size: 7.5pt;
-  color: #888;
-  font-family: "DejaVu Sans Mono", monospace;
-  margin-top: 2pt;
-}
+.toc-title { font-size: 9.5pt; color: #0f172a; font-weight: 700; }
+.toc-sub   { font-size: 7pt; color: #64748b; font-family: "DejaVu Sans Mono", monospace; }
 
 /* About box */
 .about-box {
-  border: 0.5pt solid #e0e0e0;
+  border: 0.6pt solid #cbd5e1;
+  border-left: 3pt solid #0891b2;
   border-radius: 4pt;
-  padding: 10pt 13pt;
-  margin-bottom: 14pt;
-  background: #fafafa;
-}
-.about-title { font-size: 8pt; color: #8C1A2B; text-transform: uppercase; letter-spacing: 1pt; font-family: "DejaVu Sans Mono", monospace; margin-bottom: 5pt; }
-.about-body { font-size: 9pt; color: #444; line-height: 1.55; }
-
-/* Résumé exécutif highlight */
-.resume-box {
-  border-left: 3pt solid #8C1A2B;
-  background: rgba(140,26,43,.04);
   padding: 10pt 14pt;
-  margin: 10pt 0;
-  border-radius: 0 4pt 4pt 0;
-  font-size: 9.5pt;
-  color: #222;
-  line-height: 1.55;
+  background: #f8fafc;
+  margin-bottom: 14pt;
 }
+.about-tag {
+  font-size: 6.5pt;
+  letter-spacing: 1.5pt;
+  text-transform: uppercase;
+  color: #0891b2;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-weight: 700;
+  margin-bottom: 4pt;
+}
+.about-body { font-size: 8.5pt; color: #1e293b; line-height: 1.6; }
 
-/* Two-column layout */
-.two-col {
+/* Wanted (behavioral) */
+.wanted {
+  border: 0.6pt solid #e2e8f0;
+  border-radius: 6pt;
+  background: #ffffff;
+  padding: 12pt;
+  margin-bottom: 12pt;
+}
+.wanted-top {
   display: table;
   width: 100%;
-  border-spacing: 12pt 0;
-  margin: 8pt 0;
-  margin-left: -12pt;
+  border-bottom: 0.4pt solid #f1f5f9;
+  padding-bottom: 9pt;
+  margin-bottom: 9pt;
 }
-.two-col > div { display: table-cell; width: 50%; vertical-align: top; }
-
-/* Box */
-.box {
-  border: 0.5pt solid #e0e0e0;
-  border-radius: 4pt;
-  padding: 10pt 12pt;
-}
-.box-title {
-  font-size: 7.5pt;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.7pt;
-  font-family: "DejaVu Sans Mono", monospace;
-  border-bottom: 0.5pt solid #eee;
-  padding-bottom: 4pt;
-  margin-bottom: 7pt;
-}
-
-/* KV table (key-value rows) */
-.kv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.kv-table tr { border-bottom: 0.4pt solid #f0f0f0; }
-.kv-table th {
-  width: 90pt;
-  text-align: left;
-  font-size: 7.5pt;
-  color: #888;
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.3pt;
-  padding: 5pt 6pt;
-  vertical-align: top;
-  font-family: "DejaVu Sans Mono", monospace;
-  word-break: keep-all;
-}
-.kv-table td {
-  font-size: 9pt;
-  color: #1a1a1a;
-  padding: 5pt 6pt;
-  vertical-align: top;
-  font-weight: 700;
-  word-break: normal;
-  overflow-wrap: break-word;
-  hyphens: none;
-}
-
-/* Data table */
-.data-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 8pt 0; }
-.data-table thead tr { background: #f5f5f5; }
-.data-table th {
-  padding: 5pt 7pt;
-  text-align: left;
-  font-weight: 700;
-  color: #555;
-  font-size: 7.5pt;
-  text-transform: uppercase;
-  letter-spacing: 0.4pt;
-  border-bottom: 1pt solid #ddd;
-}
-.data-table td {
-  padding: 5pt 7pt;
-  border-bottom: 0.4pt solid #f0f0f0;
-  vertical-align: top;
-}
-.data-table tbody tr:hover { background: #fafafa; }
-
-.mono { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; }
-
-/* Badges */
-.badge {
-  display: inline-block;
-  padding: 1.5pt 6pt;
-  border-radius: 3pt;
-  font-size: 7.5pt;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5pt;
-  font-family: "DejaVu Sans Mono", monospace;
-}
-.badge-critique { background: rgba(198,40,40,.1); color: #C62828; border: 0.4pt solid rgba(198,40,40,.3); }
-.badge-eleve    { background: rgba(249,168,37,.1); color: #b36000; border: 0.4pt solid rgba(249,168,37,.4); }
-.badge-moyen    { background: rgba(25,118,210,.1); color: #1565C0; border: 0.4pt solid rgba(25,118,210,.3); }
-.badge-ok       { background: rgba(46,125,50,.08); color: #2E7D32; border: 0.4pt solid rgba(46,125,50,.3); }
-.badge-warn     { background: rgba(198,40,40,.06); color: #C62828; border: 0.4pt solid rgba(198,40,40,.2); }
-.badge-info     { background: rgba(97,97,97,.08);  color: #555;    border: 0.4pt solid rgba(97,97,97,.2); }
-
-/* Kill Chain bar */
-.kc-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 3pt;
-  margin: 8pt 0 4pt;
-}
-.kc-cell {
-  border: 0.5pt solid #ddd;
-  border-radius: 3pt;
-  padding: 5pt 2pt;
+.wanted-top > div { display: table-cell; vertical-align: middle; }
+.wanted-mug {
+  width: 60pt;
   text-align: center;
-  font-size: 6.5pt;
-  color: #999;
-  text-transform: uppercase;
-  letter-spacing: 0.2pt;
-  background: #fafafa;
+  border: 1pt solid {{ risk_color }};
+  border-radius: 5pt;
+  padding: 6pt 4pt;
+}
+.wanted-mug-tag { font-size: 6pt; color: #94a3b8; letter-spacing: 1.5pt; font-family: "DejaVu Sans Mono", monospace; }
+.wanted-mug-num { font-size: 26pt; font-weight: 900; color: {{ risk_color }}; line-height: 1; }
+.wanted-mug-tier { font-size: 7pt; color: {{ risk_color }}; font-weight: 800; letter-spacing: 1.5pt; font-family: "DejaVu Sans Mono", monospace; }
+.wanted-info { padding-left: 14pt; }
+.wanted-ip {
+  font-size: 14pt;
+  font-weight: 900;
+  color: #0f172a;
   font-family: "DejaVu Sans Mono", monospace;
 }
-.kc-cell.done {
-  background: #F9A825;
-  color: #111;
-  border-color: #c67c00;
-  font-weight: 700;
+.wanted-loc {
+  font-size: 8pt;
+  color: #64748b;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 2pt;
 }
-.kc-cell.done.sev-critique {
-  background: #C62828;
-  color: #fff;
-  border-color: #8C1A2B;
-}
-.kc-label { font-size: 8pt; color: #555; font-family: "DejaVu Sans Mono", monospace; margin-top: 3pt; }
+.wanted-tags { margin-top: 5pt; }
+.wanted-tags .badge { margin-right: 3pt; }
 
-/* Organised score bar */
 .org-track {
-  height: 8pt;
-  background: #eee;
-  border-radius: 4pt;
+  height: 6pt;
+  background: #e2e8f0;
+  border-radius: 3pt;
   overflow: hidden;
-  border: 0.4pt solid #ddd;
   margin: 4pt 0 2pt;
+  position: relative;
 }
 .org-fill {
   height: 100%;
-  border-radius: 4pt;
-  background: linear-gradient(90deg, #1565C0, #C62828);
+  background: linear-gradient(90deg, #0891b2, {{ risk_color }});
+  border-radius: 3pt;
 }
 .org-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 7pt;
-  color: #888;
+  display: table;
+  width: 100%;
+  font-size: 6.5pt;
+  color: #64748b;
   font-family: "DejaVu Sans Mono", monospace;
+  letter-spacing: 1pt;
+}
+.org-labels > span { display: table-cell; }
+.org-labels > span:nth-child(2) { text-align: center; color: #0f172a; font-weight: 700; }
+.org-labels > span:last-child { text-align: right; }
+
+.mo-grid {
+  display: table;
+  width: 100%;
+  margin-top: 9pt;
+  border-spacing: 8pt 0;
+  margin-left: -8pt;
+}
+.mo-grid > div { display: table-cell; width: 50%; vertical-align: top; }
+.mo-block {
+  border: 0.4pt solid #e2e8f0;
+  border-radius: 4pt;
+  padding: 7pt 9pt;
+  background: #f8fafc;
+}
+.mo-tag {
+  font-size: 6.5pt;
+  letter-spacing: 1.2pt;
+  text-transform: uppercase;
+  color: #64748b;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-bottom: 5pt;
+}
+.mo-item {
+  font-size: 8pt;
+  color: #1e293b;
+  padding: 1pt 0 1pt 11pt;
+  position: relative;
+}
+.mo-item::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: {{ risk_color }};
 }
 
 /* Narrative box */
-.narrative-box {
-  border-left: 3pt solid #F9A825;
-  background: rgba(249,168,37,.03);
+.narrative {
+  border-left: 3pt solid #d97706;
+  background: #fffbeb;
   padding: 10pt 14pt;
-  margin: 8pt 0;
   border-radius: 0 4pt 4pt 0;
-  font-style: italic;
-  color: #333;
-  line-height: 1.6;
   font-size: 9pt;
+  color: #1e293b;
+  line-height: 1.65;
+  font-style: italic;
+  margin: 6pt 0;
 }
-
-/* Score bar */
-.score-bar-wrap { display: flex; align-items: center; gap: 6pt; }
-.score-bar { flex: 1; height: 6pt; background: #eee; border-radius: 3pt; overflow: hidden; }
-.score-fill { height: 100%; background: {{ risk_color }}; border-radius: 3pt; }
-.score-pts { font-size: 9pt; font-weight: 700; font-family: "DejaVu Sans Mono", monospace; color: {{ risk_color }}; width: 40pt; text-align: right; }
-
-/* Chain of custody */
-.cert-box {
-  border: 0.8pt solid #4CAF50;
-  border-radius: 5pt;
-  padding: 10pt 13pt;
-  background: rgba(76,175,80,.04);
+.narrative-head {
+  font-size: 6.5pt;
+  letter-spacing: 1.2pt;
+  text-transform: uppercase;
+  color: #92400e;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-style: normal;
+  font-weight: 800;
+  margin-bottom: 5pt;
 }
-.cert-ok { color: #2E7D32; font-weight: 700; font-size: 9pt; }
-
-/* IOC table */
-.ioc-value { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; color: #1565C0; }
 
 /* Hash box */
 .hash-box {
-  border: 0.5pt solid #ddd;
-  background: #f9f9f9;
-  border-radius: 4pt;
-  padding: 7pt 10pt;
+  background: #0f172a;
+  color: #fbbf24;
   font-family: "DejaVu Sans Mono", monospace;
   font-size: 7.5pt;
-  color: #333;
-  word-break: break-all;
-  margin: 6pt 0;
-}
-
-/* WANTED card (behavioral) */
-.wanted-card {
-  border: 1pt solid #ddd;
-  border-radius: 5pt;
-  padding: 10pt 12pt;
-  margin: 8pt 0;
-}
-.wanted-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12pt;
-  margin-bottom: 10pt;
-}
-.wanted-score-box {
-  border: 1.5pt solid {{ risk_color }};
+  padding: 8pt 11pt;
   border-radius: 4pt;
-  padding: 6pt 10pt;
-  text-align: center;
-  min-width: 52pt;
+  word-break: break-all;
+  line-height: 1.55;
 }
-.wanted-score-label { font-size: 6.5pt; color: #888; text-transform: uppercase; font-family: "DejaVu Sans Mono", monospace; }
-.wanted-score-num { font-size: 24pt; font-weight: 900; color: {{ risk_color }}; line-height: 1; }
-.wanted-score-sev { font-size: 7pt; font-weight: 700; color: {{ risk_color }}; letter-spacing: 1pt; font-family: "DejaVu Sans Mono", monospace; text-transform: uppercase; }
-.wanted-info h3 { font-size: 13pt; font-weight: 900; color: #1a1a1a; margin: 0 0 3pt; }
-.wanted-info p { font-size: 8pt; color: #666; font-family: "DejaVu Sans Mono", monospace; }
-.wanted-tags { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 5pt; }
+.hash-box .hash-key { color: #94a3b8; font-weight: 700; }
 
-.mo-sig-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10pt;
-  margin: 8pt 0;
-}
-.mo-title { font-size: 7.5pt; color: #888; text-transform: uppercase; letter-spacing: 0.8pt; font-family: "DejaVu Sans Mono", monospace; margin-bottom: 5pt; }
-.mo-item { font-size: 8.5pt; color: #333; padding: 2pt 0; padding-left: 10pt; position: relative; }
-.mo-item::before { content: "▸"; position: absolute; left: 0; color: #8C1A2B; }
-
-/* Score decomposition big number */
-.score-big-wrap { display: flex; align-items: center; gap: 16pt; margin-bottom: 10pt; }
-.score-big { font-size: 42pt; font-weight: 900; color: {{ risk_color }}; line-height: 1; font-family: "DejaVu Sans", sans-serif; }
-.score-big-info { }
-.score-big-max { font-size: 12pt; color: #888; }
-.score-big-label { font-size: 11pt; font-weight: 700; color: {{ risk_color }}; letter-spacing: 1.5pt; text-transform: uppercase; font-family: "DejaVu Sans Mono", monospace; }
-.score-big-sub { font-size: 7.5pt; color: #888; font-family: "DejaVu Sans Mono", monospace; margin-top: 2pt; }
-
-/* Certification page */
-.cert-page-inner {
-  max-width: 420pt;
-  margin: 0 auto;
-  padding: 20pt 0;
-}
-.cert-page-title {
-  font-size: 14pt;
-  font-weight: 700;
+/* Stamp / seal */
+.seal {
+  border: 1.5pt solid #059669;
+  border-radius: 50%;
+  width: 90pt;
+  height: 90pt;
+  display: table-cell;
+  vertical-align: middle;
   text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 1.5pt;
-  color: #1a1a1a;
-  margin-bottom: 5pt;
-}
-.cert-page-sub {
-  font-size: 8.5pt;
-  color: #888;
-  text-align: center;
+  color: #065f46;
   font-family: "DejaVu Sans Mono", monospace;
-  margin-bottom: 18pt;
+  background: rgba(5,150,105,0.05);
+  transform: rotate(-7deg);
 }
-.cert-two-col {
+.seal-top { font-size: 7pt; letter-spacing: 1.5pt; font-weight: 800; }
+.seal-mid { font-size: 11pt; font-weight: 900; padding: 3pt 0; letter-spacing: 1pt; }
+.seal-bot { font-size: 6pt; letter-spacing: 1.2pt; }
+
+/* Signature */
+.sig-grid {
   display: table;
   width: 100%;
-  border-spacing: 12pt 0;
-  margin-bottom: 18pt;
-  margin-left: -12pt;
+  margin-top: 16pt;
+  border-spacing: 18pt 0;
+  margin-left: -18pt;
 }
-.cert-two-col > div { display: table-cell; width: 50%; vertical-align: top; }
-.cert-col-title { font-size: 8pt; color: #4CAF50; text-transform: uppercase; letter-spacing: 0.7pt; font-family: "DejaVu Sans Mono", monospace; font-weight: 700; margin-bottom: 6pt; }
-.sig-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20pt;
-  margin: 18pt 0 14pt;
+.sig-grid > div { display: table-cell; width: 50%; vertical-align: top; text-align: center; }
+.sig-line { border-top: 0.6pt solid #64748b; margin: 18pt 18pt 5pt; }
+.sig-name { font-size: 9pt; font-weight: 700; color: #0f172a; }
+.sig-role { font-size: 7pt; color: #64748b; font-family: "DejaVu Sans Mono", monospace; }
+
+/* Recommendations list */
+.rec-list { margin: 4pt 0; }
+.rec-item {
+  font-size: 8.5pt;
+  color: #1e293b;
+  line-height: 1.6;
+  padding: 4pt 0 4pt 22pt;
+  position: relative;
+  border-bottom: 0.3pt dotted #e2e8f0;
 }
-.sig-block { text-align: center; }
-.sig-line { border-top: 0.7pt solid #888; margin-bottom: 5pt; }
-.sig-name { font-size: 9pt; font-weight: 700; color: #1a1a1a; }
-.sig-sub { font-size: 7.5pt; color: #8C1A2B; font-family: "DejaVu Sans Mono", monospace; }
-.legal-box {
-  font-size: 8pt;
-  color: #555;
-  background: #fafafa;
-  border: 0.4pt solid #e0e0e0;
+.rec-item:last-child { border-bottom: none; }
+.rec-item .rec-num {
+  position: absolute;
+  left: 0;
+  top: 4pt;
+  width: 16pt;
+  height: 16pt;
+  border-radius: 50%;
+  background: {{ risk_color }};
+  color: #fff;
+  font-size: 7pt;
+  font-weight: 800;
+  text-align: center;
+  line-height: 16pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+/* Legal */
+.legal {
+  font-size: 7.5pt;
+  color: #64748b;
+  background: #f8fafc;
+  border: 0.4pt solid #e2e8f0;
   padding: 8pt 12pt;
   border-radius: 4pt;
   line-height: 1.55;
+  margin-top: 16pt;
 }
-.key-points {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4pt 16pt;
-  margin: 10pt 0;
+.legal strong { color: #0f172a; }
+
+/* Inline TLP banner inside body */
+.tlp-banner {
+  display: table;
+  width: 100%;
+  border-spacing: 4pt 0;
+  margin: 0 0 14pt -4pt;
 }
-.key-point { font-size: 8.5pt; color: #333; padding-left: 12pt; position: relative; }
-.key-point::before { content: "✓"; position: absolute; left: 0; color: #2E7D32; font-weight: 700; }
-.key-action { font-size: 8.5pt; color: #8C1A2B; padding-left: 12pt; position: relative; }
-.key-action::before { content: "→"; position: absolute; left: 0; color: #8C1A2B; }
+.tlp-banner > div {
+  display: table-cell;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 6.5pt;
+  letter-spacing: 1.4pt;
+  text-transform: uppercase;
+  font-weight: 800;
+  padding: 4pt 8pt;
+  border-radius: 2pt;
+  text-align: center;
+}
+.tlp-amber { background: #d97706; color: #fff; }
+.tlp-conf  { background: #0f172a; color: #f8fafc; }
+.tlp-ref   { background: #f1f5f9; color: #334155; border: 0.4pt solid #cbd5e1; }
+.tlp-time  { background: #f1f5f9; color: #334155; border: 0.4pt solid #cbd5e1; }
+
+/* Per-section info note */
+.note-box {
+  background: #f8fafc;
+  border: 0.4pt solid #e2e8f0;
+  padding: 7pt 10pt;
+  border-radius: 4pt;
+  font-size: 7.5pt;
+  color: #64748b;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 6pt;
+}
+
+/* Action chips */
+.chips { margin: 4pt 0; }
+.chips .badge { margin-right: 3pt; margin-bottom: 3pt; }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════
-     PAGE 1 — COVER
-═══════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════
+     COVER
+═══════════════════════════════════════════════════════════════ -->
 <div class="cover">
-  <div class="cover-header">
-    <div class="cover-logo-wrap">
-      <div class="cover-logo">⬡ ForenHive</div>
-      <div class="cover-tagline">S O C &nbsp; F O R E N S I C &nbsp; P L A T F O R M &nbsp; v 1 . 0</div>
-    </div>
-    <div class="cover-company">
-      Standard Sharing Software (3S)<br/>
-      Charguia, Tunis — Tunisie<br/>
-      ISET Radès · RSI {{ now_year }}
+
+  <div class="cover-band">
+    <div class="cover-band-inner">
+      <span>TLP : AMBER + STRICT</span>
+      <span>{{ report_ref }}</span>
+      <span>FORENSIC EVIDENCE — DO NOT REDISTRIBUTE</span>
     </div>
   </div>
 
-  <div class="cover-body">
-    <div class="cover-section-tag">R A P P O R T &nbsp; O F F I C I E L &nbsp; D ' A N A L Y S E</div>
-    <div class="cover-title">
-      RAPPORT D'ANALYSE<br/>FORENSIQUE AUTOMATISÉE
-    </div>
-    <div class="cover-subtitle">
-      Détection, analyse comportementale et<br/>profilage criminologique d'attaquants honeypot
+  <div class="cover-content">
+
+    <div class="cover-header">
+      <div>
+        <div class="cover-logo">⬡<span class="cover-logo-mark"> </span>FORENHIVE</div>
+        <div class="cover-tag">SOC FORENSIC PLATFORM · v1.0</div>
+      </div>
+      <div class="cover-org">
+        <strong>Standard Sharing Software (3S)</strong><br/>
+        Charguia · Tunis · Tunisia<br/>
+        ISET Radès · RSI {{ now_year }}
+      </div>
     </div>
 
-    <div class="cover-risk-box">
-      <div class="cover-score">{{ risk_score }}<span class="cover-score-max"> / 100</span></div>
-      <div class="cover-risk-label">{{ risk_label }}</div>
-      <div class="cover-risk-sub">Niveau de risque</div>
+    <div class="cover-title-block">
+      <div class="cover-doc-type">Automated Forensic Analysis Report</div>
+      <div class="cover-title">
+        Honeypot Intrusion<br/>
+        Forensic Assessment
+      </div>
+      <div class="cover-sub">
+        Multi-source correlation · MITRE ATT&amp;CK mapping<br/>
+        Behavioral profiling · RFC 3161 chain of custody
+      </div>
     </div>
 
-    <div class="cover-meta-grid">
-      <div>
-        <div class="cover-meta-label">Référence</div>
-        <div class="cover-meta-value">{{ report_ref }}</div>
+    <div class="cover-risk-row">
+      <div class="cover-gauge">
+        <div class="cover-gauge-box">
+          <div class="cover-gauge-tag">Overall Risk</div>
+          <div class="cover-score">{{ risk_score }}<span class="cover-score-max">/100</span></div>
+          <div class="cover-score-label">{{ risk_label }}</div>
+        </div>
       </div>
-      <div>
-        <div class="cover-meta-label">Date de génération</div>
-        <div class="cover-meta-value">{{ generated_at_str }}</div>
-      </div>
-      <div>
-        <div class="cover-meta-label">Session ID</div>
-        <div class="cover-meta-value">{{ (session.get('session_id') or session_id)[:12] }}</div>
-      </div>
-      <div>
-        <div class="cover-meta-label">Classification</div>
-        <div class="cover-meta-value" style="color:#C62828">CONFIDENTIEL</div>
-      </div>
-      <div>
-        <div class="cover-meta-label">Source cible</div>
-        <div class="cover-meta-value">{{ session.get('source_ip') or profile.get('ip', '—') }}</div>
-      </div>
-      <div>
-        <div class="cover-meta-label">Moteur d'analyse</div>
-        <div class="cover-meta-value">Mistral 7B · Ollama</div>
+      <div class="cover-meta">
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Reference</div>
+          <div class="cover-meta-val">{{ report_ref }}</div>
+        </div>
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Generated</div>
+          <div class="cover-meta-val">{{ generated_at_str }}</div>
+        </div>
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Session ID</div>
+          <div class="cover-meta-val">{{ (session.get('session_id') or session_id)[:24] }}</div>
+        </div>
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Source IP</div>
+          <div class="cover-meta-val">{{ session.get('source_ip') or profile.get('ip', '—') }}</div>
+        </div>
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Honeypot</div>
+          <div class="cover-meta-val">{{ (session.get('honeypot') or 'unknown') | upper }}</div>
+        </div>
+        <div class="cover-meta-row">
+          <div class="cover-meta-key">Classification</div>
+          <div class="cover-meta-val" style="color:{{ risk_color }}">CONFIDENTIAL · TLP:AMBER+STRICT</div>
+        </div>
       </div>
     </div>
+
   </div>
 
-  <div class="cover-footer">C O N F I D E N T I E L</div>
+  <div class="cover-footer-band">
+    <span>FORENHIVE PLATFORM · v1.0</span>
+    <span class="cover-footer-right">{{ generated_at_str }} · Page 1 / —</span>
+  </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════
-     BODY (all subsequent pages use body-page @page rule)
-═══════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════
+     BODY
+═══════════════════════════════════════════════════════════════ -->
 <div class="body-content">
 
-<!-- ── TOC + Introduction ── -->
+<!-- ── TLP banner row ─────────────────────────────────────── -->
+<div class="tlp-banner">
+  <div class="tlp-amber">TLP : AMBER + STRICT</div>
+  <div class="tlp-conf">CONFIDENTIAL</div>
+  <div class="tlp-ref">REF · {{ report_ref }}</div>
+  <div class="tlp-time">{{ generated_at_str }}</div>
+</div>
+
+<!-- ── Table of Contents ──────────────────────────────────── -->
 <div class="section">
-  <div class="section-header">
-    <span class="section-title">Table des matières</span>
-  </div>
-  <div style="font-size:8.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-bottom:10pt;">
-    Rapport d'analyse forensique · Session {{ (session.get('session_id') or session_id)[:12] }}
+  <div class="section-head">
+    <div class="sec-num">—</div>
+    <div>
+      <div class="sec-title">Table of Contents</div>
+      <div class="sec-sub">Forensic analysis report · Session {{ (session.get('session_id') or session_id)[:16] }}</div>
+    </div>
   </div>
 
   {% set toc_items = [
-    ("00", "Introduction générale", ""),
-    ("01", "Résumé exécutif", ""),
-    ("02", "Identité de l'attaquant", "Géolocalisation &amp; Infrastructure · Réputation &amp; Anonymisation"),
-    ("03", "Timeline forensique", "Corrélation multi-source · Précision milliseconde"),
-    ("04", "Analyse MITRE ATT&amp;CK &amp; Kill Chain", "Mapping hybride déterministe + LLM"),
-    ("05", "Analyse malware", "YARA Scanner · SHA-256"),
-    ("06", "Profil comportemental (FBI BAU Framework)", "Organised/Disorganised · MO · Locard · Narratif Mistral 7B"),
-    ("07", "Score de risque — décomposition des signaux", "Scoring déterministe · AbuseIPDB · YARA · Comportemental"),
-    ("08", "Chaîne de custody &amp; IOCs", "SHA-256 · RFC 3161 · STIX 2.1 Export"),
-    ("09", "Conclusion &amp; Perspectives", ""),
-    ("—",  "Page de certification &amp; signatures", ""),
+    ("00", "Introduction &amp; Scope", "About the platform · Methodology"),
+    ("01", "Executive Summary", "Threat assessment · Key findings"),
+    ("02", "Attacker Identity", "Geolocation · Reputation · Anonymisation"),
+    ("02b","Passive Infrastructure", "WHOIS / RDAP · Shodan InternetDB"),
+    ("03", "Forensic Timeline", "Multi-source correlation · ms precision"),
+    ("04", "MITRE ATT&amp;CK Mapping", "Hybrid deterministic + LLM · Kill chain"),
+    ("05", "Malware Analysis", "YARA scanner · VirusTotal · SHA-256"),
+    ("06", "Behavioral Profile", "FBI BAU · Organised/Disorganised · Locard"),
+    ("07", "Risk Score Breakdown", "Deterministic 18-signal scoring"),
+    ("08", "Chain of Custody &amp; IOCs", "RFC 3161 · STIX 2.1 export"),
+    ("09", "Conclusion &amp; Recommendations", "SOC actions · Threat outlook"),
+    ("—",  "Certificate of Integrity", "RFC 3161 timestamping · Signatures"),
   ] %}
 
   {% for num, title, sub in toc_items %}
-  <div style="display:flex;align-items:baseline;gap:6pt;padding:4pt 0;border-bottom:0.3pt dotted #ccc;">
-    <span style="color:#8C1A2B;font-weight:700;font-family:'DejaVu Sans Mono',monospace;font-size:9pt;width:18pt;flex-shrink:0;">{{ num }}</span>
-    <div style="flex:1;">
-      <div style="font-size:9.5pt;color:#1a1a1a;">{{ title }}</div>
-      {% if sub %}<div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:1pt;">{{ sub }}</div>{% endif %}
+  <div class="toc-row">
+    <div class="toc-num">{{ num }}</div>
+    <div>
+      <div class="toc-title">{{ title }}</div>
+      <div class="toc-sub">{{ sub }}</div>
     </div>
   </div>
   {% endfor %}
 
-  <!-- Legend -->
-  <div style="margin-top:14pt;border:0.5pt solid #ddd;border-radius:4pt;padding:7pt 10pt;">
-    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:6pt;">Légende — Niveaux de risque</div>
-    <div style="display:flex;gap:8pt;flex-wrap:wrap;">
-      <span class="badge badge-critique">CRITIQUE (80-100)</span>
-      <span class="badge badge-eleve">ÉLEVÉ (60-79)</span>
-      <span class="badge badge-moyen">MOYEN (40-59)</span>
-      <span class="badge badge-ok">FAIBLE (20-39)</span>
-      <span class="badge badge-info">INFO (0-19)</span>
-    </div>
+  <div style="margin-top:14pt;border:0.5pt solid #e2e8f0;border-radius:4pt;padding:8pt 12pt;">
+    <div style="font-size:6.5pt;color:#64748b;text-transform:uppercase;letter-spacing:1.2pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:6pt;">Risk Severity Legend</div>
+    <span class="badge b-crit">CRITICAL · 80–100</span>
+    <span class="badge b-high">HIGH · 60–79</span>
+    <span class="badge b-med">MEDIUM · 40–59</span>
+    <span class="badge b-low">LOW · 20–39</span>
+    <span class="badge b-info">INFO · 0–19</span>
   </div>
 </div>
 
-<!-- ── Section 00 — Introduction ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 00 — Introduction
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
   <div class="about-box">
-    <div class="about-title">À propos de ForenHive</div>
+    <div class="about-tag">▌ ABOUT FORENHIVE</div>
     <div class="about-body">
-      ForenHive est une plateforme d'analyse forensique automatisée basée sur des honeypots (Cowrie, Dionaea,
-      Galah, Zeek). Elle intègre un moteur forensique en 4 couches : collecte des logs via pipeline ETL (Filebeat →
-      Logstash → Elasticsearch), enrichissement multi-source des IPs (GeoLite2, AbuseIPDB, IPLocate, Whois/RDAP),
-      scoring de risque déterministe sur 18 signaux, et profilage comportemental criminologique via
-      Mistral 7B (local, hors-ligne). Ce rapport est généré automatiquement sans intervention humaine.
+      <strong>ForenHive</strong> is an automated honeypot forensic platform combining four collection
+      sensors (Cowrie SSH/Telnet, Dionaea multi-protocol, Galah LLM-driven HTTP, Zeek network monitor)
+      with a deterministic 18-signal risk engine, MITRE ATT&amp;CK auto-mapping, behavioral profiling
+      via Mistral 7B (offline), and RFC 3161 chain-of-custody. This document is generated automatically
+      from raw evidence — no human authoring. All findings are reproducible from the underlying logs.
     </div>
   </div>
 
-  <div class="section-header">
-    <span class="section-num">00</span>
-    <span class="section-title">Introduction générale</span>
+  <div class="section-head">
+    <div class="sec-num">00</div>
+    <div>
+      <div class="sec-title">Introduction &amp; Scope</div>
+      <div class="sec-sub">Methodology · Data sources · Analytical framework</div>
+    </div>
   </div>
-  <p style="font-size:9.5pt;color:#333;line-height:1.6;margin-bottom:8pt;">
-    Dans un contexte de prolifération des cyberattaques, les organisations font face à des menaces de plus en plus
-    sophistiquées. La détection précoce et l'analyse forensique rigoureuse constituent des impératifs stratégiques
-    pour toute équipe SOC.
-  </p>
-  <p style="font-size:9.5pt;color:#333;line-height:1.6;margin-bottom:8pt;">
-    Ce rapport est produit automatiquement par <strong>ForenHive</strong>, une plateforme d'analyse forensique basée sur un
-    réseau de honeypots (Cowrie SSH, Dionaea, Galah HTTP, Zeek). ForenHive applique un cadre criminologique
-    inspiré du <strong>FBI Behavioral Analysis Unit (BAU)</strong> — concepts d'organisé/désorganisé, Modus Operandi, principe de
-    Locard — pour produire des profils d'attaquants forensiquement valides et admissibles.
-  </p>
-  <p style="font-size:9.5pt;color:#333;line-height:1.6;">
-    Ce document couvre l'intégralité du cycle d'analyse d'un incident détecté via le honeypot
-    <strong>{{ (session.get('honeypot') or 'unknown') | upper }}</strong> :
-    capture des logs, enrichissement IP multi-source, classification MITRE ATT&amp;CK, analyse malware,
-    profilage comportemental LLM (Mistral 7B local), scoring déterministe, et certification RFC 3161.
-  </p>
 
-  <!-- Section 01 — Résumé exécutif -->
-  <div class="section-header" style="margin-top:18pt;">
-    <span class="section-num">01</span>
-    <span class="section-title">Résumé exécutif</span>
+  <p style="font-size:9pt;color:#1e293b;line-height:1.6;margin-bottom:8pt;">
+    This report documents the analysis of an attack session captured by the
+    <strong>{{ (session.get('honeypot') or 'unknown') | upper }}</strong> honeypot,
+    {% if session.get('source_ip') %}originating from <strong class="mono">{{ session.get('source_ip') }}</strong>{% endif %}
+    {% if profile.get('country') %} ({{ profile.get('country') }}{% if profile.get('asn') %}, ASN {{ profile.get('asn') }}{% endif %}){% endif %}.
+    The investigation follows a four-stage pipeline: (1) raw log normalization through the ETL pipeline
+    (Filebeat → Logstash → Elasticsearch), (2) multi-source IP enrichment (MaxMind GeoLite2,
+    AbuseIPDB, IPLocate, Shodan, WHOIS/RDAP), (3) MITRE ATT&amp;CK technique mapping using a hybrid
+    deterministic + LLM approach, (4) behavioral profiling against the FBI Behavioral Analysis Unit
+    framework (Organised/Disorganised, Modus Operandi, Locard exchange principle).
+  </p>
+  <p style="font-size:9pt;color:#1e293b;line-height:1.6;">
+    Findings are sealed with SHA-256 hashes timestamped against the freeTSA.org RFC 3161 authority.
+    The platform operates entirely offline on a Dell PowerEdge R750 (Ubuntu 24.10) — no log
+    or evidence ever leaves the network perimeter.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 01 — Executive Summary
+═══════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-head">
+    <div class="sec-num">01</div>
+    <div>
+      <div class="sec-title">Executive Summary</div>
+      <div class="sec-sub">Threat assessment · Strategic findings</div>
+    </div>
   </div>
+
+  {% set ip = session.get('source_ip') or profile.get('ip', '—') %}
+  {% set hp = (session.get('honeypot') or 'unknown') | upper %}
+  {% set n_auth = session.get('auth_attempts', 0) or 0 %}
+  {% set n_cmd  = session.get('command_count', 0) or 0 %}
+
+  <div class="callout exec">
+    <div class="callout-tag">▌ KEY ASSESSMENT</div>
+    A <strong>{{ risk_label }} ({{ risk_score }}/100)</strong> intrusion attempt was detected and contained
+    by ForenHive. An attacker operating from <strong class="mono">{{ ip }}</strong>
+    {% if profile.get('country') %} ({{ profile.get('country') }}{% if profile.get('asn') %}, ASN {{ profile.get('asn') }} — {{ profile.get('as_org') or 'unknown ASN org' }}{% endif %}){% endif %}
+    targeted the <strong>{{ hp }}</strong> honeypot
+    {% if n_auth > 0 %} with <strong>{{ n_auth }}</strong> authentication attempt(s){% endif %}
+    {% if n_cmd  > 0 %} and <strong>{{ n_cmd }}</strong> command execution(s){% endif %}.
+    {% if auth_success %}<strong style="color:#dc2626">The session resulted in a confirmed compromise.</strong>{% endif %}
+    {% if profile.get('yara_matches') %}YARA matched <strong>{{ profile.get('yara_matches')[0] }}</strong>.{% endif %}
+    {% if profile.get('is_tor') %}The source IP is a confirmed <strong>Tor exit node</strong>.{% endif %}
+  </div>
+
   {% if profile.get('mistral_analysis') %}
-  <div class="resume-box">{{ profile.get('mistral_analysis') }}</div>
-  {% else %}
-  <div class="resume-box">
-    {% set ip = session.get('source_ip') or profile.get('ip', '—') %}
-    {% set hp = (session.get('honeypot') or 'unknown') | upper %}
-    {% set n_auth = session.get('auth_attempts', 0) or 0 %}
-    {% set n_cmd = session.get('command_count', 0) or 0 %}
-    Une tentative d'intrusion de niveau <strong>{{ risk_label }} ({{ risk_score }}/100)</strong> a été détectée et contenue
-    par la plateforme ForenHive. Un attaquant opérant depuis
-    <strong>{{ ip }}</strong>
-    {% if profile.get('country') %} ({{ profile.get('country') }}{% if profile.get('asn') %}, ASN {{ profile.get('asn') }}{% endif %}){% endif %}
-    a ciblé le honeypot <strong>{{ hp }}</strong>
-    {% if n_auth > 0 %} avec {{ n_auth }} tentative(s) d'authentification{% endif %}
-    {% if n_cmd > 0 %} et {{ n_cmd }} commande(s) exécutée(s){% endif %}.
-    {% if auth_success %}La session a abouti à une compromission confirmée.{% endif %}
-    {% if profile.get('yara_matches') %}
-    Malware détecté : <strong>{{ profile.get('yara_matches')[0] }}</strong> (YARA match confirmé).
-    {% endif %}
-    {% if profile.get('is_tor') %}L'adresse IP est un <strong>nœud Tor exit</strong>.{% endif %}
+  <div class="narrative">
+    <div class="narrative-head">▌ THREAT ACTOR ASSESSMENT — MISTRAL 7B</div>
+    {{ profile.get('mistral_analysis') }}
   </div>
   {% endif %}
-</div>
 
-<!-- ── Section 02 — Identité ── -->
-<div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">02</span>
+  <!-- Quick stats row -->
+  <div class="col3" style="margin-top:8pt;">
     <div>
-      <div class="section-title">Identité de l'attaquant</div>
-      <div class="section-sub">2.1 Géolocalisation &amp; Infrastructure · 2.2 Réputation &amp; Anonymisation</div>
+      <div class="card">
+        <div class="card-head"><span>RISK</span><span class="card-tag">/ 100</span></div>
+        <div class="card-body" style="text-align:center;padding:14pt 8pt;">
+          <div style="font-size:30pt;font-weight:900;color:{{ risk_color }};line-height:1;">{{ risk_score }}</div>
+          <div style="font-size:8pt;font-weight:800;color:{{ risk_color }};letter-spacing:1.5pt;font-family:'DejaVu Sans Mono',monospace;margin-top:3pt;">{{ risk_label }}</div>
+        </div>
+      </div>
     </div>
-  </div>
-
-  <div class="two-col">
-    <div class="box">
-      <div class="box-title">Géolocalisation &amp; Infrastructure</div>
-      <table class="kv-table">
-        <tr><th>IP source</th><td>{{ session.get('source_ip') or profile.get('ip', '—') }}</td></tr>
-        <tr><th>Localisation</th><td>{{ profile.get('city') or '—' }}{% if profile.get('country') %}, {{ profile.get('country') }}{% endif %}</td></tr>
-        <tr><th>ASN</th><td>{{ profile.get('asn') or '—' }}{% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}</td></tr>
-        <tr><th>Organisation</th><td>{{ (profile.get('as_org') or (profile.get('whois_data') or {}).get('asn_description') or '—') | replace('Internet Assigned Numbers Authority (IANA)', 'IANA') }}</td></tr>
-        <tr><th>Honeypot ciblé</th><td>{{ (session.get('honeypot') or '—') | upper }}</td></tr>
-        <tr><th>Port cible</th><td>{{ session.get('source_port') or '—' }}</td></tr>
-      </table>
+    <div>
+      <div class="card">
+        <div class="card-head"><span>KILL CHAIN</span><span class="card-tag">STAGE</span></div>
+        <div class="card-body" style="text-align:center;padding:14pt 8pt;">
+          <div style="font-size:30pt;font-weight:900;color:#0f172a;line-height:1;">{{ kc_reached + 1 }}<span style="font-size:14pt;color:#94a3b8;">/8</span></div>
+          <div style="font-size:8pt;font-weight:800;color:#0f172a;letter-spacing:1.5pt;font-family:'DejaVu Sans Mono',monospace;margin-top:3pt;text-transform:uppercase;">{{ kc_stages_labels[kc_reached] }}</div>
+        </div>
+      </div>
     </div>
-    <div class="box">
-      <div class="box-title">Réputation &amp; Anonymisation</div>
-      <table class="kv-table">
-        <tr><th>AbuseIPDB</th>
-          <td>{% if profile.get('abuseipdb_score') is not none %}
-            <strong style="color:{% if (profile.get('abuseipdb_score') or 0) >= 80 %}#C62828{% elif (profile.get('abuseipdb_score') or 0) >= 50 %}#b36000{% else %}#2E7D32{% endif %}">
-              {{ profile.get('abuseipdb_score') }} / 100
-            </strong>
-            {% if profile.get('abuseipdb_reports') %} ⚠ {{ profile.get('abuseipdb_reports') }} signalements{% endif %}
-          {% else %}—{% endif %}</td></tr>
-        <tr><th>Nœud Tor</th>
-          <td>{% if profile.get('is_tor') %}<span class="badge badge-warn">OUI — exit node ⚠</span>{% else %}<span class="badge badge-ok">NON</span>{% endif %}</td></tr>
-        <tr><th>VPN</th>
-          <td>{% if profile.get('is_vpn') %}<span class="badge badge-warn">OUI</span>{% else %}<span class="badge badge-ok">NON</span>{% endif %}</td></tr>
-        <tr><th>Hébergeur</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
-        <tr><th>Événements totaux</th><td>{{ profile.get('event_count') or '—' }}</td></tr>
-        <tr><th>Sessions totales</th><td>{{ profile.get('session_count') or '—' }}</td></tr>
-      </table>
+    <div>
+      <div class="card">
+        <div class="card-head"><span>MITRE TTPs</span><span class="card-tag">TECHNIQUES</span></div>
+        <div class="card-body" style="text-align:center;padding:14pt 8pt;">
+          <div style="font-size:30pt;font-weight:900;color:#0f172a;line-height:1;">{{ mitre_rows | length }}</div>
+          <div style="font-size:8pt;font-weight:800;color:#0f172a;letter-spacing:1.5pt;font-family:'DejaVu Sans Mono',monospace;margin-top:3pt;">IDENTIFIED</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ── Section 02b — WHOIS & Shodan ── -->
-{% set whois = profile.get('whois_data') or {} %}
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 02 — Attacker Identity
+═══════════════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <div class="section-head">
+    <div class="sec-num">02</div>
+    <div>
+      <div class="sec-title">Attacker Identity</div>
+      <div class="sec-sub">2.1 Geolocation &amp; Infrastructure · 2.2 Reputation &amp; Anonymisation</div>
+    </div>
+  </div>
+
+  <div class="col2">
+    <div class="card">
+      <div class="card-head"><span>2.1 · GEOLOCATION &amp; INFRASTRUCTURE</span><span class="card-tag">MAXMIND · IPLOCATE</span></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>Source IP</th><td class="mono">{{ session.get('source_ip') or profile.get('ip', '—') }}</td></tr>
+          <tr><th>Location</th><td>{{ profile.get('city') or '—' }}{% if profile.get('country') %}, {{ profile.get('country') }}{% endif %}</td></tr>
+          <tr><th>ASN</th><td class="mono">{{ profile.get('asn') or '—' }}{% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}</td></tr>
+          <tr><th>Organisation</th><td>{{ (profile.get('as_org') or (profile.get('whois_data') or {}).get('asn_description') or '—') | replace('Internet Assigned Numbers Authority (IANA)', 'IANA') }}</td></tr>
+          <tr><th>Honeypot Hit</th><td>{{ (session.get('honeypot') or '—') | upper }}</td></tr>
+          <tr><th>Target Port</th><td class="mono">{{ session.get('source_port') or '—' }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><span>2.2 · REPUTATION &amp; ANONYMISATION</span><span class="card-tag">ABUSEIPDB · TOR · VPN</span></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>AbuseIPDB</th>
+            <td>{% if profile.get('abuseipdb_score') is not none %}
+              <strong style="color:{% if (profile.get('abuseipdb_score') or 0) >= 80 %}#dc2626{% elif (profile.get('abuseipdb_score') or 0) >= 50 %}#d97706{% else %}#059669{% endif %}">
+                {{ profile.get('abuseipdb_score') }}/100
+              </strong>
+              {% if profile.get('abuseipdb_reports') %} · {{ profile.get('abuseipdb_reports') }} reports{% endif %}
+            {% else %}—{% endif %}</td></tr>
+          <tr><th>Tor Exit</th>
+            <td>{% if profile.get('is_tor') %}<span class="badge b-warn">YES — EXIT NODE</span>{% else %}<span class="badge b-ok">NO</span>{% endif %}</td></tr>
+          <tr><th>VPN / Proxy</th>
+            <td>{% if profile.get('is_vpn') %}<span class="badge b-warn">YES</span>{% else %}<span class="badge b-ok">NO</span>{% endif %}</td></tr>
+          <tr><th>Hosting Provider</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
+          <tr><th>Total Events</th><td class="mono">{{ profile.get('event_count') or '—' }}</td></tr>
+          <tr><th>Total Sessions</th><td class="mono">{{ profile.get('session_count') or '—' }}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 02b — Passive Infrastructure
+═══════════════════════════════════════════════════════════════ -->
+{% set whois  = profile.get('whois_data') or {} %}
 {% set shodan = profile.get('shodan_data') or {} %}
 {% if whois or shodan %}
 <div class="section">
-  <div class="section-header">
-    <span class="section-num">02b</span>
+  <div class="section-head">
+    <div class="sec-num">02b</div>
     <div>
-      <div class="section-title">Infrastructure passive — WHOIS / RDAP &amp; Shodan InternetDB</div>
-      <div class="section-sub">Enregistrement réseau · Ports exposés · Vulnérabilités connues</div>
+      <div class="sec-title">Passive Infrastructure</div>
+      <div class="sec-sub">WHOIS / RDAP · Shodan InternetDB · Open ports · Known CVEs</div>
     </div>
   </div>
 
-  <div class="two-col">
-    <!-- WHOIS -->
-    <div class="box">
-      <div class="box-title">WHOIS / RDAP</div>
-      <table class="kv-table">
-        <tr><th>Réseau</th><td>{{ whois.get('network_name') or '—' }}</td></tr>
-        <tr><th>CIDR</th><td class="mono">{{ whois.get('network_cidr') or '—' }}</td></tr>
-        <tr><th>Type</th><td>{{ whois.get('network_type') or '—' }}</td></tr>
-        <tr><th>ASN</th><td class="mono">{{ whois.get('asn') or '—' }}</td></tr>
-        <tr><th>Organisation</th><td>{{ whois.get('asn_description') or '—' }}</td></tr>
-        <tr><th>Enregistrement</th><td class="mono">{{ (whois.get('registration') or '—')[:10] }}</td></tr>
-        <tr><th>Contact abus</th>
-          <td>{% if whois.get('abuse_contact') %}
-            {% for mail in whois.get('abuse_contact') %}{{ mail }}{% if not loop.last %}, {% endif %}{% endfor %}
-          {% else %}—{% endif %}</td></tr>
-      </table>
+  <div class="col2">
+    <div class="card">
+      <div class="card-head"><span>WHOIS / RDAP</span><span class="card-tag">REGISTRATION</span></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>Network</th><td>{{ whois.get('network_name') or '—' }}</td></tr>
+          <tr><th>CIDR</th><td class="mono">{{ whois.get('network_cidr') or '—' }}</td></tr>
+          <tr><th>Type</th><td>{{ whois.get('network_type') or '—' }}</td></tr>
+          <tr><th>ASN</th><td class="mono">{{ whois.get('asn') or '—' }}</td></tr>
+          <tr><th>ASN Description</th><td>{{ whois.get('asn_description') or '—' }}</td></tr>
+          <tr><th>Registry</th><td>{{ (whois.get('asn_registry') or '—') | upper }}</td></tr>
+          <tr><th>Allocated</th><td class="mono">{{ (whois.get('registration') or '—')[:10] }}</td></tr>
+          <tr><th>Abuse Contact</th>
+            <td class="mono" style="font-size:7.5pt">{% if whois.get('abuse_contact') %}
+              {% for mail in whois.get('abuse_contact') %}{{ mail }}{% if not loop.last %}, {% endif %}{% endfor %}
+            {% else %}—{% endif %}</td></tr>
+        </table>
+      </div>
     </div>
 
-    <!-- Shodan InternetDB -->
-    <div class="box">
-      <div class="box-title">Shodan InternetDB</div>
-      <table class="kv-table">
-        <tr><th>Ports ouverts</th>
-          <td class="mono">{% if shodan.get('open_ports') %}{{ shodan.get('open_ports') | join(', ') }}{% else %}—{% endif %}</td></tr>
-        <tr><th>CVEs connues</th>
-          <td>{% if shodan.get('vulns') %}
-            {% for v in shodan.get('vulns')[:5] %}<span class="badge badge-warn" style="font-size:7pt">{{ v }}</span> {% endfor %}
-            {% if shodan.get('vulns') | length > 5 %}+{{ shodan.get('vulns') | length - 5 }} autres{% endif %}
-          {% else %}<span class="badge badge-ok">Aucune</span>{% endif %}</td></tr>
-        <tr><th>Hostnames</th>
-          <td class="mono" style="font-size:7.5pt">{% if shodan.get('hostnames') %}{{ shodan.get('hostnames')[:3] | join(', ') }}{% else %}—{% endif %}</td></tr>
-        <tr><th>Tags</th>
-          <td>{% if shodan.get('tags') %}
-            {% for t in shodan.get('tags') %}<span class="badge badge-info" style="font-size:7pt">{{ t }}</span> {% endfor %}
-          {% else %}—{% endif %}</td></tr>
-        <tr><th>CPEs</th>
-          <td class="mono" style="font-size:7pt">{% if shodan.get('cpes') %}{{ shodan.get('cpes')[:2] | join(', ') }}{% else %}—{% endif %}</td></tr>
-      </table>
+    <div class="card">
+      <div class="card-head"><span>SHODAN INTERNETDB</span><span class="card-tag">PUBLIC SCAN DATA</span></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>Open Ports</th>
+            <td class="mono">{% if shodan.get('open_ports') %}{{ shodan.get('open_ports') | join(', ') }}{% else %}—{% endif %}</td></tr>
+          <tr><th>Known CVEs</th>
+            <td>{% if shodan.get('vulns') %}
+              {% for v in shodan.get('vulns')[:5] %}<span class="badge b-warn" style="margin-right:2pt">{{ v }}</span>{% endfor %}
+              {% if shodan.get('vulns') | length > 5 %}<span class="badge b-info">+{{ shodan.get('vulns') | length - 5 }} more</span>{% endif %}
+            {% else %}<span class="badge b-ok">NONE</span>{% endif %}</td></tr>
+          <tr><th>Hostnames</th>
+            <td class="mono" style="font-size:7.5pt">{% if shodan.get('hostnames') %}{{ shodan.get('hostnames')[:3] | join(', ') }}{% else %}—{% endif %}</td></tr>
+          <tr><th>Tags</th>
+            <td>{% if shodan.get('tags') %}
+              {% for t in shodan.get('tags') %}<span class="badge b-info" style="margin-right:2pt">{{ t }}</span>{% endfor %}
+            {% else %}—{% endif %}</td></tr>
+          <tr><th>CPEs</th>
+            <td class="mono" style="font-size:7pt">{% if shodan.get('cpes') %}{{ shodan.get('cpes')[:2] | join(', ') }}{% else %}—{% endif %}</td></tr>
+        </table>
+      </div>
     </div>
+  </div>
+  <div class="note-box">
+    Sources: WHOIS via RDAP (ARIN/RIPE/APNIC/AFRINIC/LACNIC), Shodan InternetDB free tier (passive only —
+    no active scans performed against the target).
   </div>
 </div>
 {% endif %}
 
-<!-- ── Section 03 — Timeline ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 03 — Forensic Timeline
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">03</span>
+  <div class="section-head">
+    <div class="sec-num">03</div>
     <div>
-      <div class="section-title">Timeline forensique · Multi-source · Précision milliseconde</div>
+      <div class="sec-title">Forensic Timeline</div>
+      <div class="sec-sub">Multi-source correlation · Millisecond precision · {{ timeline | length }} event(s)</div>
     </div>
   </div>
 
   {% if timeline %}
-  <table class="data-table">
+  <table class="data">
     <thead>
       <tr>
-        <th style="width:95pt;">Horodatage</th>
-        <th style="width:65pt;">Source</th>
-        <th style="width:110pt;">Action</th>
-        <th>Détail</th>
-        <th style="width:65pt;">MITRE</th>
+        <th style="width:90pt">Timestamp (UTC)</th>
+        <th style="width:55pt">Source</th>
+        <th style="width:140pt">Action</th>
+        <th>Detail</th>
+        <th style="width:55pt">ATT&amp;CK</th>
       </tr>
     </thead>
     <tbody>
     {% for evt in timeline %}
-    <tr {% if evt.get('action', '') and ('SUCCÈS' in evt.get('action','') or 'COMPROMISSION' in evt.get('action','')) %}style="background:rgba(198,40,40,.05)"{% endif %}>
-      <td class="mono">{{ evt.get('ts') or '—' }}</td>
+    <tr {% if evt.get('action', '') and ('SUCCESS' in evt.get('action','') | upper or 'COMPROM' in evt.get('action','') | upper) %}style="background:#fef2f2"{% endif %}>
+      <td class="mono" style="font-size:7pt">{{ (evt.get('ts') or '—')[:23] }}</td>
       <td>
         {% set src = evt.get('source', '') %}
-        {% if src == 'AUTH' %}<span class="badge badge-warn">{{ src }}</span>
-        {% elif src == 'COMMAND' %}<span class="badge badge-moyen">{{ src }}</span>
-        {% elif src == 'SESSION' %}<span class="badge badge-info">{{ src }}</span>
-        {% else %}<span class="badge badge-info">{{ src }}</span>{% endif %}
+        {% if src == 'AUTH' %}<span class="badge b-warn">AUTH</span>
+        {% elif src == 'COMMAND' %}<span class="badge b-med">CMD</span>
+        {% elif src == 'SESSION' %}<span class="badge b-info">SESS</span>
+        {% elif src == 'HTTP' %}<span class="badge b-low">HTTP</span>
+        {% else %}<span class="badge b-info">{{ src }}</span>{% endif %}
       </td>
-      <td style="font-size:8.5pt;{% if 'SUCCÈS' in evt.get('action','') %}color:#C62828;font-weight:700;{% endif %}">
-        {{ evt.get('action', '—') }}
-      </td>
-      <td class="mono" style="max-width:140pt;overflow:hidden;word-break:break-all;">{{ (evt.get('detail') or '') | truncate(80) }}</td>
-      <td class="mono" style="color:#b36000;">{{ evt.get('mitre', '') }}</td>
+      <td style="font-size:7.5pt;{% if 'SUCCESS' in evt.get('action','') | upper %}color:#dc2626;font-weight:700;{% endif %}">{{ evt.get('action', '—') | truncate(60) }}</td>
+      <td class="mono" style="font-size:7pt;color:#475569;word-break:break-all">{{ (evt.get('detail') or '') | truncate(85) }}</td>
+      <td class="mono" style="font-size:7.5pt;color:#b45309;font-weight:700">{{ evt.get('mitre', '') }}</td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
+  <div class="note-box">
+    Events are normalized to ECS schema and merged from honeypot logs + Zeek conn/notice channels.
+    All timestamps preserved at native precision (millisecond) without rounding.
+  </div>
   {% else %}
-  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
-    Aucun événement de timeline disponible pour cette session.
+  <div class="callout note">
+    <div class="callout-tag">▌ NO TIMELINE</div>
+    No timeline events available for this session — likely an aggregated session
+    (e.g. Galah HTTP probes) without per-event session correlation.
   </div>
   {% endif %}
 </div>
 
-<!-- ── Section 04 — MITRE ATT&CK ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 04 — MITRE ATT&CK
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">04</span>
+  <div class="section-head">
+    <div class="sec-num">04</div>
     <div>
-      <div class="section-title">Analyse MITRE ATT&amp;CK · Kill Chain</div>
-      <div class="section-sub">
-        {{ mitre_rows | length }} technique(s) identifiée(s)
-        {% if mapping_source %}
-          · <span style="display:inline-block;padding:1pt 5pt;border-radius:3pt;font-size:7pt;font-weight:700;letter-spacing:0.5pt;
-              {% if 'llm' in mapping_source %}background:#fff3e0;color:#b36000;border:0.5pt solid #b36000;
-              {% else %}background:#e8f5e9;color:#2E7D32;border:0.5pt solid #2E7D32;{% endif %}">
-            {{ mapping_source | upper }}
-          </span>
-        {% endif %}
+      <div class="sec-title">MITRE ATT&amp;CK · Cyber Kill Chain</div>
+      <div class="sec-sub">
+        {{ mitre_rows | length }} technique(s)
+        {% if mapping_source %}· <span class="badge {% if 'llm' in mapping_source %}b-med{% else %}b-ok{% endif %}">{{ mapping_source | upper }}</span>{% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Kill Chain Bar -->
-  <div style="margin-bottom:10pt;">
-    <div style="font-size:8pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-bottom:4pt;">
-      KILL CHAIN — ÉTAPE {{ kc_reached + 1 }}/8 · {{ kc_stages_labels[kc_reached] | upper }}
+  <!-- Kill Chain visual -->
+  <div style="margin-bottom:12pt;">
+    <div style="font-size:6.5pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;letter-spacing:1.2pt;text-transform:uppercase;margin-bottom:5pt;">
+      ▌ KILL CHAIN — Stage {{ kc_reached + 1 }}/8 reached · {{ kc_stages_labels[kc_reached] | upper }}
     </div>
-    <div class="kc-grid">
+    <div class="kc-row">
       {% for i in range(8) %}
-      <div class="kc-cell {% if i <= kc_reached %}done {% if risk_label == 'CRITIQUE' %}sev-critique{% endif %}{% endif %}">
-        {{ kc_stages_labels[i] }}
-      </div>
+      <div><div class="kc-pill {% if i < kc_reached %}done{% elif i == kc_reached %}current{% endif %}">{{ kc_stages_labels[i] }}</div></div>
       {% endfor %}
     </div>
-    <div class="kc-label">Stage atteint : <strong>{{ kc_stages_labels[kc_reached] }}</strong></div>
   </div>
 
   {% if mitre_rows %}
-  <table class="data-table">
+  <table class="data">
     <thead>
       <tr>
-        <th style="width:70pt;">ID ATT&amp;CK</th>
-        <th style="width:160pt;">Technique</th>
-        <th style="width:120pt;">Tactique</th>
-        <th style="width:65pt;">Confiance</th>
-        <th>Évidence</th>
+        <th style="width:60pt">ID</th>
+        <th style="width:160pt">Technique</th>
+        <th style="width:110pt">Tactic</th>
+        <th style="width:55pt">Conf.</th>
+        <th>Evidence</th>
       </tr>
     </thead>
     <tbody>
     {% for row in mitre_rows %}
     <tr>
-      <td style="color:#b36000;font-family:'DejaVu Sans Mono',monospace;font-weight:700;font-size:8.5pt;">{{ row.id }}</td>
-      <td style="font-weight:700;font-size:8.5pt;">{{ row.technique }}</td>
-      <td style="font-style:italic;font-size:8.5pt;color:#555;">{{ row.tactic }}</td>
-      <td style="font-size:8.5pt;"><span class="badge badge-ok">{{ row.confidence }} ✓</span></td>
-      <td style="font-size:8pt;color:#444;font-family:'DejaVu Sans Mono',monospace;">{{ row.get('evidence', 'logs honeypot') }}</td>
+      <td class="mono" style="color:#b45309;font-weight:800">{{ row.id }}</td>
+      <td style="font-weight:700">{{ row.technique }}</td>
+      <td style="font-style:italic;color:#475569">{{ row.tactic }}</td>
+      <td><span class="badge b-ok">{{ row.confidence }}</span></td>
+      <td class="mono" style="font-size:7pt;color:#334155">{{ row.get('evidence', 'honeypot logs') }}</td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
-  <div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:5pt;">
-    Mapping hybride : IDs déterministes (confiance 100%) + narratif LLM Mistral 7B local · Zéro hallucination
+  <div class="note-box">
+    Hybrid mapping: deterministic ID extraction (100% confidence, zero hallucination)
+    enriched with offline Mistral 7B narrative (kill chain, tactic chronology).
   </div>
   {% else %}
-  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
-    Aucune technique MITRE ATT&amp;CK identifiée pour cette session.
+  <div class="callout note">No MITRE ATT&amp;CK technique was reliably mapped from the captured evidence.</div>
+  {% endif %}
+
+  {% if forensic_narrative %}
+  <div class="narrative" style="margin-top:10pt;">
+    <div class="narrative-head">▌ MITRE ATT&amp;CK FORENSIC NARRATIVE — MISTRAL 7B</div>
+    {{ forensic_narrative }}
   </div>
   {% endif %}
 </div>
 
-<!-- ── Section 05 — Malware ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 05 — Malware Analysis
+═══════════════════════════════════════════════════════════════ -->
 <div class="section">
-  <div class="section-header">
-    <span class="section-num">05</span>
+  <div class="section-head">
+    <div class="sec-num">05</div>
     <div>
-      <div class="section-title">Analyse malware · YARA + VirusTotal</div>
+      <div class="sec-title">Malware Analysis</div>
+      <div class="sec-sub">YARA · VirusTotal · SHA-256 fingerprinting</div>
     </div>
   </div>
 
   {% if profile.get('yara_matches') or profile.get('ioc_hashes') or session.get('downloads') %}
-  <div style="border:0.7pt solid #C62828;border-radius:5pt;padding:10pt 13pt;background:rgba(198,40,40,.03);margin-bottom:10pt;">
-    <div style="color:#C62828;font-size:8pt;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:8pt;">
-      ⚠ Malware détecté — Famille critique
-    </div>
-    <div class="two-col">
-      <div>
-        {% if profile.get('yara_matches') %}
-        <table class="kv-table">
-          <tr><th>Règle YARA</th><td style="color:#C62828;font-weight:700;">{{ profile.get('yara_matches')[0] }} ⚠</td></tr>
-          <tr><th>Total matches</th><td>{{ profile.get('yara_matches') | length }}</td></tr>
-        </table>
-        {% endif %}
-        {% if session.get('downloads') %}
-        <table class="kv-table" style="margin-top:6pt;">
-          {% for dl in session.get('downloads', [])[:3] %}
-          <tr><th>Téléchargement</th><td class="mono">{{ dl | truncate(50) }}</td></tr>
-          {% endfor %}
-        </table>
-        {% endif %}
-      </div>
-      <div>
-        {% if profile.get('ioc_hashes') %}
-        <table class="kv-table">
-          {% for h in profile.get('ioc_hashes', [])[:3] %}
-          <tr><th>SHA-256</th><td class="mono" style="font-size:7.5pt;word-break:break-all;">{{ h }}</td></tr>
-          {% endfor %}
-          {% if profile.get('vt_results') %}
-          {% for sha, vt in profile.get('vt_results', {}).items() %}
-          <tr>
-            <th>VirusTotal</th>
-            <td>
-              {% if vt.get('found') == false %}
-              <span style="color:#E65100;font-style:italic;">
-                Fichier non répertorié sur VirusTotal — analyse YARA locale uniquement
-              </span>
-              {% elif vt.get('malicious', 0) > 0 %}
-              <span style="color:#C62828;font-weight:700;">
-                {{ vt.get('malicious') }} moteur(s) détectent ce fichier comme malveillant
-              </span>
-              {% if vt.get('names') %} · <em>{{ vt.get('names')[0] }}</em>{% endif %}
-              {% else %}
-              <span style="color:#2E7D32;">
-                {{ vt.get('malicious', 0) }} moteur(s) — fichier connu et propre
-              </span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
+  <div class="card danger">
+    <div class="card-head"><span>⚠ MALWARE DETECTED</span><span class="card-tag">YARA · VT</span></div>
+    <div class="card-body">
+      <div class="col2">
+        <div>
+          {% if profile.get('yara_matches') %}
+          <table class="kv">
+            <tr><th>YARA Family</th><td style="color:#dc2626;font-weight:800">{{ profile.get('yara_matches')[0] }}</td></tr>
+            <tr><th>Total Matches</th><td>{{ profile.get('yara_matches') | length }}</td></tr>
+          </table>
           {% endif %}
-        </table>
-        {% endif %}
+          {% if session.get('downloads') %}
+          <table class="kv" style="margin-top:6pt;">
+            {% for dl in session.get('downloads', [])[:3] %}
+            <tr><th>Download</th><td class="mono" style="font-size:7pt">{{ dl | truncate(50) }}</td></tr>
+            {% endfor %}
+          </table>
+          {% endif %}
+        </div>
+        <div>
+          {% if profile.get('ioc_hashes') %}
+          <table class="kv">
+            {% for h in profile.get('ioc_hashes', [])[:3] %}
+            <tr><th>SHA-256</th><td class="mono" style="font-size:6.5pt;word-break:break-all">{{ h }}</td></tr>
+            {% endfor %}
+            {% if profile.get('vt_results') %}
+            {% for sha, vt in profile.get('vt_results', {}).items() %}
+            <tr>
+              <th>VirusTotal</th>
+              <td>
+                {% if vt.get('found') == false %}
+                <span style="color:#d97706;font-style:italic">Not indexed by VirusTotal — local YARA detection only</span>
+                {% elif vt.get('malicious', 0) > 0 %}
+                <strong style="color:#dc2626">{{ vt.get('malicious') }} engine(s) flagged as malicious</strong>
+                {% if vt.get('names') %} · <em>{{ vt.get('names')[0] }}</em>{% endif %}
+                {% else %}
+                <span style="color:#059669">{{ vt.get('malicious', 0) }} engine(s) — clean</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+          </table>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
   {% else %}
-  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
-    Aucun malware capturé lors de cette session.
+  <div class="callout success">
+    <div class="callout-tag">▌ NO MALWARE</div>
+    No malicious binary captured during this session.
     {% if profile.get('top_commands') %}
-    Commandes observées : {{ profile.get('top_commands', []) | join(', ') | truncate(100) }}
+    <br/><strong>Observed commands:</strong> <span class="mono" style="font-size:8pt">{{ profile.get('top_commands', []) | join(', ') | truncate(120) }}</span>
     {% endif %}
   </div>
   {% endif %}
 </div>
 
-<!-- ── Section 06 — Profil comportemental ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 06 — Behavioral Profile
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">06</span>
+  <div class="section-head">
+    <div class="sec-num">06</div>
     <div>
-      <div class="section-title">Profil comportemental · Cadre criminologique FBI BAU</div>
-      <div class="section-sub">Organised/Disorganised · MO vs Signature · Locard · Récidivisme · Narratif Mistral 7B</div>
+      <div class="sec-title">Behavioral Profile · FBI BAU Framework</div>
+      <div class="sec-sub">Organised vs Disorganised · Modus Operandi · Locard exchange · Recidivism</div>
     </div>
   </div>
 
-  <div class="wanted-card">
-    <div class="wanted-header">
-      <div class="wanted-score-box">
-        <div class="wanted-score-label">WANTED</div>
-        <div class="wanted-score-num">{{ risk_score }}</div>
-        <div class="wanted-score-sev">{{ risk_label }}</div>
+  <div class="wanted">
+    <div class="wanted-top">
+      <div class="wanted-mug">
+        <div class="wanted-mug-tag">RISK</div>
+        <div class="wanted-mug-num">{{ risk_score }}</div>
+        <div class="wanted-mug-tier">{{ risk_label }}</div>
       </div>
       <div class="wanted-info">
-        <h3>{{ session.get('source_ip') or profile.get('ip', '—') }}</h3>
-        <p>
-          {% if profile.get('city') %}{{ profile.get('city') }}, {% endif %}
+        <div class="wanted-ip">{{ session.get('source_ip') or profile.get('ip', '—') }}</div>
+        <div class="wanted-loc">
+          {% if profile.get('city') %}{{ profile.get('city') }} · {% endif %}
           {% if profile.get('country') %}{{ profile.get('country') }}{% endif %}
           {% if profile.get('asn') %} · ASN {{ profile.get('asn') }}{% endif %}
-          {% if profile.get('is_tor') %} · Tor exit node{% endif %}
-        </p>
-        <div class="wanted-tags" style="margin-top:6pt;">
-          {% if profile.get('is_tor') %}<span class="badge badge-warn">TOR</span>{% endif %}
-          {% if profile.get('is_vpn') %}<span class="badge badge-warn">VPN</span>{% endif %}
-          {% if risk_score >= 70 %}<span class="badge badge-critique">CRITIQUE</span>
-          {% elif risk_score >= 40 %}<span class="badge badge-eleve">HIGH</span>
-          {% else %}<span class="badge badge-moyen">MEDIUM</span>{% endif %}
+          {% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}
+        </div>
+        <div class="wanted-tags">
+          {% if profile.get('is_tor') %}<span class="badge b-warn">TOR EXIT</span>{% endif %}
+          {% if profile.get('is_vpn') %}<span class="badge b-warn">VPN</span>{% endif %}
+          {% if risk_score >= 80 %}<span class="badge b-crit">CRITICAL THREAT</span>
+          {% elif risk_score >= 60 %}<span class="badge b-high">HIGH THREAT</span>
+          {% elif risk_score >= 40 %}<span class="badge b-med">MODERATE</span>
+          {% else %}<span class="badge b-low">LOW</span>{% endif %}
+          {% if (profile.get('session_count') or 0) > 1 %}<span class="badge b-info">RECIDIVIST</span>{% endif %}
         </div>
       </div>
     </div>
 
-    <!-- Organised Score Bar -->
-    <div style="margin-bottom:10pt;">
-      <div class="org-labels" style="margin-bottom:3pt;">
-        <span>DÉSORGANISÉ</span>
-        <span style="font-weight:700;">Score organisé : {{ org_score_pct }}%</span>
-        <span>ORGANISÉ</span>
+    <div>
+      <div class="org-labels">
+        <span>DISORGANISED</span>
+        <span>ORGANISED SCORE · {{ org_score_pct }}%</span>
+        <span>ORGANISED</span>
       </div>
       <div class="org-track">
         <div class="org-fill" style="width:{{ org_score_pct }}%"></div>
       </div>
     </div>
 
-    <div class="mo-sig-grid">
+    <div class="mo-grid">
       <div>
-        <div class="mo-title">Modus Operandi</div>
-        {% set cmds = profile.get('top_commands', []) %}
-        {% if cmds %}
-          {% for cmd in cmds[:4] %}
-          <div class="mo-item">{{ cmd }}</div>
-          {% endfor %}
-        {% else %}
-          <div class="mo-item">Tentatives d'authentification multiples</div>
-          {% if auth_success %}<div class="mo-item">Compromission réussie</div>{% endif %}
-        {% endif %}
+        <div class="mo-block">
+          <div class="mo-tag">MODUS OPERANDI</div>
+          {% set cmds = profile.get('top_commands', []) %}
+          {% if cmds %}
+            {% for cmd in cmds[:4] %}<div class="mo-item">{{ cmd | truncate(60) }}</div>{% endfor %}
+          {% else %}
+            <div class="mo-item">Repeated authentication attempts</div>
+            {% if auth_success %}<div class="mo-item">Successful compromise</div>{% endif %}
+          {% endif %}
+        </div>
       </div>
       <div>
-        <div class="mo-title">Signature (Locard)</div>
-        {% set usernames = profile.get('top_usernames', []) %}
-        {% if usernames %}
-          {% for u in usernames[:3] %}
-          <div class="mo-item">Identifiant « {{ u }} » tenté</div>
-          {% endfor %}
-        {% endif %}
-        {% if profile.get('is_tor') %}
-        <div class="mo-item" style="color:#C62828;">Nœud Tor exclusif pour payload</div>
-        {% endif %}
-        {% if profile.get('session_count', 0) and profile.get('session_count', 0) > 1 %}
-        <div class="mo-item" style="color:#b36000;">⚠ Récidiviste — {{ profile.get('session_count') }} sessions</div>
-        {% endif %}
+        <div class="mo-block">
+          <div class="mo-tag">SIGNATURE · LOCARD</div>
+          {% set unames = profile.get('top_usernames', []) %}
+          {% if unames %}
+            {% for u in unames[:3] %}<div class="mo-item">Tried username "{{ u }}"</div>{% endfor %}
+          {% endif %}
+          {% if profile.get('is_tor') %}<div class="mo-item" style="color:#dc2626">Anonymized via Tor exit</div>{% endif %}
+          {% if (profile.get('session_count') or 0) > 1 %}<div class="mo-item" style="color:#b45309">⚠ Recidivist — {{ profile.get('session_count') }} sessions</div>{% endif %}
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 6.A — Threat actor assessment (ollama_service.py) -->
-  {% if profile.get('mistral_analysis') %}
-  <div style="margin-top:10pt;">
-    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:5pt;">
-      6.A · Évaluation threat actor — Mistral 7B (sophistication, intention, modus operandi)
-    </div>
-    <div class="narrative-box">{{ profile.get('mistral_analysis') }}</div>
-  </div>
-  {% endif %}
-
-  <!-- 6.B — MITRE ATT&CK forensic narrative (forensic-engine/ollama_mitre.py) -->
-  {% if forensic_narrative %}
-  <div style="margin-top:10pt;">
-    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:5pt;">
-      6.B · Narration forensique MITRE ATT&amp;CK — Mistral 7B (kill chain, TTPs, chronologie)
-    </div>
-    <div class="narrative-box">{{ forensic_narrative }}</div>
+  {% if profile.get('mistral_analysis') and not (profile.get('mistral_analysis') == forensic_narrative) %}
+  <div class="narrative">
+    <div class="narrative-head">▌ 6.A · THREAT ACTOR ASSESSMENT (sophistication · intent · MO)</div>
+    {{ profile.get('mistral_analysis') }}
   </div>
   {% endif %}
 
   {% if not profile.get('mistral_analysis') and not forensic_narrative %}
-  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;margin-top:10pt;">
-    Analyse Mistral 7B non disponible pour cette session.
-  </div>
+  <div class="callout note">Mistral 7B analysis is not available for this session — see structured metadata above.</div>
   {% endif %}
 </div>
 
-<!-- ── Section 07 — Score de risque ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 07 — Risk Score Decomposition
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">07</span>
+  <div class="section-head">
+    <div class="sec-num">07</div>
     <div>
-      <div class="section-title">Score de risque · Décomposition des signaux</div>
-      <div class="section-sub">Scoring déterministe · AbuseIPDB · YARA · Comportemental</div>
+      <div class="sec-title">Risk Score Breakdown</div>
+      <div class="sec-sub">18 deterministic signals · AbuseIPDB · YARA · Behavioral</div>
     </div>
   </div>
 
-  <div class="score-big-wrap">
-    <div class="score-big">{{ risk_score }}</div>
-    <div class="score-big-info">
-      <div class="score-big-max">/ 100 · <span class="score-big-label">{{ risk_label }}</span></div>
-      <div style="display:flex;gap:4pt;margin-top:4pt;align-items:center;">
-        <div style="height:4pt;width:140pt;background:#eee;border-radius:2pt;overflow:hidden;">
-          <div style="height:100%;width:{{ risk_score }}%;background:{{ risk_color }};border-radius:2pt;"></div>
-        </div>
+  <div class="score-block">
+    <div class="score-num-wrap">
+      <div class="score-num">{{ risk_score }}<span class="score-num-max">/100</span></div>
+      <div class="score-num-tier">{{ risk_label }}</div>
+    </div>
+    <div class="score-bar-wrap">
+      <div style="font-size:7.5pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;letter-spacing:1pt;text-transform:uppercase;margin-bottom:5pt;">▌ Risk distribution scale</div>
+      <div class="score-bar-track">
+        <div class="score-bar-fill"></div>
       </div>
-      <div class="score-big-sub" style="margin-top:4pt;">Score déterministe et auditable — chaque point justifié par une évidence concrète</div>
+      <div class="score-bar-marker">
+        <div class="score-marker" style="left:{{ risk_score }}%"></div>
+      </div>
+      <div class="score-bar-scale">
+        <span>0 · INFO</span><span>20 · LOW</span><span>40 · MEDIUM</span><span>60 · HIGH</span><span>100 · CRITICAL</span>
+      </div>
+      <div style="font-size:8pt;color:#1e293b;line-height:1.5;margin-top:8pt;">
+        Each point on the scale is justified by concrete log evidence — the score is fully reproducible
+        from the underlying event stream and traceable to its source signal.
+      </div>
     </div>
   </div>
 
   {% if score_signals %}
-  <table class="data-table">
+  <table class="data">
     <thead>
       <tr>
-        <th style="width:20pt;">#</th>
+        <th style="width:18pt">#</th>
         <th>Signal</th>
-        <th style="width:80pt;">Source</th>
-        <th style="width:60pt;">Points</th>
-        <th style="width:120pt;">Visualisation</th>
+        <th style="width:75pt">Source</th>
+        <th style="width:50pt">Points</th>
+        <th style="width:120pt">Visualisation</th>
       </tr>
     </thead>
     <tbody>
     {% for sig in score_signals %}
     {% set is_active = sig.points > 0 %}
     <tr>
-      <td class="mono" style="color:#888;">{{ '%02d'|format(loop.index) }}</td>
-      <td style="font-size:8.5pt;">
-        <div style="font-weight:{{ '700' if is_active else '400' }};color:{{ '#1a1a1a' if is_active else '#888' }};">{{ sig.name }}</div>
-        {% if sig.detail %}<div style="font-size:7pt;color:#999;font-style:italic;margin-top:1pt;">{{ sig.detail }}</div>{% endif %}
+      <td class="mono" style="color:#94a3b8;font-size:7pt">{{ '%02d' | format(loop.index) }}</td>
+      <td style="font-size:8pt;{% if not is_active %}color:#94a3b8;{% endif %}">
+        <strong>{{ sig.name }}</strong>
+        {% if sig.detail %}<div style="font-size:6.5pt;color:#94a3b8;font-style:italic;margin-top:1pt;">{{ sig.detail }}</div>{% endif %}
       </td>
-      <td class="mono" style="font-size:8pt;color:#555;">{{ sig.source }}</td>
-      <td style="font-weight:700;color:{{ risk_color if is_active else '#bbb' }};font-family:'DejaVu Sans Mono',monospace;">{{ sig.points }}</td>
+      <td class="mono" style="font-size:7pt;color:#475569">{{ sig.source }}</td>
+      <td class="mono" style="font-weight:800;color:{% if is_active %}{{ risk_color }}{% else %}#cbd5e1{% endif %};">{{ sig.points }}/{{ sig.max }}</td>
       <td>
-        <div style="display:flex;align-items:center;gap:5pt;">
-          <div style="flex:1;height:6pt;background:#eee;border-radius:3pt;overflow:hidden;">
-            <div style="height:100%;width:{{ [100, (sig.points * 100 // (sig.max or 1))] | min }}%;background:{{ risk_color }};border-radius:3pt;"></div>
-          </div>
-          <span style="font-size:7.5pt;font-family:'DejaVu Sans Mono',monospace;color:#888;width:30pt;text-align:right;">{{ sig.points }}/{{ sig.max }}</span>
+        <div class="sig-bar">
+          <div class="sig-bar-fill" style="width:{{ [100, (sig.points * 100 // (sig.max or 1))] | min }}%"></div>
         </div>
       </td>
     </tr>
     {% endfor %}
     </tbody>
     <tfoot>
-      <tr style="background:#f5f5f5;font-weight:700;">
-        <td colspan="3" style="text-align:right;font-size:9pt;padding:6pt 7pt;">TOTAL (plafonné à 100)</td>
-        <td style="font-weight:700;font-size:11pt;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ risk_score }}</td>
-        <td style="font-weight:700;font-size:9pt;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ risk_score }}/100</td>
+      <tr style="background:#0f172a;color:#fff;">
+        <td colspan="3" style="text-align:right;font-weight:800;font-size:8.5pt;padding:7pt;text-transform:uppercase;letter-spacing:1pt;">Total (capped at 100)</td>
+        <td class="mono" style="color:{{ risk_color }};font-weight:900;font-size:11pt;">{{ risk_score }}</td>
+        <td class="mono" style="color:#fbbf24;font-weight:800;font-size:8pt;">{{ risk_score }}/100 · {{ risk_label }}</td>
       </tr>
     </tfoot>
   </table>
-  <div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:5pt;">
-    Score déterministe et auditable — chaque point est justifié par une évidence concrète dans les logs.
+  <div class="note-box">
+    Deterministic scoring engine (forensic-engine/risk_score.py) — every point is mapped to a concrete
+    signal with measurable evidence. No machine-learning black box involved.
   </div>
   {% endif %}
 </div>
 
-<!-- ── Section 08 — Chain of Custody + IOCs ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 08 — Chain of Custody + IOCs
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">08</span>
+  <div class="section-head">
+    <div class="sec-num">08</div>
     <div>
-      <div class="section-title">Chaîne de custody · RFC 3161 + IOCs</div>
-      <div class="section-sub">SHA-256 · freeTSA.org · STIX 2.1 Export · Recommandations SOC</div>
+      <div class="sec-title">Chain of Custody &amp; Indicators of Compromise</div>
+      <div class="sec-sub">SHA-256 · RFC 3161 freeTSA · STIX 2.1 export · Recommended SOC actions</div>
     </div>
   </div>
 
-  <div class="two-col">
-    <div class="cert-box">
-      <div class="cert-ok">✅ Intégrité des preuves certifiée</div>
-      <table class="kv-table" style="margin-top:8pt;">
-        <tr><th>SHA-256 (session)</th><td class="mono" style="font-size:7.5pt;word-break:break-all;color:#1565C0;">{{ sha256_session[:32] }}...</td></tr>
-        <tr><th>TSA</th><td><strong>freeTSA.org (RFC 3161)</strong></td></tr>
-        <tr><th>Horodatage</th><td>{{ generated_at_str }}</td></tr>
-        <tr><th>Statut</th><td>{% if custody_ok %}<span class="badge badge-ok">✅ Certifié · Admissible en justice</span>{% else %}<span class="badge badge-info">SHA-256 calculé localement</span>{% endif %}</td></tr>
-      </table>
+  <div class="col2">
+    <div class="card ok">
+      <div class="card-head"><span>EVIDENCE INTEGRITY</span><span class="card-tag">RFC 3161</span></div>
+      <div class="card-body">
+        <div class="hash-box" style="margin-bottom:6pt;">
+          <span class="hash-key">SHA-256</span><br/>{{ sha256_session }}
+        </div>
+        <table class="kv">
+          <tr><th>TSA Authority</th><td>freeTSA.org · RFC 3161</td></tr>
+          <tr><th>Sealed At</th><td>{{ generated_at_str }}</td></tr>
+          <tr><th>Status</th>
+            <td>{% if custody_ok %}<span class="badge b-ok">CERTIFIED · COURT-ADMISSIBLE</span>{% else %}<span class="badge b-info">SHA-256 (LOCAL)</span>{% endif %}</td></tr>
+        </table>
+      </div>
     </div>
-    <div class="box">
-      <div class="box-title">Recommandations SOC — Actions immédiates</div>
-      <div style="font-size:8.5pt;color:#333;line-height:1.7;">
+
+    <div class="card alt">
+      <div class="card-head"><span>RECOMMENDED SOC ACTIONS</span><span class="card-tag">IMMEDIATE</span></div>
+      <div class="card-body">
         {% set ip = session.get('source_ip') or profile.get('ip', '?') %}
-        <div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">1.</span> Bloquer l'IP {{ ip }} au pare-feu périmétrique</div>
-        {% if profile.get('asn') %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">2.</span> Surveiller le bloc ASN {{ profile.get('asn') }}</div>{% endif %}
-        {% if profile.get('yara_matches') %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">3.</span> Analyser le malware capturé : {{ profile.get('yara_matches')[0] }}</div>{% endif %}
-        {% if auth_success %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">4.</span> Auditer les credentials exposés</div>{% endif %}
-        <div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#8C1A2B;font-weight:700;">5.</span> Exporter IOCs en STIX 2.1 vers Splunk/QRadar</div>
+        <div class="rec-list">
+          <div class="rec-item"><span class="rec-num">1</span>Block <span class="mono">{{ ip }}</span> at perimeter firewall</div>
+          {% if profile.get('asn') %}<div class="rec-item"><span class="rec-num">2</span>Monitor ASN <span class="mono">{{ profile.get('asn') }}</span> ({{ profile.get('as_org') or 'unknown' }})</div>{% endif %}
+          {% if profile.get('yara_matches') %}<div class="rec-item"><span class="rec-num">3</span>Sandbox-detonate captured malware: <strong>{{ profile.get('yara_matches')[0] }}</strong></div>{% endif %}
+          {% if auth_success %}<div class="rec-item"><span class="rec-num">4</span>Audit credentials &amp; rotate compromised secrets</div>{% endif %}
+          <div class="rec-item"><span class="rec-num">5</span>Export IOCs (STIX 2.1) to SIEM (Splunk · QRadar · TheHive · MISP)</div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- IOCs table -->
+  <!-- IOC table -->
   {% set all_iocs = [] %}
-  {% if session.get('source_ip') %}{% set _ = all_iocs.append({"type": "IPv4", "valeur": session.get('source_ip'), "contexte": "Source de l'attaque", "confiance": "100%"}) %}{% endif %}
-  {% for h in profile.get('ioc_hashes', [])[:2] %}{% set _ = all_iocs.append({"type": "SHA-256", "valeur": h, "contexte": "Malware capturé", "confiance": "100%"}) %}{% endfor %}
-  {% for t in (profile.get('mitre_techniques') or [])[:3] %}{% set _ = all_iocs.append({"type": "Technique", "valeur": t, "contexte": "MITRE ATT&CK Enterprise", "confiance": "100%"}) %}{% endfor %}
+  {% if session.get('source_ip') %}{% set _ = all_iocs.append({"type": "ipv4-addr",  "value": session.get('source_ip'), "context": "Attack source", "conf": "100%"}) %}{% endif %}
+  {% for h in profile.get('ioc_hashes', [])[:2] %}{% set _ = all_iocs.append({"type": "file:hashes.SHA-256", "value": h, "context": "Captured malware", "conf": "100%"}) %}{% endfor %}
+  {% for t in (profile.get('mitre_techniques') or [])[:3] %}{% set _ = all_iocs.append({"type": "attack-pattern", "value": t, "context": "MITRE ATT&CK Enterprise", "conf": "100%"}) %}{% endfor %}
 
   {% if all_iocs %}
-  <table class="data-table" style="margin-top:10pt;">
-    <thead><tr><th style="width:60pt;">Type IOC</th><th>Valeur</th><th>Contexte</th><th style="width:60pt;">Confiance</th></tr></thead>
-    <tbody>
-    {% for ioc in all_iocs %}
-    <tr>
-      <td><span class="badge badge-moyen">{{ ioc.type }}</span></td>
-      <td class="ioc-value">{{ ioc.valeur | truncate(60) }}</td>
-      <td style="font-size:8.5pt;color:#444;">{{ ioc.contexte }}</td>
-      <td style="font-size:8pt;color:#2E7D32;font-weight:700;font-family:'DejaVu Sans Mono',monospace;">{{ ioc.confiance }}</td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  <div style="margin-top:8pt;font-size:8pt;color:#888;font-family:'DejaVu Sans Mono',monospace;">
-    Export STIX 2.1 disponible · Compatible : Splunk · IBM QRadar · TheHive · OpenCTI · MISP
+  <div style="margin-top:10pt;">
+    <div style="font-size:6.5pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;letter-spacing:1.2pt;text-transform:uppercase;margin-bottom:4pt;">▌ EXTRACTED INDICATORS OF COMPROMISE (STIX 2.1)</div>
+    <table class="data">
+      <thead><tr><th style="width:120pt">STIX Type</th><th>Value</th><th style="width:120pt">Context</th><th style="width:50pt">Conf.</th></tr></thead>
+      <tbody>
+      {% for ioc in all_iocs %}
+      <tr>
+        <td><span class="badge b-low">{{ ioc.type }}</span></td>
+        <td class="mono" style="color:#0891b2;word-break:break-all">{{ ioc.value | truncate(60) }}</td>
+        <td style="font-size:7.5pt;color:#475569">{{ ioc.context }}</td>
+        <td class="mono" style="color:#059669;font-weight:800">{{ ioc.conf }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="note-box">
+    STIX 2.1 export available · Compatible with Splunk · IBM QRadar · TheHive · OpenCTI · MISP
   </div>
   {% endif %}
 </div>
 
-<!-- ── Section 09 — Conclusion ── -->
+<!-- ════════════════════════════════════════════════════════════════
+     SECTION 09 — Conclusion
+═══════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <div class="section-header">
-    <span class="section-num">09</span>
-    <span class="section-title">Conclusion &amp; Perspectives</span>
+  <div class="section-head">
+    <div class="sec-num">09</div>
+    <div>
+      <div class="sec-title">Conclusion &amp; Strategic Outlook</div>
+      <div class="sec-sub">Findings synthesis · Threat landscape · Forward-looking recommendations</div>
+    </div>
   </div>
 
-  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:8pt;">
-    L'analyse forensique de la session <strong>{{ (session.get('session_id') or session_id)[:12] }}</strong> a permis de caractériser
-    avec précision une attaque de niveau <strong>{{ risk_label }} ({{ risk_score }}/100)</strong>
-    {% if session.get('source_ip') %} orchestrée depuis <strong>{{ session.get('source_ip') }}</strong>{% endif %}
+  <p style="font-size:9pt;color:#1e293b;line-height:1.65;margin-bottom:8pt;">
+    The forensic analysis of session <strong class="mono">{{ (session.get('session_id') or session_id)[:24] }}</strong>
+    characterizes a <strong style="color:{{ risk_color }}">{{ risk_label }} ({{ risk_score }}/100)</strong> intrusion attempt
+    {% if session.get('source_ip') %} originating from <strong class="mono">{{ session.get('source_ip') }}</strong>{% endif %}
     {% if profile.get('country') %} ({{ profile.get('country') }}){% endif %}.
-    La chaîne d'attaque complète a été reconstituée grâce à la corrélation multi-source
-    entre Cowrie, Dionaea et Zeek, avec une précision milliseconde.
+    The complete attack chain has been reconstructed via multi-source correlation
+    (Cowrie, Dionaea, Galah, Zeek) at millisecond precision.
   </p>
 
   {% if profile.get('mistral_analysis') %}
-  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:8pt;">
-    L'application du cadre criminologique FBI BAU a permis de classifier l'attaquant et de documenter
-    ses patterns comportementaux. Ces éléments de signature constituent des indicateurs d'attribution
-    robustes, exploitables dans le cadre d'une coopération inter-CERT.
+  <p style="font-size:9pt;color:#1e293b;line-height:1.65;margin-bottom:8pt;">
+    Application of the FBI BAU criminological framework yielded a behavioral classification of the
+    attacker and documented their operational patterns. These signature elements form robust
+    attribution indicators, suitable for inter-CERT collaboration.
   </p>
   {% endif %}
 
-  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:12pt;">
-    Sur le plan technique, ForenHive démontre la viabilité d'une approche forensique entièrement hors-ligne :
-    l'ensemble de la chaîne d'analyse — enrichissement IP, scoring déterministe, classification MITRE ATT&amp;CK,
-    profilage LLM et certification RFC 3161 — opère sans dépendance cloud, sur un serveur Dell PowerEdge R750.
+  <p style="font-size:9pt;color:#1e293b;line-height:1.65;margin-bottom:12pt;">
+    From an engineering standpoint, ForenHive demonstrates the viability of a fully offline forensic
+    workflow: IP enrichment, deterministic scoring, MITRE ATT&amp;CK mapping, LLM-powered profiling
+    and RFC 3161 timestamping all operate without cloud dependency on a Dell PowerEdge R750.
   </p>
 
-  <!-- Key points summary -->
-  <div style="border:0.5pt solid #ddd;border-radius:4pt;padding:10pt 12pt;">
-    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:8pt;">Points clés de l'analyse</div>
-    <div class="key-points">
-      {% if session.get('auth_attempts', 0) %}
-      <div class="key-point">{{ session.get('auth_attempts') }} tentatives auth enregistrées</div>{% endif %}
-      {% if auth_success %}<div class="key-point">Compromission confirmée</div>{% endif %}
-      {% if profile.get('mitre_techniques') %}<div class="key-point">{{ profile.get('mitre_techniques') | length }} techniques MITRE identifiées</div>{% endif %}
-      {% if profile.get('yara_matches') %}<div class="key-point">YARA match : {{ profile.get('yara_matches')[0] }}</div>{% endif %}
-      {% if profile.get('is_tor') %}<div class="key-point">Nœud Tor exit confirmé</div>{% endif %}
-      {% if profile.get('abuseipdb_score') %}<div class="key-point">AbuseIPDB {{ profile.get('abuseipdb_score') }}/100</div>{% endif %}
-    </div>
-    {% if session.get('source_ip') %}
-    <div style="margin-top:8pt;border-top:0.4pt solid #eee;padding-top:6pt;">
-      <div class="key-action">Bloquer l'IP {{ session.get('source_ip') }} au pare-feu</div>
-      <div class="key-action">Exporter IOCs en STIX 2.1 vers Splunk/QRadar</div>
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- Certification page -->
-  <div class="page-break">
-    <div class="cert-page-inner">
-      <div class="cert-page-title">Certification d'intégrité du rapport</div>
-      <div class="cert-page-sub">Ce rapport a été généré automatiquement par ForenHive Platform v1.0</div>
-
-      <div class="cert-two-col">
-        <div class="cert-box">
-          <div class="cert-col-title">Intégrité des logs</div>
-          <div class="hash-box">SHA-256 : {{ sha256_session }}</div>
-          <div style="font-size:8pt;color:#555;line-height:1.6;">
-            <strong>TSA</strong> : freeTSA.org (RFC 3161)<br/>
-            <strong>Horodatage</strong> : {{ generated_at_str }}<br/>
-            <span class="cert-ok">✅ Certifié · Admissible en justice</span>
-          </div>
+  <div class="card">
+    <div class="card-head"><span>KEY FINDINGS · QUICK RECAP</span><span class="card-tag">SUMMARY</span></div>
+    <div class="card-body">
+      <div class="col2">
+        <div>
+          <div style="font-size:6.5pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;letter-spacing:1.2pt;text-transform:uppercase;margin-bottom:5pt;">▌ DETECTED</div>
+          {% if session.get('auth_attempts', 0) %}<div class="mo-item">{{ session.get('auth_attempts') }} authentication attempt(s)</div>{% endif %}
+          {% if auth_success %}<div class="mo-item" style="color:#dc2626">Successful compromise confirmed</div>{% endif %}
+          {% if profile.get('mitre_techniques') %}<div class="mo-item">{{ profile.get('mitre_techniques') | length }} MITRE technique(s)</div>{% endif %}
+          {% if profile.get('yara_matches') %}<div class="mo-item" style="color:#dc2626">YARA match: {{ profile.get('yara_matches')[0] }}</div>{% endif %}
+          {% if profile.get('is_tor') %}<div class="mo-item">Tor exit node confirmed</div>{% endif %}
+          {% if profile.get('abuseipdb_score') %}<div class="mo-item">AbuseIPDB score: {{ profile.get('abuseipdb_score') }}/100</div>{% endif %}
         </div>
-        <div class="box">
-          <div class="cert-col-title" style="color:#888;">Plateforme ForenHive</div>
-          <table class="kv-table">
-            <tr><th>Version</th><td>v1.0.0</td></tr>
-            <tr><th>Backend</th><td>FastAPI · Python 3.11</td></tr>
-            <tr><th>LLM</th><td>Mistral 7B Q4_K_M</td></tr>
-            <tr><th>Serveur</th><td>Dell R750 · Ubuntu 24.10</td></tr>
-            <tr><th>Mode</th><td style="color:#2E7D32;font-weight:700;">100% offline · No cloud</td></tr>
-          </table>
+        <div>
+          <div style="font-size:6.5pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;letter-spacing:1.2pt;text-transform:uppercase;margin-bottom:5pt;">▌ NEXT STEPS</div>
+          {% if session.get('source_ip') %}
+          <div class="mo-item" style="color:#dc2626">Block IP {{ session.get('source_ip') }} at firewall</div>
+          {% endif %}
+          <div class="mo-item">Export IOCs (STIX 2.1) to SIEM</div>
+          <div class="mo-item">Replay session for threat-hunting baselines</div>
+          <div class="mo-item">Add MITRE techniques to detection-rule library</div>
         </div>
-      </div>
-
-      <div class="sig-grid">
-        <div class="sig-block">
-          <div class="sig-line"></div>
-          <div class="sig-name">Analyste SOC</div>
-          <div class="sig-sub">ForenHive Engine v1.0 · Mistral 7B</div>
-        </div>
-        <div class="sig-block">
-          <div class="sig-line"></div>
-          <div class="sig-name">Responsable Sécurité</div>
-          <div class="sig-sub">Standard Sharing Software (3S)</div>
-        </div>
-      </div>
-
-      <div style="text-align:center;margin:8pt 0;font-size:8pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;">Hash de certification du rapport</div>
-      <div class="hash-box" style="text-align:center;">SHA-256 : {{ sha256_session }}<br/>✅ TSA freeTSA.org · RFC 3161 · {{ generated_at_str }} · Certifié</div>
-
-      <div class="legal-box">
-        <strong>Avertissement légal :</strong> Ce rapport est produit automatiquement par ForenHive Platform v1.0
-        à des fins d'analyse forensique et de documentation de sécurité. Les données présentées sont basées sur les
-        logs capturés par les honeypots déployés dans l'environnement maîtrisé de Standard Sharing Software (3S).
-        La chaîne de custody est garantie par horodatage RFC 3161 (freeTSA.org). Ce document peut être utilisé
-        comme pièce justificative dans une procédure légale sous réserve de validation par un expert forensique certifié.
-        Les données sont issues de honeypots déployés dans l'environnement maîtrisé de Standard Sharing Software (3S), Charguia, Tunis.
       </div>
     </div>
   </div>
-
 </div>
 
-</div><!-- end body-content -->
+<!-- ════════════════════════════════════════════════════════════════
+     CERTIFICATE OF INTEGRITY
+═══════════════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <div style="text-align:center;padding:8pt 0 14pt;border-bottom:1pt solid #e2e8f0;margin-bottom:18pt;">
+    <div style="font-size:7pt;letter-spacing:3pt;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;font-weight:800;text-transform:uppercase;margin-bottom:6pt;">▌ CERTIFICATE</div>
+    <div style="font-size:18pt;font-weight:900;color:#0f172a;text-transform:uppercase;letter-spacing:1.5pt;">Certificate of Integrity</div>
+    <div style="font-size:8pt;color:#64748b;font-family:'DejaVu Sans Mono',monospace;margin-top:4pt;letter-spacing:1pt;">Automatically generated · ForenHive Platform v1.0</div>
+  </div>
+
+  <div class="col2" style="margin-bottom:16pt;">
+    <div class="card ok">
+      <div class="card-head"><span>EVIDENCE SEAL</span><span class="card-tag">SHA-256 · RFC 3161</span></div>
+      <div class="card-body">
+        <div class="hash-box" style="margin-bottom:8pt;">
+          <span class="hash-key">SHA-256</span><br/>{{ sha256_session }}
+        </div>
+        <table class="kv">
+          <tr><th>TSA</th><td>freeTSA.org (RFC 3161)</td></tr>
+          <tr><th>Sealed</th><td>{{ generated_at_str }}</td></tr>
+          <tr><th>Status</th><td><span class="badge b-ok">{% if custody_ok %}CERTIFIED · COURT-ADMISSIBLE{% else %}SHA-256 ANCHORED{% endif %}</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>PLATFORM SPECS</span><span class="card-tag">v1.0.0</span></div>
+      <div class="card-body">
+        <table class="kv">
+          <tr><th>Backend</th><td>FastAPI · Python 3.11</td></tr>
+          <tr><th>LLM</th><td>Mistral 7B Q4_K_M (offline)</td></tr>
+          <tr><th>Storage</th><td>Elasticsearch · PostgreSQL</td></tr>
+          <tr><th>Server</th><td>Dell R750 · Ubuntu 24.10</td></tr>
+          <tr><th>Mode</th><td style="color:#059669;font-weight:800">100% OFFLINE — NO CLOUD</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="sig-grid">
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-name">SOC Analyst</div>
+      <div class="sig-role">ForenHive Engine v1.0 · Mistral 7B</div>
+    </div>
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-name">Security Officer</div>
+      <div class="sig-role">Standard Sharing Software (3S)</div>
+    </div>
+  </div>
+
+  <div class="hash-box" style="text-align:center;margin-top:18pt;">
+    <span class="hash-key">REPORT FINGERPRINT · SHA-256</span><br/>
+    {{ sha256_session }}<br/>
+    <span style="color:#86efac;">freeTSA.org · RFC 3161 · {{ generated_at_str }}</span>
+  </div>
+
+  <div class="legal">
+    <strong>Legal disclaimer.</strong> This report is automatically produced by ForenHive Platform v1.0
+    for forensic analysis and security documentation purposes. Findings are based on logs captured by
+    honeypots deployed in the controlled environment of <strong>Standard Sharing Software (3S)</strong>,
+    Charguia, Tunis. Chain of custody is anchored via RFC 3161 timestamping (freeTSA.org).
+    This document may be used as supporting evidence in legal proceedings, subject to validation by
+    a certified forensic expert. Distribution is restricted under <strong>TLP:AMBER+STRICT</strong> —
+    do not forward outside the explicit recipient list without written consent.
+  </div>
+</div>
+
+</div><!-- /body-content -->
+
 </body>
 </html>
