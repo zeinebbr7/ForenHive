@@ -59,12 +59,10 @@ def _now_utc():
     return datetime.now(timezone.utc)
 
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    )
+    return db_pool.pooled_conn()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -73,8 +71,8 @@ def _pg_conn():
 
 def _build_es_client() -> Elasticsearch:
     return Elasticsearch(
-        [{"host": config.ES_HOST, "port": config.ES_PORT, "scheme": "http"}],
-        request_timeout=30
+        f"http://{config.ES_HOST}:{config.ES_PORT}",
+        request_timeout=30,
     )
 
 
@@ -359,13 +357,25 @@ def _query_ip_honeypot_types(es: Elasticsearch, hours_back: int) -> dict:
     return result
 
 
-def _load_file_analysis_from_pg() -> dict:
-    """Load all file_analysis rows: sha256 → {yara_matches, vt_malicious, vt_family, ...}"""
+def _load_file_analysis_from_pg(hours_back: int = 168) -> dict:
+    """Load file_analysis rows analyzed within the lookback window.
+
+    Defaults to 7 days (168h) so a short engine run still gets a full week of
+    file-analysis context. Filtering by analyzed_at avoids loading the entire
+    historical table into memory once it grows past a few thousand entries.
+    """
     results = {}
     try:
         with _pg_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT sha256, yara_matches, virustotal_result FROM file_analysis")
+                cur.execute(
+                    """
+                    SELECT sha256, yara_matches, virustotal_result
+                    FROM file_analysis
+                    WHERE analyzed_at > NOW() - make_interval(hours => %s)
+                    """,
+                    (int(hours_back),),
+                )
                 for row in cur.fetchall():
                     sha256 = row["sha256"]
                     yara = row["yara_matches"] or []
@@ -395,11 +405,11 @@ def _query_recidivism(hours_back: int = 720) -> dict:
                     SELECT source_ip, COUNT(*) AS prior
                     FROM forensic_sessions
                     WHERE created_at < NOW() - INTERVAL '1 hour'
-                      AND created_at > NOW() - INTERVAL %s
+                      AND created_at > NOW() - make_interval(hours => %s)
                       AND risk_score >= 20
                     GROUP BY source_ip
                     """,
-                    (f"{hours_back} hours",)
+                    (int(hours_back),)
                 )
                 for row in cur.fetchall():
                     results[row[0]] = int(row[1])
@@ -539,11 +549,17 @@ class ForensicEngine:
     # ── Phase 7: LLM attacker profiling ──────────────────────────────────────
 
     def run_profiling(self, scored: list) -> int:
-        """Profile high-risk IPs (>=60) via Ollama/Mistral, max 5 per run."""
+        """Profile high-risk IPs via Ollama/Mistral.
+
+        Threshold and max-per-run are configurable via PROFILE_RISK_THRESHOLD and
+        MAX_PROFILES_PER_RUN env vars (defaults: 60 and 5 respectively).
+        """
         log.info("=== Phase 7: LLM Attacker Profiling ===")
+        threshold = config.PROFILE_RISK_THRESHOLD
+        max_profiles = config.MAX_PROFILES_PER_RUN
         high_risk_ips = list({
-            ip for _, ip, score, _, _ in scored if score >= 60
-        })[:5]
+            ip for _, ip, score, _, _ in scored if score >= threshold
+        })[:max_profiles]
 
         if not high_risk_ips:
             log.info("Profiling: no high-risk IPs (score ≥ 60) this run")
@@ -651,7 +667,7 @@ class ForensicEngine:
         enrichment_cache = enrichment_cache or {}
 
         # Load YARA/VT from PG and map to IPs via ES
-        file_analysis   = _load_file_analysis_from_pg()
+        file_analysis   = _load_file_analysis_from_pg(hours_back=max(hours_back, 168))
         ip_to_sha256    = _query_ip_to_sha256(self.es, hours_back)
         log.info(f"File analysis: {len(file_analysis)} entries, "
                  f"{len(ip_to_sha256)} IPs with file hashes")

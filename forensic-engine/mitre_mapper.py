@@ -292,7 +292,7 @@ def get_forensic_narrative(session: dict, technique_ids: list) -> str:
                 "options": {
                     "temperature": 0.1,
                     "num_predict": 80,
-                    "stop": ["\n\n", "3."],
+                    "stop": ["\n\n"],
                 },
             },
             timeout=60,

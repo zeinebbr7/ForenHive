@@ -590,9 +590,16 @@ def calculate_risk_score(session_data: dict) -> dict:
     }
 
     # ── Finalize ──────────────────────────────────────────────────────────────
+    score_uncapped = score
     final_score = min(score, 100)
     level       = risk_level(final_score)
-    lateral     = is_private and final_score >= 50
+    lateral_signals = (
+        smb_share_enum
+        or "lateral_movement" in attack_types
+        or any(t in {"net_share_disc", "lateral_smb"} for t in techniques)
+        or bool(exploit_cve)
+    )
+    lateral     = bool(lateral_signals) or (is_private and final_score >= 50)
 
     # ── Confidence ────────────────────────────────────────────────────────────
     active_signals = sum(1 for v in breakdown.values() if v["points"] > 0)
@@ -716,6 +723,7 @@ def calculate_risk_score(session_data: dict) -> dict:
 
     return {
         "score":               final_score,
+        "score_uncapped":      score_uncapped,
         "level":               level,
         "confidence":          confidence,
         "signal_breakdown":    breakdown,

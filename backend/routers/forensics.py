@@ -3,10 +3,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
 from services.elasticsearch import get_es
+from services.forensic_runner import last_forensic_run, run_forensic_engine
 from services.yara_client import get_forensic_engine
 
 router = APIRouter(prefix="/api/forensics", tags=["forensics"])
@@ -148,6 +149,23 @@ async def yara_dionaea_scan(limit: int = Query(50, ge=1, le=500)):
 
 
 @router.post("/run")
-async def trigger_engine_run():
+async def trigger_engine_run(background_tasks: BackgroundTasks):
     """Trigger an immediate forensic engine run (non-blocking)."""
-    return await get_forensic_engine().run_now()
+    if last_forensic_run["status"] == "running":
+        raise HTTPException(status_code=409, detail="Analysis already in progress")
+    background_tasks.add_task(run_forensic_engine)
+    return {
+        "status": "queued",
+        "message": "Forensic analysis queued. Check /api/forensics/status for progress.",
+        "queued_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+
+
+@router.get("/status")
+async def forensic_run_status():
+    """Status of the last/current forensic engine run."""
+    return {
+        "status": last_forensic_run["status"],
+        "timestamp": last_forensic_run["timestamp"],
+        "error": last_forensic_run.get("error", ""),
+    }
