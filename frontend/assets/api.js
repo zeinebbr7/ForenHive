@@ -4,6 +4,13 @@
 
 const API_BASE = '';
 
+function decodeJwtPayload(token) {
+  const part = token.split('.')[1];
+  const padded = part.replace(/-/g, '+').replace(/_/g, '/');
+  const fullyPadded = padded + '='.repeat((4 - padded.length % 4) % 4);
+  return JSON.parse(decodeURIComponent(escape(atob(fullyPadded))));
+}
+
 const TOKEN_KEY = 'forenhive.token';
 const USER_KEY  = 'forenhive.user';
 
@@ -53,8 +60,8 @@ const api = {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
     });
-    // Decode JWT payload (no signature verification needed client-side)
-    const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+    // Decode JWT payload (base64url — uses helper to handle - _ and missing padding)
+    const payload = decodeJwtPayload(data.access_token);
     const me = { id: payload.sub, email: payload.email, role: payload.role, full_name: payload.email, is_active: true, created_at: new Date().toISOString() };
     this.setSession(data.access_token, me);
     return me;

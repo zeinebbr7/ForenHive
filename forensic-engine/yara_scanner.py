@@ -28,12 +28,10 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    )
+    return db_pool.pooled_conn()
 
 
 class YARAScanner:

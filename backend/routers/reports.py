@@ -12,10 +12,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import select, text
 
 from config import get_settings
-from db import get_sessionmaker
 from models.report import (
     ReportListResponse,
     ReportMeta,
@@ -60,8 +58,55 @@ _MITRE_DB: Dict[str, tuple] = {
     "T1033":     ("System Owner/User Discovery",        "Discovery"),
 }
 
-_MONTHS_FR = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-              "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+_MONTHS_EN = ["", "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+
+# YARA rule name → malware intelligence
+_YARA_DB: Dict[str, Dict[str, str]] = {
+    "mirai":      {"type": "Botnet",        "family": "Mirai",          "arch": "MIPS / ARM / x86",
+                   "desc": "Linux botnet targeting IoT devices via Telnet/SSH brute-force. Enslaved hosts launch volumetric DDoS floods (UDP, SYN, ACK). First observed 2016; variants still dominant."},
+    "hajime":     {"type": "Botnet",        "family": "Hajime",         "arch": "MIPS / ARM",
+                   "desc": "Peer-to-peer IoT botnet using a BitTorrent-like DHT for C2. Competes with Mirai for the same attack surface."},
+    "gafgyt":     {"type": "Botnet",        "family": "Gafgyt / BASHLITE", "arch": "MIPS / ARM",
+                   "desc": "IoT botnet spread by Telnet brute-force. Launches UDP/TCP flood DDoS. Shares lineage with Mirai source code."},
+    "tsunami":    {"type": "Backdoor",      "family": "Tsunami / Kaiten","arch": "x86 / MIPS",
+                   "desc": "IRC-controlled DDoS bot targeting Linux servers. Provides a persistent backdoor and flood capabilities."},
+    "wannacry":   {"type": "Ransomware",    "family": "WannaCry",       "arch": "x86 / x64",
+                   "desc": "Self-propagating ransomware worm (May 2017) exploiting EternalBlue (CVE-2017-0144). Encrypts files with AES-128 and demands Bitcoin ransom."},
+    "eternalblue":{"type": "Exploit",       "family": "EternalBlue",    "arch": "x86 / x64",
+                   "desc": "NSA-developed SMBv1 exploit (CVE-2017-0144 / MS17-010). Used by WannaCry and NotPetya to achieve unauthenticated remote code execution."},
+    "conficker":  {"type": "Worm",          "family": "Conficker",      "arch": "x86",
+                   "desc": "Windows worm (2008) exploiting MS08-067. Spreads via network shares and removable drives; disables security services."},
+    "xmrig":      {"type": "Cryptominer",   "family": "XMRig",          "arch": "x86 / x64 / ARM",
+                   "desc": "Open-source Monero CPU/GPU miner repurposed for cryptojacking. Deployed after initial access to maximise resource abuse."},
+    "cobalt":     {"type": "C2 Framework",  "family": "Cobalt Strike",  "arch": "x86 / x64",
+                   "desc": "Commercial red-team framework abused as a post-exploitation RAT. Beacons exfiltrate data and accept tasking over HTTP/HTTPS."},
+    "sliver":     {"type": "C2 Framework",  "family": "Sliver",         "arch": "x86 / x64 / ARM",
+                   "desc": "Open-source adversary simulation framework (Go). Increasingly used as a Cobalt Strike alternative."},
+    "emotet":     {"type": "Trojan Dropper","family": "Emotet",         "arch": "x86 / x64",
+                   "desc": "Modular banking trojan / dropper. Delivered via malicious Office macros; downloads secondary payloads (TrickBot, QakBot)."},
+    "meterpreter":{"type": "RAT / Payload", "family": "Metasploit Meterpreter","arch": "x86 / x64",
+                   "desc": "In-memory post-exploitation payload from the Metasploit Framework. Provides interactive shell, keylogger, and pivoting capabilities."},
+    "darkcomet":  {"type": "RAT",           "family": "DarkComet",      "arch": "x86",
+                   "desc": "Remote Access Trojan (RAT) providing keylogging, webcam capture, file management, and reverse shell."},
+    "nishang":    {"type": "PowerShell RAT","family": "Nishang",        "arch": "x64",
+                   "desc": "Collection of offensive PowerShell scripts and payloads for post-exploitation on Windows."},
+    "linuxback":  {"type": "Backdoor",      "family": "Linux Backdoor", "arch": "x86 / x64",
+                   "desc": "Generic Linux backdoor maintaining persistent remote access; often dropped after initial Cowrie / Dionaea compromise."},
+}
+
+
+def _resolve_malware_info(yara_matches: List[str]) -> Dict[str, str]:
+    """Return the first matching malware descriptor from _YARA_DB."""
+    for rule in yara_matches:
+        rl = rule.lower()
+        for key, info in _YARA_DB.items():
+            if key in rl:
+                return info
+    if yara_matches:
+        return {"type": "Unknown", "family": yara_matches[0], "arch": "—",
+                "desc": "No threat intelligence entry found for this YARA rule. Manual analysis recommended."}
+    return {}
 
 _KC_LABELS = ["Recon", "Weapon", "Delivery", "Exploit", "Install", "C2", "Lateral", "Actions"]
 _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
@@ -89,50 +134,150 @@ def _build_score_signals(profile: dict, detail: dict) -> List[dict]:
     abuse = int(profile.get("abuseipdb_score") or 0)
     if abuse:
         pts = min(39, abuse * 39 // 100)
-        signals.append({"name": "AbuseIPDB score réputation", "source": "AbuseIPDB", "points": pts, "max": 40, "value": f"{abuse}/100"})
+        signals.append({
+            "name": "AbuseIPDB Reputation Score",
+            "source": "AbuseIPDB",
+            "points": pts, "max": 40,
+            "value": f"{abuse}/100",
+            "why": "Community-reported abuse confidence level (0–100). Scores ≥80 indicate confirmed malicious infrastructure.",
+        })
 
     logins = detail.get("login_attempts") or []
     n_auth = len(logins)
     auth_success = any(a.get("success") for a in logins)
     if auth_success:
-        signals.append({"name": "Login réussi / compromission", "source": "Cowrie", "points": 25, "max": 25, "value": "Compromission confirmée"})
+        signals.append({
+            "name": "Successful Login — Compromise Confirmed",
+            "source": "Cowrie",
+            "points": 25, "max": 25,
+            "value": "Confirmed compromise",
+            "why": "At least one authentication attempt succeeded. The attacker gained interactive shell access to the honeypot.",
+        })
     elif n_auth > 0:
         pts = min(25, n_auth * 25 // 500)
-        signals.append({"name": f"Volume logins ({n_auth})", "source": "Cowrie", "points": pts, "max": 25, "value": f"{n_auth} tentatives"})
+        signals.append({
+            "name": f"Authentication Volume ({n_auth} attempts)",
+            "source": "Cowrie",
+            "points": pts, "max": 25,
+            "value": f"{n_auth} attempts",
+            "why": "High-volume credential stuffing or dictionary attack detected. Points scale with attempt count (cap: 500).",
+        })
 
     yara = profile.get("yara_matches") or []
     if yara:
-        signals.append({"name": "YARA match — famille critique", "source": "YARA", "points": 30, "max": 30, "value": yara[0]})
+        signals.append({
+            "name": "YARA Match — Critical Malware Family",
+            "source": "YARA Engine",
+            "points": 30, "max": 30,
+            "value": yara[0],
+            "why": "Binary captured by Dionaea matched a YARA rule associated with a known malware family. Maximum severity.",
+        })
 
     hashes = profile.get("ioc_hashes") or []
     if hashes:
-        signals.append({"name": "Malware capturé (SHA-256)", "source": "Dionaea", "points": 20, "max": 30, "value": hashes[0][:20] + "..."})
+        signals.append({
+            "name": "Captured Malware Binary (SHA-256)",
+            "source": "Dionaea",
+            "points": 20, "max": 30,
+            "value": hashes[0][:20] + "...",
+            "why": "Dionaea captured a binary payload delivered by the attacker. Hash preserved for chain of custody.",
+        })
 
     if profile.get("is_tor"):
-        signals.append({"name": "Nœud Tor exit", "source": "IPLocate", "points": 15, "max": 15, "value": "OUI — exit node"})
+        signals.append({
+            "name": "Tor Exit Node",
+            "source": "IPLocate",
+            "points": 15, "max": 15,
+            "value": "YES — confirmed exit node",
+            "why": "Source IP is a known Tor exit node. Anonymisation infrastructure indicates deliberate identity concealment.",
+        })
     if profile.get("is_vpn"):
-        signals.append({"name": "VPN détecté", "source": "IPLocate", "points": 10, "max": 10, "value": "OUI"})
+        signals.append({
+            "name": "VPN / Proxy Detected",
+            "source": "IPLocate",
+            "points": 10, "max": 10,
+            "value": "YES",
+            "why": "Source IP belongs to a commercial VPN or anonymising proxy service.",
+        })
 
     cmds = detail.get("commands") or []
     if cmds:
         pts = min(10, len(cmds))
-        signals.append({"name": "Commandes shell exécutées", "source": "Cowrie", "points": pts, "max": 10, "value": f"{len(cmds)} commandes"})
+        signals.append({
+            "name": "Shell Commands Executed",
+            "source": "Cowrie",
+            "points": pts, "max": 10,
+            "value": f"{len(cmds)} command(s)",
+            "why": "Commands executed in the honeypot shell indicate post-access activity (reconnaissance, persistence, exfiltration).",
+        })
 
     mitre = profile.get("mitre_techniques") or []
     if mitre:
         pts = min(15, len(mitre) * 3)
-        signals.append({"name": "Techniques MITRE ATT&CK", "source": "Moteur", "points": pts, "max": 15, "value": ", ".join(mitre[:3])})
+        signals.append({
+            "name": "MITRE ATT&CK Techniques Mapped",
+            "source": "Forensic Engine",
+            "points": pts, "max": 15,
+            "value": ", ".join(mitre[:3]),
+            "why": "Each mapped technique adds 3 pts (cap: 15). Reflects tactical breadth of the attack chain.",
+        })
 
     if (profile.get("session_count") or 0) > 1:
-        signals.append({"name": "Récidivisme (sessions antérieures)", "source": "PostgreSQL", "points": 10, "max": 10, "value": f"{profile.get('session_count')} sessions"})
+        signals.append({
+            "name": "Recidivism — Prior Sessions",
+            "source": "PostgreSQL",
+            "points": 10, "max": 10,
+            "value": f"{profile.get('session_count')} sessions",
+            "why": "This source IP has attacked the platform multiple times. Repeat offenders are weighted higher.",
+        })
 
     return signals
 
 
 async def _build_forensic_context(session_id: str) -> dict:
+    from sqlalchemy import text
+    from db import session_scope
+
     es = get_es()
     detail = await es.session_detail(session_id) or {}
     source_ip: Optional[str] = detail.get("source_ip")
+
+    # ── Try PostgreSQL forensic_sessions first (forensic engine enriched data) ──
+    pg_row: Dict[str, Any] = {}
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text("""
+                    SELECT session_id, source_ip, honeypot_type, risk_score,
+                           kill_chain_phase, kill_chain_stage, primary_technique,
+                           forensic_narrative, mitre_techniques, started_at
+                    FROM forensic_sessions
+                    WHERE session_id = :sid
+                    LIMIT 1
+                """),
+                {"sid": session_id},
+            )
+            row = result.mappings().fetchone()
+            if row:
+                pg_row = dict(row)
+                # Normalise mitre_techniques to list
+                mt = pg_row.get("mitre_techniques") or []
+                if isinstance(mt, str):
+                    try:
+                        mt = json.loads(mt)
+                    except Exception:
+                        mt = []
+                pg_row["mitre_techniques"] = mt
+                # Fill detail gaps from PG row
+                if not source_ip and pg_row.get("source_ip"):
+                    source_ip = pg_row["source_ip"]
+                    detail.setdefault("source_ip", source_ip)
+                if not detail.get("honeypot") and pg_row.get("honeypot_type"):
+                    detail["honeypot"] = pg_row["honeypot_type"]
+                if not detail.get("started_at") and pg_row.get("started_at"):
+                    detail["started_at"] = pg_row["started_at"]
+    except Exception as exc:
+        log.debug("PG forensic_sessions query failed for %s: %s", session_id, exc)
 
     profile_dict: dict = {}
     if source_ip:
@@ -142,12 +287,16 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
-    risk_score = int(profile_dict.get("risk_score") or 0)
+    # Prefer PG risk_score (forensic engine) over profiler estimate
+    if pg_row.get("risk_score") is not None:
+        risk_score = int(pg_row["risk_score"])
+    else:
+        risk_score = int(profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
-    generated_at_str = f"{now.day} {_MONTHS_FR[now.month]} {now.year} · {now.strftime('%H:%M')} UTC"
+    generated_at_str = f"{now.day} {_MONTHS_EN[now.month]} {now.year} · {now.strftime('%H:%M')} UTC"
 
     # ── Timeline ──────────────────────────────────────────
     timeline = []
@@ -195,7 +344,11 @@ async def _build_forensic_context(session_id: str) -> dict:
     mitre_seen: set = set()
     mitre_rows = []
 
-    for t_id in (profile_dict.get("mitre_techniques") or []):
+    # PG mitre_techniques take priority over profiler-derived ones
+    pg_mitre = pg_row.get("mitre_techniques") or []
+    mitre_source = pg_mitre if pg_mitre else (profile_dict.get("mitre_techniques") or [])
+
+    for t_id in mitre_source:
         if t_id in mitre_seen:
             continue
         mitre_seen.add(t_id)
@@ -234,19 +387,30 @@ async def _build_forensic_context(session_id: str) -> dict:
         mitre_rows.append({"id": "T1059.004", "technique": "Unix Shell", "tactic": "Execution", "confidence": "100%", "evidence": f"{len(cmds)} commandes exécutées"})
 
     # ── Kill chain stage ──────────────────────────────────
-    kc_reached = 0
-    if logins:
-        kc_reached = max(kc_reached, 3)  # exploitation
-    if auth_success:
-        kc_reached = max(kc_reached, 3)
-    if cmds:
-        kc_reached = max(kc_reached, 4)  # installation
-    for c in cmds:
-        if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
-            kc_reached = max(kc_reached, 5)  # C2
+    # Prefer PG kill_chain_stage (forensic engine) over heuristic
+    if pg_row.get("kill_chain_stage") is not None:
+        kc_reached = int(pg_row["kill_chain_stage"])
+    else:
+        kc_reached = 0
+        if logins:
+            kc_reached = max(kc_reached, 3)  # exploitation
+        if auth_success:
+            kc_reached = max(kc_reached, 3)
+        if cmds:
+            kc_reached = max(kc_reached, 4)  # installation
+        for c in cmds:
+            if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
+                kc_reached = max(kc_reached, 5)  # C2
+
+    # Inject PG forensic narrative into profile so the template picks it up
+    if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
+        profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
     score_signals = _build_score_signals(profile_dict, detail)
+
+    # ── Malware intelligence ───────────────────────────────
+    malware_info = _resolve_malware_info(profile_dict.get("yara_matches") or [])
 
     # ── SHA-256 chain of custody ──────────────────────────
     session_bytes = json.dumps(detail, sort_keys=True, default=str).encode()
@@ -276,6 +440,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         "kc_stages_labels": _KC_LABELS,
         "org_score_pct": org_score_pct,
         "auth_success": auth_success,
+        "malware_info": malware_info,
         # Jinja2 helper
         "enumerate": enumerate,
     }
@@ -355,37 +520,72 @@ def _phase_from_techniques(mitre: List[str]) -> str | None:
 
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
-    """List enriched forensic sessions from PostgreSQL (scored by the forensic engine)."""
-    async with get_sessionmaker()() as db:
-        result = await db.execute(
-            text(
-                """
-                SELECT session_id, honeypot_type, source_ip, risk_score,
-                       kill_chain_phase, kill_chain_stage, primary_technique,
-                       started_at, mitre_techniques
-                FROM forensic_sessions
-                ORDER BY risk_score DESC NULLS LAST, started_at DESC
-                LIMIT :limit
-                """
-            ),
-            {"limit": limit},
-        )
-        rows = result.mappings().all()
+    """List sessions in the flat shape the dashboard reconstruction/reporting
+    pages expect: session_id, source_ip, honeypot_type, risk_score,
+    kill_chain_phase, primary_technique, started_at.
 
+    Queries PostgreSQL forensic_sessions (written by the forensic engine) first,
+    falls back to raw ES sessions if PostgreSQL is empty or unavailable.
+    """
+    from sqlalchemy import text
+    from db import session_scope
+
+    pg_rows: List[Dict[str, Any]] = []
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT session_id, source_ip, honeypot_type,
+                           risk_score, kill_chain_phase, kill_chain_stage,
+                           primary_technique, forensic_narrative,
+                           mitre_techniques, started_at
+                    FROM forensic_sessions
+                    ORDER BY started_at DESC
+                    LIMIT :lim
+                    """
+                ),
+                {"lim": limit},
+            )
+            for row in result.mappings():
+                mitre = row["mitre_techniques"] or []
+                if isinstance(mitre, str):
+                    try:
+                        mitre = json.loads(mitre)
+                    except Exception:
+                        mitre = []
+                pg_rows.append({
+                    "session_id":        row["session_id"],
+                    "source_ip":         row["source_ip"],
+                    "honeypot_type":     row["honeypot_type"],
+                    "risk_score":        row["risk_score"],
+                    "kill_chain_phase":  row["kill_chain_phase"],
+                    "kill_chain_stage":  row["kill_chain_stage"],
+                    "primary_technique": row["primary_technique"],
+                    "started_at":        row["started_at"],
+                })
+    except Exception as exc:
+        log.warning("forensic_sessions: PG query failed (%s), falling back to ES", exc)
+
+    if pg_rows:
+        return pg_rows
+
+    # Fallback: raw ES sessions (no forensic engine data yet)
+    rows = await get_es().sessions(limit=limit, active_only=False)
     out: List[Dict[str, Any]] = []
     for r in rows:
-        mitre = r["mitre_techniques"] or []
+        mitre = r.get("mitre_techniques") or r.get("techniques") or []
         if isinstance(mitre, dict):
-            mitre = list(mitre.values())
+            mitre = []
         out.append({
-            "session_id":        r["session_id"],
-            "source_ip":         r["source_ip"],
-            "honeypot_type":     r["honeypot_type"],
-            "risk_score":        r["risk_score"],
-            "kill_chain_phase":  r["kill_chain_phase"] or _phase_from_techniques(mitre),
-            "kill_chain_stage":  r["kill_chain_stage"],
-            "primary_technique": r["primary_technique"] or (mitre[0] if mitre else None),
-            "started_at":        r["started_at"].isoformat() if r["started_at"] else None,
+            "session_id":        r.get("session_id"),
+            "source_ip":         r.get("source_ip"),
+            "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
+            "risk_score":        r.get("risk_score"),
+            "kill_chain_phase":  r.get("kill_chain_phase") or _phase_from_techniques(mitre),
+            "kill_chain_stage":  r.get("kill_chain_stage"),
+            "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
+            "started_at":        r.get("started_at"),
         })
     return out
 
@@ -398,15 +598,15 @@ async def forensic_generate(request: Request, session_id: str):
     except ImportError:
         raise HTTPException(status_code=503, detail="WeasyPrint not installed")
 
-    detail = await get_es().session_detail(session_id)
-    if not detail:
-        raise HTTPException(status_code=404, detail="session not found")
-
     try:
         ctx = await _build_forensic_context(session_id)
     except Exception as exc:
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
@@ -448,14 +648,15 @@ async def forensic_generate(request: Request, session_id: str):
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
     """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""
-    detail = await get_es().session_detail(session_id)
-    if not detail:
-        raise HTTPException(status_code=404, detail="session not found")
     try:
         ctx = await _build_forensic_context(session_id)
     except Exception as exc:
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),

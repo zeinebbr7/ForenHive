@@ -88,12 +88,10 @@ def _now_utc() -> datetime:
 
 # ── PostgreSQL cache ───────────────────────────────────────────────────────────
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    )
+    return db_pool.pooled_conn()
 
 # ── GeoIP (offline MaxMind) ────────────────────────────────────────────────────
 
@@ -392,9 +390,15 @@ def _whois_lookup(ip: str) -> dict:
 
 # ── Reverse DNS ───────────────────────────────────────────────────────────────
 
-def _reverse_dns(ip: str) -> dict:
+def _reverse_dns(ip: str, timeout_sec: float | None = None) -> dict:
+    """Reverse DNS lookup with hard timeout (gethostbyaddr ignores socket default timeout)."""
+    import concurrent.futures
+    if timeout_sec is None:
+        timeout_sec = config.DNS_LOOKUP_TIMEOUT_SEC
     try:
-        host, aliases, _ = socket.gethostbyaddr(ip)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(socket.gethostbyaddr, ip)
+            host, aliases, _ = future.result(timeout=timeout_sec)
         return {"ptr": host, "aliases": aliases or []}
     except Exception:
         return {}
@@ -562,12 +566,24 @@ class IPEnricher:
         self.save_cache(ip, result)
         return result
 
-    def enrich_batch(self, ips: list) -> dict:
+    def enrich_batch(self, ips: list, max_workers: int | None = None) -> dict:
+        import concurrent.futures
+        if max_workers is None:
+            max_workers = config.ENRICH_PARALLEL_WORKERS
         results = {}
         unique = list({ip for ip in ips if ip})
-        log.info(f"Enriching batch of {len(unique)} unique IPs ...")
-        for ip in unique:
-            results[ip] = self.enrich(ip)
+        log.info(f"Enriching batch of {len(unique)} unique IPs (parallel={max_workers}) ...")
+        if not unique:
+            return results
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_ip = {pool.submit(self.enrich, ip): ip for ip in unique}
+            for fut in concurrent.futures.as_completed(future_to_ip):
+                ip = future_to_ip[fut]
+                try:
+                    results[ip] = fut.result()
+                except Exception as e:
+                    log.warning(f"Enrichment failed for {ip}: {e}")
+                    results[ip] = {}
         return results
 
     def enrich_from_es(self, es_client, hours_back: int = 24) -> dict:

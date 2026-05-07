@@ -105,11 +105,13 @@ def extract_from_event(row: dict) -> list[tuple[str, str, dict]]:
             found.append(("ipv4_external", ip, {"via": "regex"}))
 
     # Hashes
-    for sha in set(RE_SHA256.findall(haystack)):
-        found.append(("sha256", sha.lower(), {}))
+    sha_set = {s.lower() for s in RE_SHA256.findall(haystack)}
+    sha_blob = " ".join(sha_set)
+    for sha in sha_set:
+        found.append(("sha256", sha, {}))
     for md5 in set(RE_MD5.findall(haystack)):
         # Skip MD5s that are actually substrings of a SHA256 we already captured
-        if not any(md5.lower() in s.lower() for s in {h for h in RE_SHA256.findall(haystack)}):
+        if md5.lower() not in sha_blob:
             found.append(("md5", md5.lower(), {}))
 
     # CVEs

@@ -20,7 +20,7 @@ from typing import Optional
 import psycopg2
 import psycopg2.extras
 import requests
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError
 
 import config
 
@@ -67,19 +67,16 @@ KILL_CHAIN_PHASES = [
 # POSTGRESQL QUERIES
 # ─────────────────────────────────────────────────────────────────────────────
 
+import db_pool
+
 def _pg_conn():
-    """Create PostgreSQL connection."""
-    return psycopg2.connect(
-        host=config.PG_HOST,
-        port=config.PG_PORT,
-        dbname=config.PG_DB,
-        user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", ""),
-    )
+    """Return a pooled PostgreSQL connection (auto-released on .close())."""
+    return db_pool.pooled_conn()
 
 
 def _query_sessions_for_ip(source_ip: str) -> dict:
     """Load aggregated session data for an IP from forensic_sessions table."""
+    conn = None
     try:
         conn = _pg_conn()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -90,8 +87,8 @@ def _query_sessions_for_ip(source_ip: str) -> dict:
                     MAX(risk_score) as max_risk_score,
                     MIN(started_at) as first_seen,
                     MAX(ended_at) as last_seen,
-                    ARRAY_AGG(DISTINCT honeypot_type) as honeypots,
-                    ARRAY_AGG(DISTINCT primary_technique) as techniques,
+                    ARRAY_AGG(DISTINCT honeypot_type) FILTER (WHERE honeypot_type IS NOT NULL) as honeypots,
+                    ARRAY_AGG(DISTINCT primary_technique) FILTER (WHERE primary_technique IS NOT NULL) as techniques,
                     MAX(CASE WHEN kill_chain_stage > 0 THEN kill_chain_phase ELSE NULL END) as deepest_kill_chain
                 FROM forensic_sessions
                 WHERE source_ip = %s
@@ -100,30 +97,37 @@ def _query_sessions_for_ip(source_ip: str) -> dict:
                 (source_ip,),
             )
             row = cur.fetchone()
-        conn.close()
-        if row:
-            return dict(row)
-        return {}
+        if not row:
+            return {}
+        d = dict(row)
+        d["honeypots"] = d.get("honeypots") or []
+        d["techniques"] = d.get("techniques") or []
+        return d
     except Exception as e:
         log.warning(f"Query sessions for {source_ip} failed: {e}")
         return {}
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _query_enrichment_cache(source_ip: str) -> dict:
-    """Load IP enrichment data from cache."""
+    """Load IP enrichment data from cache. Falls back to stale data rather than empty."""
+    conn = None
     try:
         conn = _pg_conn()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Prefer fresh row; fall back to stale rather than returning nothing.
             cur.execute(
                 """
                 SELECT data FROM ip_enrichment_cache
-                WHERE ip = %s AND expires_at > NOW()
+                WHERE ip = %s
+                ORDER BY expires_at DESC
                 LIMIT 1
                 """,
                 (source_ip,),
             )
             row = cur.fetchone()
-        conn.close()
         if row:
             data = row["data"]
             return data if isinstance(data, dict) else json.loads(data)
@@ -131,10 +135,14 @@ def _query_enrichment_cache(source_ip: str) -> dict:
     except Exception as e:
         log.warning(f"Query enrichment for {source_ip} failed: {e}")
         return {}
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _query_timeline_events(source_ip: str, limit: int = 500) -> list:
     """Load timeline events for an IP."""
+    conn = None
     try:
         conn = _pg_conn()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -149,15 +157,18 @@ def _query_timeline_events(source_ip: str, limit: int = 500) -> list:
                 (source_ip, limit),
             )
             rows = cur.fetchall()
-        conn.close()
         return [dict(row) for row in rows] if rows else []
     except Exception as e:
         log.warning(f"Query timeline for {source_ip} failed: {e}")
         return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
     """Store profile to PostgreSQL suspect_profiles table."""
+    conn = None
     try:
         conn = _pg_conn()
         with conn.cursor() as cur:
@@ -173,12 +184,14 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
                 (source_ip, json.dumps(profile), risk_score),
             )
         conn.commit()
-        conn.close()
         log.debug(f"Stored profile to PG for {source_ip}")
         return True
     except Exception as e:
         log.warning(f"Store profile to PG failed: {e}")
         return False
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,9 +201,11 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
 def _query_smb_profile(es: Elasticsearch, source_ip: str) -> dict:
     """Query SMB analysis profile from forenhive-smb-analysis index."""
     try:
-        result = es.get(index="forenhive-smb-analysis", id=source_ip, ignore=404)
+        result = es.get(index="forenhive-smb-analysis", id=source_ip)
         if result.get("found"):
             return result["_source"].get("smb_activity", {})
+        return {}
+    except NotFoundError:
         return {}
     except Exception as e:
         log.debug(f"SMB profile query for {source_ip} failed: {e}")
@@ -208,9 +223,9 @@ def _query_similar_profiles(
     if techniques:
         should_clauses.append({"terms": {"mitre_techniques.keyword": techniques}})
     if asn:
-        should_clauses.append({"term": {"enrichment.asn.number": asn}})
+        should_clauses.append({"term": {"enrichment.geo.asn": asn}})
     if country:
-        should_clauses.append({"term": {"enrichment.geo.country_iso_code.keyword": country}})
+        should_clauses.append({"term": {"enrichment.geo.country_code.keyword": country}})
     should_clauses.append({"range": {"risk_score": {"gte": risk_score - 15, "lte": risk_score + 15}}})
 
     query = {
@@ -227,7 +242,7 @@ def _query_similar_profiles(
             "sophistication",
             "primary_objective",
             "mitre_techniques",
-            "enrichment.geo.country_iso_code",
+            "enrichment.geo.country_code",
             "risk_score",
             "detective_narrative",
         ],
@@ -244,7 +259,7 @@ def _query_similar_profiles(
                     "sophistication": src.get("sophistication"),
                     "primary_objective": src.get("primary_objective"),
                     "mitre_techniques": src.get("mitre_techniques", []),
-                    "country": src.get("enrichment", {}).get("geo", {}).get("country_iso_code"),
+                    "country": src.get("enrichment", {}).get("geo", {}).get("country_code"),
                     "risk_score": src.get("risk_score"),
                     "narrative": src.get("detective_narrative"),
                 }
@@ -370,11 +385,10 @@ def _build_section3_evidence(
     geo = enrichment.get("geo", {})
     reputation = enrichment.get("reputation", {})
     privacy = enrichment.get("privacy", {})
-    infra = enrichment.get("infrastructure", {})
 
-    section += f"    <country>{geo.get('country_name', 'unknown')}</country>\n"
-    section += f"    <asn>{infra.get('asn', 'unknown')}</asn>\n"
-    section += f"    <organization>{infra.get('organization', 'unknown')}</organization>\n"
+    section += f"    <country>{geo.get('country', 'unknown')}</country>\n"
+    section += f"    <asn>{geo.get('asn', 'unknown')}</asn>\n"
+    section += f"    <organization>{geo.get('org', 'unknown')}</organization>\n"
     section += f"    <abuse_score>{reputation.get('abuse_score', 'N/A')}</abuse_score>\n"
     section += f"    <is_tor>{privacy.get('is_tor', False)}</is_tor>\n"
     section += f"    <is_vpn>{privacy.get('is_vpn', False)}</is_vpn>\n"
@@ -522,8 +536,8 @@ class AttackerProfiler:
         techniques = [t for t in sessions.get("techniques", []) if t]
 
         # Query similar past profiles
-        asn = enrichment.get("infrastructure", {}).get("asn")
-        country = enrichment.get("geo", {}).get("country_iso_code")
+        asn = enrichment.get("geo", {}).get("asn")
+        country = enrichment.get("geo", {}).get("country_code")
         similar = _query_similar_profiles(self.es, source_ip, techniques, asn, country, risk_score)
 
         # Build detective prompt (4 sections)
@@ -633,7 +647,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     es = Elasticsearch(
-        [{"host": config.ES_HOST, "port": config.ES_PORT, "scheme": "http"}],
+        f"http://{config.ES_HOST}:{config.ES_PORT}",
         request_timeout=30,
     )
 
