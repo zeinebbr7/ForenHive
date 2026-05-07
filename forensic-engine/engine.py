@@ -37,7 +37,6 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score import calculate_risk_score, risk_level
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -973,10 +972,31 @@ class ForensicEngine:
                 **time_metrics,
             }
 
-            # ── Deterministic risk scoring (18 signals) ───────────────────────
-            result = calculate_risk_score(session_data)
-            score  = result["score"]
-            level  = result["level"]
+            # ── Per-session risk scoring (inline 6-signal, 0-100) ────────────
+            score = 0
+            if session_data.get("success_count", 0) > 0:
+                score += 25
+            abuse = session_data.get("abuse_score", 0)
+            if abuse >= 70:   score += 20
+            elif abuse >= 50: score += 12
+            elif abuse >= 30: score += 6
+            attempts = session_data.get("login_attempts", 0)
+            if attempts >= 200:  score += 15
+            elif attempts >= 50: score += 8
+            if session_data.get("yara_matches"):
+                score += 10
+            if session_data.get("vt_malicious", 0) >= 10:
+                score += 8
+            if session_data.get("is_tor") or session_data.get("is_vpn"):
+                score += 6
+            if len(session_data.get("honeypot_types_hit", [])) > 1:
+                score += 5
+            score = min(100, score)
+            if score >= 80:   level = "CRITIQUE"
+            elif score >= 60: level = "ÉLEVÉ"
+            elif score >= 40: level = "MOYEN"
+            elif score >= 20: level = "FAIBLE"
+            else:             level = "INFO"
 
             # ── Hybrid MITRE mapping (deterministic IDs + LLM narrative) ────────
             if session.get("honeypot_type") == "cowrie":
@@ -1000,24 +1020,14 @@ class ForensicEngine:
             session["forensic_narrative"] = forensic_narrative
             session["enrichment_data"]    = {
                 **enrich,
-                "risk_level":          level,
-                "confidence":          result["confidence"],
-                "attack_types":        result["attack_types"],
-                "lateral_movement":    result["lateral_movement"],
-                "signal_breakdown":    result["signal_breakdown"],
-                "data_quality":        result["data_quality"],
-                "notes":               result["notes"],
-                "narrative":           result["narrative"],
-                "recommended_actions": result["recommended_actions"],
-                "iocs":                result["iocs"],
-                "attribution":         result["attribution"],
-                "mitre_techniques":    mitre_techniques,
-                "kill_chain_phase":    kill_chain_phase,
-                "kill_chain_stage":    kill_chain_stage,
-                "kill_chain_label":    mitre_result["kill_chain_label"],
-                "primary_technique":   primary_technique,
-                "forensic_narrative":  forensic_narrative,
-                "mapping_source":      mitre_result["mapping_source"],
+                "risk_level":         level,
+                "mitre_techniques":   mitre_techniques,
+                "kill_chain_phase":   kill_chain_phase,
+                "kill_chain_stage":   kill_chain_stage,
+                "kill_chain_label":   mitre_result["kill_chain_label"],
+                "primary_technique":  primary_technique,
+                "forensic_narrative": forensic_narrative,
+                "mapping_source":     mitre_result["mapping_source"],
             }
 
             _save_session(session)
@@ -1025,11 +1035,7 @@ class ForensicEngine:
                            session.get("honeypot_type", "")))
 
             if score >= 40:
-                flags = ""
-                if result["lateral_movement"]:
-                    flags += " [LATERAL]"
-                if kill_chain_phase:
-                    flags += f" [{kill_chain_phase}]"
+                flags = f" [{kill_chain_phase}]" if kill_chain_phase else ""
                 log.info(
                     f"[{level}] {session.get('honeypot_type','?'):7s} "
                     f"Session {session['session_id'][:12]}... "
