@@ -63,18 +63,36 @@ class AlertWatcher:
 
     @staticmethod
     def _ctx_from_event(src: Dict[str, Any]) -> Dict[str, Any]:
-        source = src.get("source") or {}
-        geo = source.get("geo") or {}
-        asn = source.get("as") or {}
-        user_agent = (src.get("user_agent") or {}).get("original")
-        http = src.get("http") or {}
-        url = src.get("url") or {}
+        # Handle both nested {"source": {"ip": ...}} and dot-notation {"source.ip": ...}
+        source_raw = src.get("source") or {}
+        source = source_raw if isinstance(source_raw, dict) else {}
+        geo = source.get("geo") or src.get("source.geo") or {}
+        if not isinstance(geo, dict):
+            geo = {}
+        asn = source.get("as") or src.get("source.as") or {}
+        if not isinstance(asn, dict):
+            asn = {}
+        ua_raw = src.get("user_agent") or {}
+        user_agent = (ua_raw.get("original") if isinstance(ua_raw, dict) else None) or src.get("user_agent.original")
+        http_raw = src.get("http") or {}
+        http = http_raw if isinstance(http_raw, dict) else {}
+        url_raw = src.get("url") or {}
+        url = url_raw if isinstance(url_raw, dict) else {}
+
+        # honeypot: handle {"honeypot": {"type": "cowrie"}} and {"honeypot.type": "cowrie"}
+        hp_raw = src.get("honeypot")
+        honeypot = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or src.get("honeypot.type")
+
+        # eventid: handle nested event.id and flat eventid
+        ev_raw = src.get("event") or {}
+        eventid = src.get("eventid") or src.get("event.id") or (ev_raw.get("id") if isinstance(ev_raw, dict) else None) or ""
+
         return {
-            "source_ip": source.get("ip") or src.get("src_ip"),
+            "source_ip": source.get("ip") or src.get("source.ip") or src.get("src_ip"),
             "severity": src.get("severity"),
-            "honeypot": src.get("honeypot"),
-            "threat_type": src.get("eventid") or (src.get("event") or {}).get("type"),
-            "failed_auth_count": 1 if src.get("eventid") == "cowrie.login.failed" else 0,
+            "honeypot": honeypot,
+            "threat_type": eventid or (ev_raw.get("type") if isinstance(ev_raw, dict) else None),
+            "failed_auth_count": 1 if eventid == "cowrie.login.failed" else 0,
             "is_tor": bool(src.get("is_tor")),
             "is_vpn": bool(src.get("is_vpn")),
             "abuseipdb_score": src.get("abuseipdb_score"),
@@ -88,9 +106,9 @@ class AlertWatcher:
             "asn": asn.get("number") if isinstance(asn, dict) else None,
             "as_org": asn.get("organization", {}).get("name") if isinstance(asn, dict) and isinstance(asn.get("organization"), dict) else None,
             "commands": [src["input"]] if src.get("input") else [],
-            "http_path": url.get("path") or http.get("path"),
+            "http_path": url.get("path") or src.get("url.path") or http.get("path"),
             "user_agent": user_agent,
-            "download_attempt": src.get("eventid", "").startswith("cowrie.session.file"),
+            "download_attempt": eventid.startswith("cowrie.session.file"),
             "hour_of_day": datetime.now(timezone.utc).hour,
             "raw": src,
         }

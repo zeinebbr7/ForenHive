@@ -187,6 +187,7 @@ class ChainOfCustody:
         return row[0] if row else None
 
     def _fetch_unsealed_sessions(self, cur) -> list[dict]:
+        """Return sessions that have never been sealed."""
         cols = ", ".join(SEALED_COLUMNS)
         cur.execute(f"""
             SELECT {cols}
@@ -199,20 +200,49 @@ class ChainOfCustody:
         """)
         return [dict(r) for r in cur.fetchall()]
 
+    def _fetch_stale_sessions(self, cur) -> list[dict]:
+        """Return sessions whose CoC seal predates their last re-score."""
+        cols = ", ".join(SEALED_COLUMNS)
+        cur.execute(f"""
+            SELECT s.{', s.'.join(SEALED_COLUMNS)}
+            FROM forensic_sessions s
+            JOIN forensic_chain_of_custody c ON c.session_id = s.session_id
+            WHERE s.updated_at IS NOT NULL
+              AND c.sealed_at < s.updated_at
+            ORDER BY s.started_at NULLS LAST, s.session_id
+        """)
+        return [dict(r) for r in cur.fetchall()]
+
     def run(self) -> dict:
-        log.info("Chain of custody — sealing unsealed forensic_sessions")
+        log.info("Chain of custody — sealing forensic_sessions")
         conn = self._pg()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                sessions = self._fetch_unsealed_sessions(cur)
+                new_sessions   = self._fetch_unsealed_sessions(cur)
+                stale_sessions = self._fetch_stale_sessions(cur)
+
+            sessions = new_sessions + stale_sessions
 
             if not sessions:
                 log.info("  nothing to seal")
                 return {"sealed": 0, "batch_id": None, "tsa_status": "skipped"}
 
-            log.info(f"  {len(sessions)} sessions to seal")
+            if stale_sessions:
+                log.info(f"  {len(new_sessions)} new + {len(stale_sessions)} re-scored sessions to seal")
+            else:
+                log.info(f"  {len(new_sessions)} new sessions to seal")
 
             with conn.cursor() as cur:
+                # Delete stale seals before re-sealing so the chain stays
+                # append-only: old entries are removed, new ones go at the tail.
+                if stale_sessions:
+                    stale_ids = [s["session_id"] for s in stale_sessions]
+                    cur.execute(
+                        "DELETE FROM forensic_chain_of_custody WHERE session_id = ANY(%s)",
+                        (stale_ids,)
+                    )
+                    log.info(f"  removed {len(stale_ids)} stale seal(s) for re-sealing")
+
                 prev_hash = self._fetch_chain_head(cur)
 
                 # Phase A — compute per-record hashes and build the chain

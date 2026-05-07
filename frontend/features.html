@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForenHive — Features</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css?v=8">
+<style>
+  body { background: #060810; color: #FFFFFF; font-family: 'Inter',sans-serif; }
+  .pub-nav { position: sticky; top: 0; z-index: 100; display:flex; justify-content:space-between; align-items:center; padding: 14px 6%; background: rgba(11,14,24,.92); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(140,26,43,.18); }
+  .pub-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+  .pub-logo .hex { font-size: 22px; color: #8C1A2B; }
+  .pub-logo .name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; color:#8C1A2B; letter-spacing:2px; }
+  .pub-nav a { color:#E8E8F0; text-decoration:none; margin-left:26px; font-size:14px; font-weight:500; }
+  .pub-nav a:hover { color:#8C1A2B; }
+  .pub-nav a.active { color:#8C1A2B; }
+  .pub-nav .cta { padding:8px 18px; border:1px solid rgba(140,26,43,.4); color:#8C1A2B; border-radius:5px; font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px; }
+  .pub-nav .cta-primary { background:#8C1A2B; color:#060810; border-color:#8C1A2B; }
+
+  .pub-hero { padding: 90px 6% 50px; text-align:center; }
+  .pub-tag { display:inline-block; font-family:'Share Tech Mono',monospace; font-size:11px; color:#8C1A2B; background:rgba(140,26,43,.08); border:1px solid rgba(140,26,43,.28); padding:5px 14px; border-radius:20px; letter-spacing:2px; }
+  .pub-h1 { font-size: clamp(2.2rem,5vw,4rem); font-weight:700; margin-top:18px; line-height:1.1; }
+  .pub-h1 span { background: linear-gradient(135deg,#8C1A2B,#E8B84B); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .pub-sub { color:#E8E8F0; max-width:680px; margin:18px auto 0; font-size:1.1rem; line-height:1.6; }
+
+  .feat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:22px; padding: 30px 6% 80px; max-width:1280px; margin:0 auto; }
+  .feat { background: linear-gradient(180deg,#0B0E18,#121622); border:1px solid rgba(140,26,43,.14); border-radius:10px; padding: 26px 24px; transition: all .25s; }
+  .feat:hover { border-color: rgba(140,26,43,.4); transform: translateY(-3px); box-shadow: 0 18px 40px rgba(0,0,0,.55); }
+  .feat-ic { font-size: 30px; margin-bottom: 14px; }
+  .feat h3 { font-family:'Rajdhani',sans-serif; font-size: 1.4rem; color:#8C1A2B; letter-spacing:.5px; }
+  .feat p { color:#9AA0B4; font-size: 14px; margin-top:10px; line-height:1.6; }
+  .feat ul { margin-top:14px; padding-left:18px; color:#E8E8F0; font-size:13px; }
+  .feat ul li { margin-bottom:6px; }
+
+  .pub-foot { padding: 30px 6%; border-top: 1px solid rgba(140,26,43,.14); color:#9AA0B4; font-family:'Share Tech Mono',monospace; font-size:11px; text-align:center; letter-spacing:1px; }
+  .pub-foot a { color:#8C1A2B; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<header class="pub-nav">
+  <a class="pub-logo" href="index.html"><span class="hex"></span><span class="name">FORENHIVE</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="features.html" class="active">Features</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="technologies.html">Technologies</a>
+    <a class="cta cta-primary" href="pages/login.html">Login</a>
+  </nav>
+</header>
+
+<section class="pub-hero">
+  <span class="pub-tag"> FUNCTIONAL OVERVIEW</span>
+  <h1 class="pub-h1">Sept piliers <span>forensiques</span></h1>
+  <p class="pub-sub">ForenHive combine 3 honeypots, 1 capteur NDR, un pipeline ETL, un moteur d'enrichissement, du mapping MITRE ATT&CK et une chaîne de custody RFC 3161 dans une seule plateforme.</p>
+</section>
+
+<section class="feat-grid">
+
+  <div class="feat">
+    <h3>Honeypots de capture</h3>
+    <p>3 honeypots interopérables couvrant SSH, SMB et HTTP.</p>
+    <ul>
+      <li>Cowrie · SSH/Telnet brute force + commandes shell</li>
+      <li>Dionaea · capture binaires malware (Mirai, etc.)</li>
+      <li>Galah · réponses HTTP générées par Mistral 7B</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+    <h3>Capteur NDR passif</h3>
+    <p>Zeek inspecte le trafic réseau pour corréler les sessions inter-honeypots et capturer ce que les honeypots manquent.</p>
+    <ul>
+      <li>Zeek · IDS passif sur eno12399</li>
+      <li>conn.log · http.log · weird.log · notice.log</li>
+      <li>Corrélation cross-honeypot par IP/port</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+<h3>Pipeline ETL Temps Réel</h3>
+    <p>Filebeat  Logstash  Elasticsearch  normalisation ECS, enrichissement GeoIP, indices quotidiens.</p>
+    <ul>
+      <li>11.4M+ événements indexés (état actuel)</li>
+      <li>Précision milliseconde  timezone Africa/Tunis</li>
+      <li>Filtres par honeypot  tags ECS</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+<h3>Threat Intelligence Multi-Source</h3>
+    <p>Enrichissement automatique de chaque IP attaquante via 4 sources externes.</p>
+    <ul>
+      <li>AbuseIPDB  score réputation</li>
+      <li>MaxMind GeoLite2-ASN  géolocalisation</li>
+      <li>IPLocate  détection Tor / VPN / Proxy</li>
+      <li>WHOIS  CIDR + ASN organisation</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+<h3>MITRE ATT&CK + Kill Chain</h3>
+    <p>Mapping automatique des techniques observées et reconstruction de la kill chain Lockheed Martin.</p>
+    <ul>
+      <li>Détection T1110, T1078, T1059, T1190, T1210…</li>
+      <li>Phase de la kill chain par session (1  8)</li>
+      <li>Score de risque pondéré 0–100</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+<h3>Analyse Binaire Offline</h3>
+    <p>Tous les binaires capturés par Dionaea sont scannés localement.</p>
+    <ul>
+      <li>YARA  règles Mirai, ransomware, cryptominer</li>
+      <li>VirusTotal SHA-256 lookup (cache 24 h)</li>
+      <li>Profilage suspect via Ollama Mistral 7B</li>
+    </ul>
+  </div>
+
+  <div class="feat">
+<h3>Chaîne de Custody RFC 3161</h3>
+    <p>Chaque session est scellée cryptographiquement et horodatée par une TSA publique.</p>
+    <ul>
+      <li>SHA-256 par enregistrement</li>
+      <li>Hash chain (chaque record lié au précédent)</li>
+      <li>Merkle root + RFC 3161 batch signature</li>
+      <li>Rapports PDF certifiés exportables</li>
+    </ul>
+  </div>
+
+</section>
+
+<footer class="pub-foot">
+  PFE 2025/2026  ISET RADÈS  STANDARD SHARING SOFTWARE  <a href="pages/login.html"> ACCÈS PLATEFORME</a>
+</footer>
+
+</body>
+</html>

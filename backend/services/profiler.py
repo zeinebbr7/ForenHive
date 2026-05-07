@@ -42,14 +42,16 @@ async def build_profile(ip: str) -> AttackerProfile:
     dest_ports: set = set()
 
     for e in events:
-        sid = e.get("session") or e.get("session_id")
+        sess_raw = e.get("session") or e.get("session_id")
+        sid = (sess_raw.get("id") if isinstance(sess_raw, dict) else sess_raw) or None
         if sid:
             s = sessions.setdefault(sid, {"session_id": sid, "events": 0})
             s["events"] += 1
-        cmd = e.get("input") or e.get("command")
+        cmd = e.get("input") or e.get("command") or (e.get("process") or {}).get("command_line")
         if cmd:
             commands_all.append(str(cmd))
-        user = (e.get("user") or {}).get("name") or e.get("username")
+        user_raw = e.get("user")
+        user = (user_raw.get("name") if isinstance(user_raw, dict) else None) or e.get("username")
         if user:
             usernames_all.append(str(user))
         yara = e.get("yara_match")
@@ -88,7 +90,9 @@ async def build_profile(ip: str) -> AttackerProfile:
     risk_score, _breakdown = RiskScorer.score(
         {
             "failed_auth_count": sum(
-                1 for e in events if e.get("eventid") == "cowrie.login.failed"
+                1 for e in events
+                if e.get("eventid") == "cowrie.login.failed"
+                or (e.get("event") or {}).get("id") == "cowrie.login.failed"
             ),
             "is_tor": bool(iplocate.get("is_tor") or abuseipdb.get("is_tor")),
             "abuseipdb_score": abuseipdb.get("abuseipdb_score"),

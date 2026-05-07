@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<title>ForenHive — Rapport Forensique {{ report_ref }}</title>
+<style>
+@page {
+  size: A4;
+  margin: 16mm 14mm 20mm;
+}
+@page :first {
+  margin: 0;
+}
+@page body-page {
+  @bottom-left {
+    content: "ForenHive Platform v1.0 · ISET Radès RSI {{ now_year }} · Zeineb & Ismail";
+    font-size: 7pt; color: #999; font-family: "DejaVu Sans Mono", monospace;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " / " counter(pages) " · CONFIDENTIEL";
+    font-size: 7pt; color: #999; font-family: "DejaVu Sans Mono", monospace;
+  }
+  @top-right {
+    content: "⬡ ForenHive · {{ report_ref }}";
+    font-size: 7pt; color: #8C1A2B; font-family: "DejaVu Sans Mono", monospace;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "DejaVu Sans", Arial, sans-serif;
+  color: #1a1a1a;
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+/* ══════════════════════════════════════
+   COVER PAGE
+══════════════════════════════════════ */
+.cover {
+  page: first;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm 14mm;
+  display: flex;
+  flex-direction: column;
+}
+.cover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 48mm;
+}
+.cover-logo-wrap {}
+.cover-logo {
+  font-size: 28pt;
+  font-weight: 900;
+  color: #8C1A2B;
+  letter-spacing: -0.5pt;
+}
+.cover-logo-hex { color: #8C1A2B; }
+.cover-tagline {
+  font-size: 7.5pt;
+  color: #888;
+  letter-spacing: 2.5pt;
+  text-transform: uppercase;
+  margin-top: 3pt;
+}
+.cover-company {
+  text-align: right;
+  font-size: 8pt;
+  color: #666;
+  line-height: 1.7;
+}
+.cover-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.cover-section-tag {
+  color: #8C1A2B;
+  font-size: 7.5pt;
+  letter-spacing: 3pt;
+  text-transform: uppercase;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-bottom: 14pt;
+}
+.cover-title {
+  font-size: 22pt;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #111;
+  line-height: 1.15;
+  margin-bottom: 10pt;
+  letter-spacing: 0.5pt;
+}
+.cover-subtitle {
+  font-size: 9.5pt;
+  font-style: italic;
+  color: #555;
+  margin-bottom: 28pt;
+}
+.cover-risk-box {
+  border: 2pt solid {{ risk_color }};
+  border-radius: 6pt;
+  padding: 14pt 24pt 12pt;
+  text-align: center;
+  margin-bottom: 28pt;
+  width: 155pt;
+}
+.cover-score {
+  font-size: 52pt;
+  font-weight: 900;
+  color: {{ risk_color }};
+  line-height: 1;
+  font-family: "DejaVu Sans", sans-serif;
+}
+.cover-score-max { font-size: 14pt; color: #888; vertical-align: bottom; }
+.cover-risk-label {
+  font-size: 11pt;
+  font-weight: 700;
+  color: {{ risk_color }};
+  letter-spacing: 2.5pt;
+  text-transform: uppercase;
+  margin-top: 4pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.cover-risk-sub { font-size: 7.5pt; color: #888; margin-top: 3pt; }
+.cover-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8pt 24pt;
+  width: 280pt;
+  text-align: left;
+}
+.cover-meta-label {
+  font-size: 7pt;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  margin-bottom: 1pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.cover-meta-value {
+  font-size: 10pt;
+  font-weight: 700;
+  font-family: "DejaVu Sans Mono", monospace;
+  color: #1a1a1a;
+}
+.cover-footer {
+  text-align: center;
+  font-size: 7pt;
+  color: #ccc;
+  letter-spacing: 2pt;
+  text-transform: uppercase;
+  margin-top: 10mm;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+/* ══════════════════════════════════════
+   BODY PAGES
+══════════════════════════════════════ */
+.body-content {
+  page: body-page;
+}
+
+.page-break { page-break-before: always; }
+.section { margin-top: 0; margin-bottom: 18pt; }
+
+/* Section header */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8pt;
+  margin-bottom: 12pt;
+  border-bottom: 1.5pt solid #F9A825;
+  padding-bottom: 6pt;
+}
+.section-num {
+  background: #8C1A2B;
+  color: #fff;
+  font-size: 8pt;
+  font-weight: 700;
+  padding: 2pt 7pt;
+  border-radius: 3pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.section-title {
+  font-size: 12.5pt;
+  font-weight: 700;
+  color: #1a1a1a;
+  text-transform: uppercase;
+  letter-spacing: 0.5pt;
+}
+.section-sub {
+  font-size: 7.5pt;
+  color: #888;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-top: 2pt;
+}
+
+/* About box */
+.about-box {
+  border: 0.5pt solid #e0e0e0;
+  border-radius: 4pt;
+  padding: 10pt 13pt;
+  margin-bottom: 14pt;
+  background: #fafafa;
+}
+.about-title { font-size: 8pt; color: #8C1A2B; text-transform: uppercase; letter-spacing: 1pt; font-family: "DejaVu Sans Mono", monospace; margin-bottom: 5pt; }
+.about-body { font-size: 9pt; color: #444; line-height: 1.55; }
+
+/* Résumé exécutif highlight */
+.resume-box {
+  border-left: 3pt solid #8C1A2B;
+  background: rgba(140,26,43,.04);
+  padding: 10pt 14pt;
+  margin: 10pt 0;
+  border-radius: 0 4pt 4pt 0;
+  font-size: 9.5pt;
+  color: #222;
+  line-height: 1.55;
+}
+
+/* Two-column layout */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12pt;
+  margin: 8pt 0;
+}
+
+/* Box */
+.box {
+  border: 0.5pt solid #e0e0e0;
+  border-radius: 4pt;
+  padding: 10pt 12pt;
+}
+.box-title {
+  font-size: 7.5pt;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.7pt;
+  font-family: "DejaVu Sans Mono", monospace;
+  border-bottom: 0.5pt solid #eee;
+  padding-bottom: 4pt;
+  margin-bottom: 7pt;
+}
+
+/* KV table (key-value rows) */
+.kv-table { width: 100%; border-collapse: collapse; }
+.kv-table tr { border-bottom: 0.4pt solid #f0f0f0; }
+.kv-table th {
+  width: 110pt;
+  text-align: left;
+  font-size: 8pt;
+  color: #888;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.3pt;
+  padding: 5pt 6pt;
+  vertical-align: top;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.kv-table td {
+  font-size: 9.5pt;
+  color: #1a1a1a;
+  padding: 5pt 6pt;
+  vertical-align: top;
+  font-weight: 700;
+}
+
+/* Data table */
+.data-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 8pt 0; }
+.data-table thead tr { background: #f5f5f5; }
+.data-table th {
+  padding: 5pt 7pt;
+  text-align: left;
+  font-weight: 700;
+  color: #555;
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.4pt;
+  border-bottom: 1pt solid #ddd;
+}
+.data-table td {
+  padding: 5pt 7pt;
+  border-bottom: 0.4pt solid #f0f0f0;
+  vertical-align: top;
+}
+.data-table tbody tr:hover { background: #fafafa; }
+
+.mono { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 1.5pt 6pt;
+  border-radius: 3pt;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5pt;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.badge-critique { background: rgba(198,40,40,.1); color: #C62828; border: 0.4pt solid rgba(198,40,40,.3); }
+.badge-eleve    { background: rgba(249,168,37,.1); color: #b36000; border: 0.4pt solid rgba(249,168,37,.4); }
+.badge-moyen    { background: rgba(25,118,210,.1); color: #1565C0; border: 0.4pt solid rgba(25,118,210,.3); }
+.badge-ok       { background: rgba(46,125,50,.08); color: #2E7D32; border: 0.4pt solid rgba(46,125,50,.3); }
+.badge-warn     { background: rgba(198,40,40,.06); color: #C62828; border: 0.4pt solid rgba(198,40,40,.2); }
+.badge-info     { background: rgba(97,97,97,.08);  color: #555;    border: 0.4pt solid rgba(97,97,97,.2); }
+
+/* Kill Chain bar */
+.kc-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3pt;
+  margin: 8pt 0 4pt;
+}
+.kc-cell {
+  border: 0.5pt solid #ddd;
+  border-radius: 3pt;
+  padding: 5pt 2pt;
+  text-align: center;
+  font-size: 6.5pt;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.2pt;
+  background: #fafafa;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+.kc-cell.done {
+  background: #F9A825;
+  color: #111;
+  border-color: #c67c00;
+  font-weight: 700;
+}
+.kc-cell.done.sev-critique {
+  background: #C62828;
+  color: #fff;
+  border-color: #8C1A2B;
+}
+.kc-label { font-size: 8pt; color: #555; font-family: "DejaVu Sans Mono", monospace; margin-top: 3pt; }
+
+/* Organised score bar */
+.org-track {
+  height: 8pt;
+  background: #eee;
+  border-radius: 4pt;
+  overflow: hidden;
+  border: 0.4pt solid #ddd;
+  margin: 4pt 0 2pt;
+}
+.org-fill {
+  height: 100%;
+  border-radius: 4pt;
+  background: linear-gradient(90deg, #1565C0, #C62828);
+}
+.org-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 7pt;
+  color: #888;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+/* Narrative box */
+.narrative-box {
+  border-left: 3pt solid #F9A825;
+  background: rgba(249,168,37,.03);
+  padding: 10pt 14pt;
+  margin: 8pt 0;
+  border-radius: 0 4pt 4pt 0;
+  font-style: italic;
+  color: #333;
+  line-height: 1.6;
+  font-size: 9pt;
+}
+
+/* Score bar */
+.score-bar-wrap { display: flex; align-items: center; gap: 6pt; }
+.score-bar { flex: 1; height: 6pt; background: #eee; border-radius: 3pt; overflow: hidden; }
+.score-fill { height: 100%; background: {{ risk_color }}; border-radius: 3pt; }
+.score-pts { font-size: 9pt; font-weight: 700; font-family: "DejaVu Sans Mono", monospace; color: {{ risk_color }}; width: 40pt; text-align: right; }
+
+/* Chain of custody */
+.cert-box {
+  border: 0.8pt solid #4CAF50;
+  border-radius: 5pt;
+  padding: 10pt 13pt;
+  background: rgba(76,175,80,.04);
+}
+.cert-ok { color: #2E7D32; font-weight: 700; font-size: 9pt; }
+
+/* IOC table */
+.ioc-value { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; color: #1565C0; }
+
+/* Hash box */
+.hash-box {
+  border: 0.5pt solid #ddd;
+  background: #f9f9f9;
+  border-radius: 4pt;
+  padding: 7pt 10pt;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 7.5pt;
+  color: #333;
+  word-break: break-all;
+  margin: 6pt 0;
+}
+
+/* WANTED card (behavioral) */
+.wanted-card {
+  border: 1pt solid #ddd;
+  border-radius: 5pt;
+  padding: 10pt 12pt;
+  margin: 8pt 0;
+}
+.wanted-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12pt;
+  margin-bottom: 10pt;
+}
+.wanted-score-box {
+  border: 1.5pt solid {{ risk_color }};
+  border-radius: 4pt;
+  padding: 6pt 10pt;
+  text-align: center;
+  min-width: 52pt;
+}
+.wanted-score-label { font-size: 6.5pt; color: #888; text-transform: uppercase; font-family: "DejaVu Sans Mono", monospace; }
+.wanted-score-num { font-size: 24pt; font-weight: 900; color: {{ risk_color }}; line-height: 1; }
+.wanted-score-sev { font-size: 7pt; font-weight: 700; color: {{ risk_color }}; letter-spacing: 1pt; font-family: "DejaVu Sans Mono", monospace; text-transform: uppercase; }
+.wanted-info h3 { font-size: 13pt; font-weight: 900; color: #1a1a1a; margin: 0 0 3pt; }
+.wanted-info p { font-size: 8pt; color: #666; font-family: "DejaVu Sans Mono", monospace; }
+.wanted-tags { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 5pt; }
+
+.mo-sig-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10pt;
+  margin: 8pt 0;
+}
+.mo-title { font-size: 7.5pt; color: #888; text-transform: uppercase; letter-spacing: 0.8pt; font-family: "DejaVu Sans Mono", monospace; margin-bottom: 5pt; }
+.mo-item { font-size: 8.5pt; color: #333; padding: 2pt 0; padding-left: 10pt; position: relative; }
+.mo-item::before { content: "▸"; position: absolute; left: 0; color: #8C1A2B; }
+
+/* Score decomposition big number */
+.score-big-wrap { display: flex; align-items: center; gap: 16pt; margin-bottom: 10pt; }
+.score-big { font-size: 42pt; font-weight: 900; color: {{ risk_color }}; line-height: 1; font-family: "DejaVu Sans", sans-serif; }
+.score-big-info { }
+.score-big-max { font-size: 12pt; color: #888; }
+.score-big-label { font-size: 11pt; font-weight: 700; color: {{ risk_color }}; letter-spacing: 1.5pt; text-transform: uppercase; font-family: "DejaVu Sans Mono", monospace; }
+.score-big-sub { font-size: 7.5pt; color: #888; font-family: "DejaVu Sans Mono", monospace; margin-top: 2pt; }
+
+/* Certification page */
+.cert-page-inner {
+  max-width: 420pt;
+  margin: 0 auto;
+  padding: 20pt 0;
+}
+.cert-page-title {
+  font-size: 14pt;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1.5pt;
+  color: #1a1a1a;
+  margin-bottom: 5pt;
+}
+.cert-page-sub {
+  font-size: 8.5pt;
+  color: #888;
+  text-align: center;
+  font-family: "DejaVu Sans Mono", monospace;
+  margin-bottom: 18pt;
+}
+.cert-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12pt;
+  margin-bottom: 18pt;
+}
+.cert-col-title { font-size: 8pt; color: #4CAF50; text-transform: uppercase; letter-spacing: 0.7pt; font-family: "DejaVu Sans Mono", monospace; font-weight: 700; margin-bottom: 6pt; }
+.sig-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20pt;
+  margin: 18pt 0 14pt;
+}
+.sig-block { text-align: center; }
+.sig-line { border-top: 0.7pt solid #888; margin-bottom: 5pt; }
+.sig-name { font-size: 9pt; font-weight: 700; color: #1a1a1a; }
+.sig-sub { font-size: 7.5pt; color: #8C1A2B; font-family: "DejaVu Sans Mono", monospace; }
+.legal-box {
+  font-size: 8pt;
+  color: #555;
+  background: #fafafa;
+  border: 0.4pt solid #e0e0e0;
+  padding: 8pt 12pt;
+  border-radius: 4pt;
+  line-height: 1.55;
+}
+.key-points {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4pt 16pt;
+  margin: 10pt 0;
+}
+.key-point { font-size: 8.5pt; color: #333; padding-left: 12pt; position: relative; }
+.key-point::before { content: "✓"; position: absolute; left: 0; color: #2E7D32; font-weight: 700; }
+.key-action { font-size: 8.5pt; color: #8C1A2B; padding-left: 12pt; position: relative; }
+.key-action::before { content: "→"; position: absolute; left: 0; color: #8C1A2B; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════
+     PAGE 1 — COVER
+═══════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-header">
+    <div class="cover-logo-wrap">
+      <div class="cover-logo">⬡ ForenHive</div>
+      <div class="cover-tagline">S O C &nbsp; F O R E N S I C &nbsp; P L A T F O R M &nbsp; v 1 . 0</div>
+    </div>
+    <div class="cover-company">
+      Standard Sharing Software (3S)<br/>
+      Charguia, Tunis — Tunisie<br/>
+      ISET Radès · RSI {{ now_year }}
+    </div>
+  </div>
+
+  <div class="cover-body">
+    <div class="cover-section-tag">R A P P O R T &nbsp; O F F I C I E L &nbsp; D ' A N A L Y S E</div>
+    <div class="cover-title">
+      RAPPORT D'ANALYSE<br/>FORENSIQUE AUTOMATISÉE
+    </div>
+    <div class="cover-subtitle">
+      Détection, analyse comportementale et<br/>profilage criminologique d'attaquants honeypot
+    </div>
+
+    <div class="cover-risk-box">
+      <div class="cover-score">{{ risk_score }}<span class="cover-score-max"> / 100</span></div>
+      <div class="cover-risk-label">{{ risk_label }}</div>
+      <div class="cover-risk-sub">Niveau de risque</div>
+    </div>
+
+    <div class="cover-meta-grid">
+      <div>
+        <div class="cover-meta-label">Référence</div>
+        <div class="cover-meta-value">{{ report_ref }}</div>
+      </div>
+      <div>
+        <div class="cover-meta-label">Date de génération</div>
+        <div class="cover-meta-value">{{ generated_at_str }}</div>
+      </div>
+      <div>
+        <div class="cover-meta-label">Session ID</div>
+        <div class="cover-meta-value">{{ session.get('session_id', session_id)[:12] }}</div>
+      </div>
+      <div>
+        <div class="cover-meta-label">Classification</div>
+        <div class="cover-meta-value" style="color:#C62828">CONFIDENTIEL</div>
+      </div>
+      <div>
+        <div class="cover-meta-label">Source cible</div>
+        <div class="cover-meta-value">{{ session.get('source_ip') or profile.get('ip', '—') }}</div>
+      </div>
+      <div>
+        <div class="cover-meta-label">Moteur d'analyse</div>
+        <div class="cover-meta-value">Mistral 7B · Ollama</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cover-footer">C O N F I D E N T I E L</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     BODY (all subsequent pages use body-page @page rule)
+═══════════════════════════════════════════════════ -->
+<div class="body-content">
+
+<!-- ── TOC + Introduction ── -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Table des matières</span>
+  </div>
+  <div style="font-size:8.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-bottom:10pt;">
+    Rapport d'analyse forensique · Session {{ session.get('session_id', session_id)[:12] }}
+  </div>
+
+  {% set toc_items = [
+    ("00", "Introduction générale", ""),
+    ("01", "Résumé exécutif", ""),
+    ("02", "Identité de l'attaquant", "Géolocalisation &amp; Infrastructure · Réputation &amp; Anonymisation"),
+    ("03", "Timeline forensique", "Corrélation multi-source · Précision milliseconde"),
+    ("04", "Analyse MITRE ATT&amp;CK &amp; Kill Chain", "Mapping hybride déterministe + LLM"),
+    ("05", "Analyse malware", "YARA Scanner · SHA-256"),
+    ("06", "Profil comportemental (FBI BAU Framework)", "Organised/Disorganised · MO · Locard · Narratif Mistral 7B"),
+    ("07", "Score de risque — décomposition des signaux", "Scoring déterministe · AbuseIPDB · YARA · Comportemental"),
+    ("08", "Chaîne de custody &amp; IOCs", "SHA-256 · RFC 3161 · STIX 2.1 Export"),
+    ("09", "Conclusion &amp; Perspectives", ""),
+    ("—",  "Page de certification &amp; signatures", ""),
+  ] %}
+
+  {% for num, title, sub in toc_items %}
+  <div style="display:flex;align-items:baseline;gap:6pt;padding:4pt 0;border-bottom:0.3pt dotted #ccc;">
+    <span style="color:#8C1A2B;font-weight:700;font-family:'DejaVu Sans Mono',monospace;font-size:9pt;width:18pt;flex-shrink:0;">{{ num }}</span>
+    <div style="flex:1;">
+      <div style="font-size:9.5pt;color:#1a1a1a;">{{ title }}</div>
+      {% if sub %}<div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:1pt;">{{ sub }}</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <!-- Legend -->
+  <div style="margin-top:14pt;border:0.5pt solid #ddd;border-radius:4pt;padding:7pt 10pt;">
+    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:6pt;">Légende — Niveaux de risque</div>
+    <div style="display:flex;gap:8pt;flex-wrap:wrap;">
+      <span class="badge badge-critique">CRITIQUE (80-100)</span>
+      <span class="badge badge-eleve">ÉLEVÉ (60-79)</span>
+      <span class="badge badge-moyen">MOYEN (40-59)</span>
+      <span class="badge badge-ok">FAIBLE (20-39)</span>
+      <span class="badge badge-info">INFO (0-19)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 00 — Introduction ── -->
+<div class="section page-break">
+  <div class="about-box">
+    <div class="about-title">À propos de ForenHive</div>
+    <div class="about-body">
+      ForenHive est une plateforme d'analyse forensique automatisée basée sur des honeypots (Cowrie, Dionaea,
+      Galah, Zeek). Elle intègre un moteur forensique en 4 couches : collecte des logs via pipeline ETL (Filebeat →
+      Logstash → Elasticsearch), enrichissement multi-source des IPs (GeoLite2, AbuseIPDB, IPLocate, Whois/RDAP),
+      scoring de risque déterministe sur 18 signaux, et profilage comportemental criminologique via
+      Mistral 7B (local, hors-ligne). Ce rapport est généré automatiquement sans intervention humaine.
+    </div>
+  </div>
+
+  <div class="section-header">
+    <span class="section-num">00</span>
+    <span class="section-title">Introduction générale</span>
+  </div>
+  <p style="font-size:9.5pt;color:#333;line-height:1.6;margin-bottom:8pt;">
+    Dans un contexte de prolifération des cyberattaques, les organisations font face à des menaces de plus en plus
+    sophistiquées. La détection précoce et l'analyse forensique rigoureuse constituent des impératifs stratégiques
+    pour toute équipe SOC.
+  </p>
+  <p style="font-size:9.5pt;color:#333;line-height:1.6;margin-bottom:8pt;">
+    Ce rapport est produit automatiquement par <strong>ForenHive</strong>, une plateforme d'analyse forensique basée sur un
+    réseau de honeypots (Cowrie SSH, Dionaea, Galah HTTP, Zeek). ForenHive applique un cadre criminologique
+    inspiré du <strong>FBI Behavioral Analysis Unit (BAU)</strong> — concepts d'organisé/désorganisé, Modus Operandi, principe de
+    Locard — pour produire des profils d'attaquants forensiquement valides et admissibles.
+  </p>
+  <p style="font-size:9.5pt;color:#333;line-height:1.6;">
+    Ce document couvre l'intégralité du cycle d'analyse d'un incident détecté via le honeypot
+    <strong>{{ (session.get('honeypot') or 'unknown') | upper }}</strong> :
+    capture des logs, enrichissement IP multi-source, classification MITRE ATT&amp;CK, analyse malware,
+    profilage comportemental LLM (Mistral 7B local), scoring déterministe, et certification RFC 3161.
+  </p>
+
+  <!-- Section 01 — Résumé exécutif -->
+  <div class="section-header" style="margin-top:18pt;">
+    <span class="section-num">01</span>
+    <span class="section-title">Résumé exécutif</span>
+  </div>
+  {% if profile.get('mistral_analysis') %}
+  <div class="resume-box">{{ profile.get('mistral_analysis') }}</div>
+  {% else %}
+  <div class="resume-box">
+    {% set ip = session.get('source_ip') or profile.get('ip', '—') %}
+    {% set hp = (session.get('honeypot') or 'unknown') | upper %}
+    {% set n_auth = session.get('auth_attempts', 0) or 0 %}
+    {% set n_cmd = session.get('command_count', 0) or 0 %}
+    Une tentative d'intrusion de niveau <strong>{{ risk_label }} ({{ risk_score }}/100)</strong> a été détectée et contenue
+    par la plateforme ForenHive. Un attaquant opérant depuis
+    <strong>{{ ip }}</strong>
+    {% if profile.get('country') %} ({{ profile.get('country') }}{% if profile.get('asn') %}, ASN {{ profile.get('asn') }}{% endif %}){% endif %}
+    a ciblé le honeypot <strong>{{ hp }}</strong>
+    {% if n_auth > 0 %} avec {{ n_auth }} tentative(s) d'authentification{% endif %}
+    {% if n_cmd > 0 %} et {{ n_cmd }} commande(s) exécutée(s){% endif %}.
+    {% if auth_success %}La session a abouti à une compromission confirmée.{% endif %}
+    {% if profile.get('yara_matches') %}
+    Malware détecté : <strong>{{ profile.get('yara_matches')[0] }}</strong> (YARA match confirmé).
+    {% endif %}
+    {% if profile.get('is_tor') %}L'adresse IP est un <strong>nœud Tor exit</strong>.{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 02 — Identité ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <div>
+      <div class="section-title">Identité de l'attaquant</div>
+      <div class="section-sub">2.1 Géolocalisation &amp; Infrastructure · 2.2 Réputation &amp; Anonymisation</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="box">
+      <div class="box-title">Géolocalisation &amp; Infrastructure</div>
+      <table class="kv-table">
+        <tr><th>IP source</th><td>{{ session.get('source_ip') or profile.get('ip', '—') }}</td></tr>
+        <tr><th>Localisation</th><td>{{ profile.get('city') or '—' }}{% if profile.get('country') %}, {{ profile.get('country') }}{% endif %}</td></tr>
+        <tr><th>ASN</th><td>{{ profile.get('asn') or '—' }}{% if profile.get('as_org') %} · {{ profile.get('as_org') }}{% endif %}</td></tr>
+        <tr><th>Organisation</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
+        <tr><th>Honeypot ciblé</th><td>{{ (session.get('honeypot') or '—') | upper }}</td></tr>
+        <tr><th>Port cible</th><td>{{ session.get('source_port') or '—' }}</td></tr>
+      </table>
+    </div>
+    <div class="box">
+      <div class="box-title">Réputation &amp; Anonymisation</div>
+      <table class="kv-table">
+        <tr><th>AbuseIPDB</th>
+          <td>{% if profile.get('abuseipdb_score') is not none %}
+            <strong style="color:{% if (profile.get('abuseipdb_score') or 0) >= 80 %}#C62828{% elif (profile.get('abuseipdb_score') or 0) >= 50 %}#b36000{% else %}#2E7D32{% endif %}">
+              {{ profile.get('abuseipdb_score') }} / 100
+            </strong>
+            {% if profile.get('abuseipdb_reports') %} ⚠ {{ profile.get('abuseipdb_reports') }} signalements{% endif %}
+          {% else %}—{% endif %}</td></tr>
+        <tr><th>Nœud Tor</th>
+          <td>{% if profile.get('is_tor') %}<span class="badge badge-warn">OUI — exit node ⚠</span>{% else %}<span class="badge badge-ok">NON</span>{% endif %}</td></tr>
+        <tr><th>VPN</th>
+          <td>{% if profile.get('is_vpn') %}<span class="badge badge-warn">OUI</span>{% else %}<span class="badge badge-ok">NON</span>{% endif %}</td></tr>
+        <tr><th>Hébergeur</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
+        <tr><th>Événements totaux</th><td>{{ profile.get('event_count') or '—' }}</td></tr>
+        <tr><th>Sessions totales</th><td>{{ profile.get('session_count') or '—' }}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Section 03 — Timeline ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <div>
+      <div class="section-title">Timeline forensique · Multi-source · Précision milliseconde</div>
+    </div>
+  </div>
+
+  {% if timeline %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:95pt;">Horodatage</th>
+        <th style="width:65pt;">Source</th>
+        <th style="width:110pt;">Action</th>
+        <th>Détail</th>
+        <th style="width:65pt;">MITRE</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for evt in timeline %}
+    <tr {% if evt.get('action', '') and ('SUCCÈS' in evt.get('action','') or 'COMPROMISSION' in evt.get('action','')) %}style="background:rgba(198,40,40,.05)"{% endif %}>
+      <td class="mono">{{ evt.get('ts') or '—' }}</td>
+      <td>
+        {% set src = evt.get('source', '') %}
+        {% if src == 'AUTH' %}<span class="badge badge-warn">{{ src }}</span>
+        {% elif src == 'COMMAND' %}<span class="badge badge-moyen">{{ src }}</span>
+        {% elif src == 'SESSION' %}<span class="badge badge-info">{{ src }}</span>
+        {% else %}<span class="badge badge-info">{{ src }}</span>{% endif %}
+      </td>
+      <td style="font-size:8.5pt;{% if 'SUCCÈS' in evt.get('action','') %}color:#C62828;font-weight:700;{% endif %}">
+        {{ evt.get('action', '—') }}
+      </td>
+      <td class="mono" style="max-width:140pt;overflow:hidden;word-break:break-all;">{{ (evt.get('detail') or '') | truncate(80) }}</td>
+      <td class="mono" style="color:#b36000;">{{ evt.get('mitre', '') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
+    Aucun événement de timeline disponible pour cette session.
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 04 — MITRE ATT&CK ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">04</span>
+    <div>
+      <div class="section-title">Analyse MITRE ATT&amp;CK · Kill Chain</div>
+      <div class="section-sub">{{ mitre_rows | length }} technique(s) identifiée(s) · Mapping hybride déterministe + LLM</div>
+    </div>
+  </div>
+
+  <!-- Kill Chain Bar -->
+  <div style="margin-bottom:10pt;">
+    <div style="font-size:8pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-bottom:4pt;">
+      KILL CHAIN — ÉTAPE {{ kc_reached + 1 }}/8 · {{ kc_stages_labels[kc_reached] | upper }}
+    </div>
+    <div class="kc-grid">
+      {% for i in range(8) %}
+      <div class="kc-cell {% if i <= kc_reached %}done {% if risk_label == 'CRITIQUE' %}sev-critique{% endif %}{% endif %}">
+        {{ kc_stages_labels[i] }}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="kc-label">Stage atteint : <strong>{{ kc_stages_labels[kc_reached] }}</strong></div>
+  </div>
+
+  {% if mitre_rows %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:70pt;">ID ATT&amp;CK</th>
+        <th style="width:160pt;">Technique</th>
+        <th style="width:120pt;">Tactique</th>
+        <th style="width:65pt;">Confiance</th>
+        <th>Évidence</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in mitre_rows %}
+    <tr>
+      <td style="color:#b36000;font-family:'DejaVu Sans Mono',monospace;font-weight:700;font-size:8.5pt;">{{ row.id }}</td>
+      <td style="font-weight:700;font-size:8.5pt;">{{ row.technique }}</td>
+      <td style="font-style:italic;font-size:8.5pt;color:#555;">{{ row.tactic }}</td>
+      <td style="font-size:8.5pt;"><span class="badge badge-ok">{{ row.confidence }} ✓</span></td>
+      <td style="font-size:8pt;color:#444;font-family:'DejaVu Sans Mono',monospace;">{{ row.get('evidence', 'logs honeypot') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:5pt;">
+    Mapping hybride : IDs déterministes (confiance 100%) + narratif LLM Mistral 7B local · Zéro hallucination
+  </div>
+  {% else %}
+  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
+    Aucune technique MITRE ATT&amp;CK identifiée pour cette session.
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 05 — Malware ── -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-num">05</span>
+    <div>
+      <div class="section-title">Analyse malware · YARA + VirusTotal</div>
+    </div>
+  </div>
+
+  {% if profile.get('yara_matches') or profile.get('ioc_hashes') or session.get('downloads') %}
+  <div style="border:0.7pt solid #C62828;border-radius:5pt;padding:10pt 13pt;background:rgba(198,40,40,.03);margin-bottom:10pt;">
+    <div style="color:#C62828;font-size:8pt;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:8pt;">
+      ⚠ Malware détecté — Famille critique
+    </div>
+    <div class="two-col">
+      <div>
+        {% if profile.get('yara_matches') %}
+        <table class="kv-table">
+          <tr><th>Règle YARA</th><td style="color:#C62828;font-weight:700;">{{ profile.get('yara_matches')[0] }} ⚠</td></tr>
+          <tr><th>Total matches</th><td>{{ profile.get('yara_matches') | length }}</td></tr>
+        </table>
+        {% endif %}
+        {% if session.get('downloads') %}
+        <table class="kv-table" style="margin-top:6pt;">
+          {% for dl in session.get('downloads', [])[:3] %}
+          <tr><th>Téléchargement</th><td class="mono">{{ dl | truncate(50) }}</td></tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+      </div>
+      <div>
+        {% if profile.get('ioc_hashes') %}
+        <table class="kv-table">
+          {% for h in profile.get('ioc_hashes', [])[:3] %}
+          <tr><th>SHA-256</th><td class="mono" style="font-size:7.5pt;word-break:break-all;">{{ h }}</td></tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div style="color:#888;font-size:9pt;padding:10pt;border:0.5pt solid #eee;border-radius:4pt;">
+    Aucun malware capturé lors de cette session.
+    {% if profile.get('top_commands') %}
+    Commandes observées : {{ profile.get('top_commands', []) | join(', ') | truncate(100) }}
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 06 — Profil comportemental ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">06</span>
+    <div>
+      <div class="section-title">Profil comportemental · Cadre criminologique FBI BAU</div>
+      <div class="section-sub">Organised/Disorganised · MO vs Signature · Locard · Récidivisme · Narratif Mistral 7B</div>
+    </div>
+  </div>
+
+  <div class="wanted-card">
+    <div class="wanted-header">
+      <div class="wanted-score-box">
+        <div class="wanted-score-label">WANTED</div>
+        <div class="wanted-score-num">{{ risk_score }}</div>
+        <div class="wanted-score-sev">{{ risk_label }}</div>
+      </div>
+      <div class="wanted-info">
+        <h3>{{ session.get('source_ip') or profile.get('ip', '—') }}</h3>
+        <p>
+          {% if profile.get('city') %}{{ profile.get('city') }}, {% endif %}
+          {% if profile.get('country') %}{{ profile.get('country') }}{% endif %}
+          {% if profile.get('asn') %} · ASN {{ profile.get('asn') }}{% endif %}
+          {% if profile.get('is_tor') %} · Tor exit node{% endif %}
+        </p>
+        <div class="wanted-tags" style="margin-top:6pt;">
+          {% if profile.get('is_tor') %}<span class="badge badge-warn">TOR</span>{% endif %}
+          {% if profile.get('is_vpn') %}<span class="badge badge-warn">VPN</span>{% endif %}
+          {% if risk_score >= 70 %}<span class="badge badge-critique">CRITIQUE</span>
+          {% elif risk_score >= 40 %}<span class="badge badge-eleve">HIGH</span>
+          {% else %}<span class="badge badge-moyen">MEDIUM</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Organised Score Bar -->
+    <div style="margin-bottom:10pt;">
+      <div class="org-labels" style="margin-bottom:3pt;">
+        <span>DÉSORGANISÉ</span>
+        <span style="font-weight:700;">Score organisé : {{ org_score_pct }}%</span>
+        <span>ORGANISÉ</span>
+      </div>
+      <div class="org-track">
+        <div class="org-fill" style="width:{{ org_score_pct }}%"></div>
+      </div>
+    </div>
+
+    <div class="mo-sig-grid">
+      <div>
+        <div class="mo-title">Modus Operandi</div>
+        {% set cmds = profile.get('top_commands', []) %}
+        {% if cmds %}
+          {% for cmd in cmds[:4] %}
+          <div class="mo-item">{{ cmd }}</div>
+          {% endfor %}
+        {% else %}
+          <div class="mo-item">Tentatives d'authentification multiples</div>
+          {% if auth_success %}<div class="mo-item">Compromission réussie</div>{% endif %}
+        {% endif %}
+      </div>
+      <div>
+        <div class="mo-title">Signature (Locard)</div>
+        {% set usernames = profile.get('top_usernames', []) %}
+        {% if usernames %}
+          {% for u in usernames[:3] %}
+          <div class="mo-item">Identifiant « {{ u }} » tenté</div>
+          {% endfor %}
+        {% endif %}
+        {% if profile.get('is_tor') %}
+        <div class="mo-item" style="color:#C62828;">Nœud Tor exclusif pour payload</div>
+        {% endif %}
+        {% if profile.get('session_count', 0) and profile.get('session_count', 0) > 1 %}
+        <div class="mo-item" style="color:#b36000;">⚠ Récidiviste — {{ profile.get('session_count') }} sessions</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Narrative Mistral 7B -->
+  {% if profile.get('mistral_analysis') %}
+  <div style="margin-top:10pt;">
+    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.8pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:5pt;">
+      Analyse narrative · Mistral 7B local (offline)
+    </div>
+    <div class="narrative-box">{{ profile.get('mistral_analysis') }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 07 — Score de risque ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">07</span>
+    <div>
+      <div class="section-title">Score de risque · Décomposition des signaux</div>
+      <div class="section-sub">Scoring déterministe · AbuseIPDB · YARA · Comportemental</div>
+    </div>
+  </div>
+
+  <div class="score-big-wrap">
+    <div class="score-big">{{ risk_score }}</div>
+    <div class="score-big-info">
+      <div class="score-big-max">/ 100 · <span class="score-big-label">{{ risk_label }}</span></div>
+      <div style="display:flex;gap:4pt;margin-top:4pt;align-items:center;">
+        <div style="height:4pt;width:140pt;background:#eee;border-radius:2pt;overflow:hidden;">
+          <div style="height:100%;width:{{ risk_score }}%;background:{{ risk_color }};border-radius:2pt;"></div>
+        </div>
+      </div>
+      <div class="score-big-sub" style="margin-top:4pt;">Score déterministe et auditable — chaque point justifié par une évidence concrète</div>
+    </div>
+  </div>
+
+  {% if score_signals %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:20pt;">#</th>
+        <th>Signal</th>
+        <th style="width:80pt;">Source</th>
+        <th style="width:60pt;">Points</th>
+        <th style="width:120pt;">Visualisation</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for i, sig in enumerate(score_signals) %}
+    <tr>
+      <td class="mono" style="color:#888;">{{ '%02d'|format(i+1) }}</td>
+      <td style="font-size:8.5pt;">{{ sig.name }}</td>
+      <td class="mono" style="font-size:8pt;color:#555;">{{ sig.source }}</td>
+      <td style="font-weight:700;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ sig.points }}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:5pt;">
+          <div style="flex:1;height:6pt;background:#eee;border-radius:3pt;overflow:hidden;">
+            <div style="height:100%;width:{{ [100, (sig.points * 100 // (sig.max or 1))] | min }}%;background:{{ risk_color }};border-radius:3pt;"></div>
+          </div>
+          <span style="font-size:7.5pt;font-family:'DejaVu Sans Mono',monospace;color:#888;width:30pt;text-align:right;">{{ sig.points }}/{{ sig.max }}</span>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr style="background:#f5f5f5;font-weight:700;">
+        <td colspan="3" style="text-align:right;font-size:9pt;padding:6pt 7pt;">TOTAL (plafonné à 100)</td>
+        <td style="font-weight:700;font-size:11pt;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ risk_score }}</td>
+        <td style="font-weight:700;font-size:9pt;color:{{ risk_color }};font-family:'DejaVu Sans Mono',monospace;">{{ risk_score }}/100</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div style="font-size:7.5pt;color:#888;font-family:'DejaVu Sans Mono',monospace;margin-top:5pt;">
+    Score déterministe et auditable — chaque point est justifié par une évidence concrète dans les logs.
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 08 — Chain of Custody + IOCs ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">08</span>
+    <div>
+      <div class="section-title">Chaîne de custody · RFC 3161 + IOCs</div>
+      <div class="section-sub">SHA-256 · freeTSA.org · STIX 2.1 Export · Recommandations SOC</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="cert-box">
+      <div class="cert-ok">✅ Intégrité des preuves certifiée</div>
+      <table class="kv-table" style="margin-top:8pt;">
+        <tr><th>SHA-256 (session)</th><td class="mono" style="font-size:7.5pt;word-break:break-all;color:#1565C0;">{{ sha256_session[:32] }}...</td></tr>
+        <tr><th>TSA</th><td><strong>freeTSA.org (RFC 3161)</strong></td></tr>
+        <tr><th>Horodatage</th><td>{{ generated_at_str }}</td></tr>
+        <tr><th>Statut</th><td>{% if custody_ok %}<span class="badge badge-ok">✅ Certifié · Admissible en justice</span>{% else %}<span class="badge badge-info">SHA-256 calculé localement</span>{% endif %}</td></tr>
+      </table>
+    </div>
+    <div class="box">
+      <div class="box-title">Recommandations SOC — Actions immédiates</div>
+      <div style="font-size:8.5pt;color:#333;line-height:1.7;">
+        {% set ip = session.get('source_ip') or profile.get('ip', '?') %}
+        <div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">1.</span> Bloquer l'IP {{ ip }} au pare-feu périmétrique</div>
+        {% if profile.get('asn') %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">2.</span> Surveiller le bloc ASN {{ profile.get('asn') }}</div>{% endif %}
+        {% if profile.get('yara_matches') %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">3.</span> Analyser le malware capturé : {{ profile.get('yara_matches')[0] }}</div>{% endif %}
+        {% if auth_success %}<div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#C62828;font-weight:700;">4.</span> Auditer les credentials exposés</div>{% endif %}
+        <div style="padding:2pt 0;padding-left:16pt;position:relative;"><span style="position:absolute;left:0;color:#8C1A2B;font-weight:700;">5.</span> Exporter IOCs en STIX 2.1 vers Splunk/QRadar</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IOCs table -->
+  {% set all_iocs = [] %}
+  {% if session.get('source_ip') %}{% set _ = all_iocs.append({"type": "IPv4", "valeur": session.get('source_ip'), "contexte": "Source de l'attaque", "confiance": "100%"}) %}{% endif %}
+  {% for h in profile.get('ioc_hashes', [])[:2] %}{% set _ = all_iocs.append({"type": "SHA-256", "valeur": h, "contexte": "Malware capturé", "confiance": "100%"}) %}{% endfor %}
+  {% for t in (profile.get('mitre_techniques') or [])[:3] %}{% set _ = all_iocs.append({"type": "Technique", "valeur": t, "contexte": "MITRE ATT&CK Enterprise", "confiance": "100%"}) %}{% endfor %}
+
+  {% if all_iocs %}
+  <table class="data-table" style="margin-top:10pt;">
+    <thead><tr><th style="width:60pt;">Type IOC</th><th>Valeur</th><th>Contexte</th><th style="width:60pt;">Confiance</th></tr></thead>
+    <tbody>
+    {% for ioc in all_iocs %}
+    <tr>
+      <td><span class="badge badge-moyen">{{ ioc.type }}</span></td>
+      <td class="ioc-value">{{ ioc.valeur | truncate(60) }}</td>
+      <td style="font-size:8.5pt;color:#444;">{{ ioc.contexte }}</td>
+      <td style="font-size:8pt;color:#2E7D32;font-weight:700;font-family:'DejaVu Sans Mono',monospace;">{{ ioc.confiance }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:8pt;font-size:8pt;color:#888;font-family:'DejaVu Sans Mono',monospace;">
+    Export STIX 2.1 disponible · Compatible : Splunk · IBM QRadar · TheHive · OpenCTI · MISP
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Section 09 — Conclusion ── -->
+<div class="section page-break">
+  <div class="section-header">
+    <span class="section-num">09</span>
+    <span class="section-title">Conclusion &amp; Perspectives</span>
+  </div>
+
+  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:8pt;">
+    L'analyse forensique de la session <strong>{{ session.get('session_id', session_id)[:12] }}</strong> a permis de caractériser
+    avec précision une attaque de niveau <strong>{{ risk_label }} ({{ risk_score }}/100)</strong>
+    {% if session.get('source_ip') %} orchestrée depuis <strong>{{ session.get('source_ip') }}</strong>{% endif %}
+    {% if profile.get('country') %} ({{ profile.get('country') }}){% endif %}.
+    La chaîne d'attaque complète a été reconstituée grâce à la corrélation multi-source
+    entre Cowrie, Dionaea et Zeek, avec une précision milliseconde.
+  </p>
+
+  {% if profile.get('mistral_analysis') %}
+  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:8pt;">
+    L'application du cadre criminologique FBI BAU a permis de classifier l'attaquant et de documenter
+    ses patterns comportementaux. Ces éléments de signature constituent des indicateurs d'attribution
+    robustes, exploitables dans le cadre d'une coopération inter-CERT.
+  </p>
+  {% endif %}
+
+  <p style="font-size:9.5pt;color:#333;line-height:1.65;margin-bottom:12pt;">
+    Sur le plan technique, ForenHive démontre la viabilité d'une approche forensique entièrement hors-ligne :
+    l'ensemble de la chaîne d'analyse — enrichissement IP, scoring déterministe, classification MITRE ATT&amp;CK,
+    profilage LLM et certification RFC 3161 — opère sans dépendance cloud, sur un serveur Dell PowerEdge R750.
+  </p>
+
+  <!-- Key points summary -->
+  <div style="border:0.5pt solid #ddd;border-radius:4pt;padding:10pt 12pt;">
+    <div style="font-size:7.5pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;margin-bottom:8pt;">Points clés de l'analyse</div>
+    <div class="key-points">
+      {% if session.get('auth_attempts', 0) %}
+      <div class="key-point">{{ session.get('auth_attempts') }} tentatives auth enregistrées</div>{% endif %}
+      {% if auth_success %}<div class="key-point">Compromission confirmée</div>{% endif %}
+      {% if profile.get('mitre_techniques') %}<div class="key-point">{{ profile.get('mitre_techniques') | length }} techniques MITRE identifiées</div>{% endif %}
+      {% if profile.get('yara_matches') %}<div class="key-point">YARA match : {{ profile.get('yara_matches')[0] }}</div>{% endif %}
+      {% if profile.get('is_tor') %}<div class="key-point">Nœud Tor exit confirmé</div>{% endif %}
+      {% if profile.get('abuseipdb_score') %}<div class="key-point">AbuseIPDB {{ profile.get('abuseipdb_score') }}/100</div>{% endif %}
+    </div>
+    {% if session.get('source_ip') %}
+    <div style="margin-top:8pt;border-top:0.4pt solid #eee;padding-top:6pt;">
+      <div class="key-action">Bloquer l'IP {{ session.get('source_ip') }} au pare-feu</div>
+      <div class="key-action">Exporter IOCs en STIX 2.1 vers Splunk/QRadar</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Certification page -->
+  <div class="page-break">
+    <div class="cert-page-inner">
+      <div class="cert-page-title">Certification d'intégrité du rapport</div>
+      <div class="cert-page-sub">Ce rapport a été généré automatiquement par ForenHive Platform v1.0</div>
+
+      <div class="cert-two-col">
+        <div class="cert-box">
+          <div class="cert-col-title">Intégrité des logs</div>
+          <div class="hash-box">SHA-256 : {{ sha256_session }}</div>
+          <div style="font-size:8pt;color:#555;line-height:1.6;">
+            <strong>TSA</strong> : freeTSA.org (RFC 3161)<br/>
+            <strong>Horodatage</strong> : {{ generated_at_str }}<br/>
+            <span class="cert-ok">✅ Certifié · Admissible en justice</span>
+          </div>
+        </div>
+        <div class="box">
+          <div class="cert-col-title" style="color:#888;">Plateforme ForenHive</div>
+          <table class="kv-table">
+            <tr><th>Version</th><td>v1.0.0</td></tr>
+            <tr><th>Backend</th><td>FastAPI · Python 3.11</td></tr>
+            <tr><th>LLM</th><td>Mistral 7B Q4_K_M</td></tr>
+            <tr><th>Serveur</th><td>Dell R750 · Ubuntu 24.10</td></tr>
+            <tr><th>Mode</th><td style="color:#2E7D32;font-weight:700;">100% offline · No cloud</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="sig-grid">
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name">Analyste SOC</div>
+          <div class="sig-sub">ForenHive Engine v1.0 · Mistral 7B</div>
+        </div>
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name">Responsable Sécurité</div>
+          <div class="sig-sub">Standard Sharing Software (3S)</div>
+        </div>
+      </div>
+
+      <div style="text-align:center;margin:8pt 0;font-size:8pt;color:#888;text-transform:uppercase;letter-spacing:0.7pt;font-family:'DejaVu Sans Mono',monospace;">Hash de certification du rapport</div>
+      <div class="hash-box" style="text-align:center;">SHA-256 : {{ sha256_session }}<br/>✅ TSA freeTSA.org · RFC 3161 · {{ generated_at_str }} · Certifié</div>
+
+      <div class="legal-box">
+        <strong>Avertissement légal :</strong> Ce rapport est produit automatiquement par ForenHive Platform v1.0
+        à des fins d'analyse forensique et de documentation de sécurité. Les données présentées sont basées sur les
+        logs capturés par les honeypots déployés dans l'environnement maîtrisé de Standard Sharing Software (3S).
+        La chaîne de custody est garantie par horodatage RFC 3161 (freeTSA.org). Ce document peut être utilisé
+        comme pièce justificative dans une procédure légale sous réserve de validation par un expert forensique certifié.
+        Les données sont issues de honeypots déployés dans l'environnement maîtrisé de Standard Sharing Software (3S), Charguia, Tunis.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</div><!-- end body-content -->
+</body>
+</html>

@@ -1,0 +1,170 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px"> Configuration</div>
+    <h2 class="page-title">System <span>Settings</span></h2>
+    <div class="page-sub">Backend alerting · local honeypot config.</div>
+  </div>
+  <div class="page-actions">
+    <span class="badge gold"> Admin only</span>
+  </div>
+</div>
+
+<div id="cfg-gate"></div>
+
+<div id="cfg-body" class="hide">
+
+  <!-- Alerting (backend) -->
+  <div class="acc open" data-acc>
+    <div class="acc-h"><div class="acc-t"> Alerting (backend)</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="alert-status"><div class="alert info">Loading…</div></div>
+      <div class="grid-2">
+        <div class="form-g"><label class="form-l">Critical score threshold</label><input class="form-i" type="number" min="0" max="100" id="a-threshold"></div>
+        <div class="form-g"><label class="form-l">Recipient email</label><input class="form-i" type="email" id="a-email"></div>
+      </div>
+      <div class="flex items-c" style="justify-content:space-between;margin-top:14px">
+        <div><b>Enable alerting</b><div class="text-3 mono" style="font-size:11px">triggers backend notifications</div></div>
+        <label class="toggle"><input type="checkbox" id="a-enabled"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gh btn-sm" id="a-test"> Send test alert</button>
+        <button class="btn btn-gold btn-sm" id="a-save"> Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert History -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t"> Alert History</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="alert-history"><div class="alert info">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Active Sources -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t"> Active Sources</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div id="sources-info"><div class="alert info">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- API Integrations -->
+  <div class="acc" data-acc>
+    <div class="acc-h"><div class="acc-t"> API Integrations (local preferences)</div><div class="acc-i">▶</div></div>
+    <div class="acc-b">
+      <div class="alert info">These keys are stored locally only (actual configuration is done server-side via <span class="mono">.env</span>).</div>
+      <div class="grid-2">
+        <div class="form-g"><label class="form-l">AbuseIPDB API Key</label><input class="form-i" type="password" data-cfg="int.abuseipdb"></div>
+        <div class="form-g"><label class="form-l">VirusTotal API Key</label><input class="form-i" type="password" data-cfg="int.virustotal"></div>
+        <div class="form-g"><label class="form-l">Shodan API Key</label><input class="form-i" type="password" data-cfg="int.shodan"></div>
+        <div class="form-g"><label class="form-l">MaxMind licence key</label><input class="form-i" type="password" data-cfg="int.maxmind"></div>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn btn-gold btn-sm" data-save="int"> Save locally</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(async function(){
+  const { SOURCE_META, fmt, esc, $, $$ } = FH;
+  const user = FH.Auth.current();
+
+  if (!user || user.role !== 'admin') {
+    $('#cfg-gate').innerHTML = `<div class="alert err"> Access denied. This page is for administrators only.</div>`;
+    return;
+  }
+  $('#cfg-body').classList.remove('hide');
+
+  $$('[data-acc] .acc-h').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+
+  try {
+    const cfg = await api.alertConfig();
+    $('#alert-status').innerHTML = `<div class="alert ok"> Alert config loaded from backend</div>`;
+    $('#a-threshold').value = cfg.threshold ?? cfg.critical_threshold ?? 80;
+    $('#a-email').value = (cfg.recipients && cfg.recipients[0]) || cfg.email || cfg.notify_email || '';
+    $('#a-enabled').checked = cfg.enabled !== false;
+  } catch (e) {
+    $('#alert-status').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  $('#a-save').addEventListener('click', async () => {
+    const btn = $('#a-save'); btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '⟳ Saving…';
+    try {
+      const emailVal = $('#a-email').value.trim();
+      await api.setAlertConfig({
+        threshold: parseInt($('#a-threshold').value, 10),
+        recipients: emailVal ? [emailVal] : [],
+        enabled: $('#a-enabled').checked,
+      });
+      btn.innerHTML = ' Saved'; setTimeout(() => { btn.innerHTML = old; btn.disabled = false; }, 1500);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+      btn.innerHTML = old; btn.disabled = false;
+    }
+  });
+
+  $('#a-test').addEventListener('click', async () => {
+    try {
+      await api.alertTest({ message: 'Test from ForenHive UI' });
+      openModal(`<div class="alert ok"> Test alert sent.</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    } catch (e) {
+      openModal(`<div class="alert err">${esc(e.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+
+  try {
+    const res = await api.alertHistory({ limit: 20 });
+    const items = (res && res.items) || [];
+    $('#alert-history').innerHTML = items.length ? `
+      <table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Target</th><th>Status</th></tr></thead>
+      <tbody>${items.map(a => `
+        <tr><td class="mono" style="font-size:11px">${fmt.date(a.timestamp || a.created_at)}</td>
+        <td>${esc(a.type || a.kind || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc(a.target || a.recipient || '—')}</td>
+        <td>${a.status === 'sent' ? '<span class="badge teal"> sent</span>' : (a.status === 'failed' ? '<span class="badge red"> error</span>' : '<span class="badge gold">'+esc(a.status || '—')+'</span>')}</td>
+        </tr>`).join('')}</tbody></table>` : '<div class="alert info">No alerts in history.</div>';
+  } catch (e) {
+    $('#alert-history').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  try {
+    const split = await api.geoSplit();
+    const arr = (split && split.split) || [];
+    $('#sources-info').innerHTML = `
+      <table class="tbl"><thead><tr><th>Source</th><th>Type</th><th>Description</th><th>Events</th><th>Share</th></tr></thead>
+      <tbody>${arr.map(x => {
+        const meta = SOURCE_META[x.honeypot] || { label: x.honeypot, icon: '', kind: '?', desc: '—' };
+        return `<tr>
+          <td><b>${meta.icon} ${meta.label}</b></td>
+          <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.kind === 'sensor' ? 'NDR Sensor' : 'Honeypot'}</span></td>
+          <td class="mono" style="font-size:11px">${esc(meta.desc)}</td>
+          <td class="mono">${x.count.toLocaleString('en-US')}</td>
+          <td class="mono">${x.percent}%</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch (e) {
+    $('#sources-info').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+  }
+
+  $$('[data-cfg]').forEach(el => {
+    const [section, key] = el.dataset.cfg.split('.');
+    const saved = JSON.parse(localStorage.getItem('fh.config.'+section) || '{}');
+    if (key in saved) el.value = saved[key];
+  });
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-save]'); if (!btn) return;
+    const section = btn.dataset.save;
+    const obj = {};
+    $$(`[data-cfg^="${section}."]`).forEach(el => {
+      const key = el.dataset.cfg.split('.')[1];
+      obj[key] = el.value;
+    });
+    localStorage.setItem('fh.config.'+section, JSON.stringify(obj));
+    const old = btn.innerHTML; btn.innerHTML = ' Saved'; setTimeout(() => { btn.innerHTML = old; }, 1400);
+  });
+})();
+</script>

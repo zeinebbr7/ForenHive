@@ -41,6 +41,8 @@ ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase   VARCHA
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_stage   INTEGER;
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS primary_technique  VARCHAR(20);
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS forensic_narrative TEXT;
+-- updated_at tracks last re-score; used by CoC to detect stale seals
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source_ip    ON forensic_sessions (source_ip);
 CREATE INDEX IF NOT EXISTS idx_sessions_risk_score   ON forensic_sessions (risk_score DESC);
@@ -146,11 +148,30 @@ CREATE INDEX IF NOT EXISTS idx_coc_batch_time ON forensic_coc_batches (tsa_time)
 -- Suspect profiles (aggregated per IP, built by LLM)
 CREATE TABLE IF NOT EXISTS suspect_profiles (
     id          SERIAL      PRIMARY KEY,
-    source_ip   VARCHAR(45) NOT NULL,
+    source_ip   VARCHAR(45) NOT NULL UNIQUE,
     profile     JSONB       NOT NULL,
     risk_score  INTEGER     CHECK (risk_score >= 0 AND risk_score <= 100),
-    created_at  TIMESTAMP   NOT NULL DEFAULT NOW()
+    created_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP   NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_source_ip   ON suspect_profiles (source_ip);
 CREATE INDEX IF NOT EXISTS idx_profiles_risk_score  ON suspect_profiles (risk_score DESC);
+
+-- Migration: ensure UNIQUE constraint exists on existing deployments
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'suspect_profiles_source_ip_key'
+    ) THEN
+        ALTER TABLE suspect_profiles ADD CONSTRAINT suspect_profiles_source_ip_key UNIQUE (source_ip);
+    END IF;
+END $$;
+ALTER TABLE suspect_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+-- Create postgres superuser role so standard DBA tools work
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+        CREATE ROLE postgres SUPERUSER LOGIN;
+    END IF;
+END $$;

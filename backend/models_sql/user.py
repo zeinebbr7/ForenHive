@@ -14,7 +14,6 @@ from db import Base
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     ANALYST = "analyst"
-    VIEWER = "viewer"
 
 
 class User(Base):

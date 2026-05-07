@@ -42,6 +42,8 @@ from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
 from chain_of_custody import ChainOfCustody
+from profiler import AttackerProfiler
+import smb_analyzer
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -444,8 +446,8 @@ def _save_session(session: dict):
                          risk_score, mitre_techniques, enrichment_data,
                          kill_chain_phase, kill_chain_stage,
                          primary_technique, forensic_narrative,
-                         created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (session_id) DO UPDATE
                         SET risk_score         = EXCLUDED.risk_score,
                             enrichment_data    = EXCLUDED.enrichment_data,
@@ -453,7 +455,8 @@ def _save_session(session: dict):
                             kill_chain_phase   = EXCLUDED.kill_chain_phase,
                             kill_chain_stage   = EXCLUDED.kill_chain_stage,
                             primary_technique  = EXCLUDED.primary_technique,
-                            forensic_narrative = EXCLUDED.forensic_narrative
+                            forensic_narrative = EXCLUDED.forensic_narrative,
+                            updated_at         = NOW()
                     """,
                     (
                         session["session_id"],
@@ -491,6 +494,71 @@ class ForensicEngine:
         self.timeline = TimelineBuilder(self.es, _pg_conn)
         self.ioc      = IOCExtractor(_pg_conn)
         self.coc      = ChainOfCustody(_pg_conn)
+
+    # ── Phase 0: SMB analysis ─────────────────────────────────────────────────
+
+    def run_smb_analysis(self, enrichment_cache: dict = None) -> int:
+        """Extract Dionaea SQLite + Zeek NTLM data, build profiles, index to ES."""
+        log.info("=== Phase 0: SMB Forensic Analysis (Dionaea SQLite + Zeek NTLM) ===")
+        db_path = smb_analyzer.DIONAEA_DB
+        if not os.path.exists(db_path):
+            log.info(f"SMB analysis: Dionaea DB not found at {db_path} — skipping")
+            return 0
+        try:
+            dionaea_data = smb_analyzer.extract_dionaea(db_path)
+        except SystemExit:
+            log.warning("SMB analysis: extract_dionaea exited early — skipping")
+            return 0
+        except Exception as e:
+            log.warning(f"SMB analysis: extraction failed — {e}")
+            return 0
+
+        if not dionaea_data:
+            log.info("SMB analysis: no SMB connections found")
+            return 0
+
+        all_ips   = set(dionaea_data.keys())
+        ntlm_data = smb_analyzer.extract_zeek_ntlm(smb_analyzer.ZEEK_LOGS, all_ips)
+
+        # Re-use enrichment already computed in Phase 1 (avoids double API calls)
+        enrichments = enrichment_cache or {}
+
+        profiles = [
+            smb_analyzer.build_profile(
+                ip,
+                dionaea_data[ip],
+                ntlm_data.get(ip, {}),
+                enrichments.get(ip, {}),
+            )
+            for ip in all_ips
+        ]
+        smb_analyzer.index_profiles(self.es, profiles)
+        log.info(f"SMB analysis complete: {len(profiles)} profiles indexed")
+        return len(profiles)
+
+    # ── Phase 7: LLM attacker profiling ──────────────────────────────────────
+
+    def run_profiling(self, scored: list) -> int:
+        """Profile high-risk IPs (>=60) via Ollama/Mistral, max 5 per run."""
+        log.info("=== Phase 7: LLM Attacker Profiling ===")
+        high_risk_ips = list({
+            ip for _, ip, score, _, _ in scored if score >= 60
+        })[:5]
+
+        if not high_risk_ips:
+            log.info("Profiling: no high-risk IPs (score ≥ 60) this run")
+            return 0
+
+        profiler = AttackerProfiler(self.es, _pg_conn)
+        count = 0
+        for ip in high_risk_ips:
+            try:
+                profiler.profile_ip(ip)
+                count += 1
+            except Exception as e:
+                log.warning(f"Profiling failed for {ip}: {e}")
+        log.info(f"Profiling complete: {count}/{len(high_risk_ips)} profiles generated")
+        return count
 
     # ── Timeline build ────────────────────────────────────────────────────────
 
@@ -812,6 +880,10 @@ class ForensicEngine:
         # Phase 1 — IP enrichment
         enrichment_cache = self.run_enrichment(hours_back)
 
+        # Phase 0 — SMB forensic analysis (uses Phase 1 enrichment; must run
+        #            before Phase 3 so _query_smb_profiles() finds data in ES)
+        smb_count = self.run_smb_analysis(enrichment_cache)
+
         # Phase 2a — YARA scan + VT for Dionaea files
         self.run_yara_scan()
 
@@ -828,8 +900,11 @@ class ForensicEngine:
         # Phase 5 — Extract structured IoCs from timeline events
         ioc_stats = self.run_ioc_extraction(hours_back)
 
-        # Phase 6 — Seal new forensic_sessions (SHA-256 + hash chain + RFC 3161)
+        # Phase 6 — Seal new / re-scored forensic_sessions
         coc_stats = self.run_chain_of_custody()
+
+        # Phase 7 — LLM behavioral profiling for high-risk IPs
+        profiled = self.run_profiling(scored)
 
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
@@ -857,9 +932,11 @@ class ForensicEngine:
                  f"(seen: {timeline_stats['seen']})")
         log.info(f"  IoCs extracted : {ioc_stats['extracted']} "
                  f"(from {ioc_stats['rows_scanned']} timeline rows)")
+        log.info(f"  SMB profiles   : {smb_count}")
         log.info(f"  Custody sealed : {coc_stats['sealed']} session(s), "
                  f"batch=#{coc_stats.get('batch_id')}, "
                  f"TSA={coc_stats.get('tsa_status')}")
+        log.info(f"  LLM profiles   : {profiled}")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
@@ -874,6 +951,8 @@ def main():
     parser.add_argument("--timeline-only", action="store_true", help="Build per-IP timeline only")
     parser.add_argument("--ioc-only",      action="store_true", help="Extract IoCs from existing timeline only")
     parser.add_argument("--coc-only",      action="store_true", help="Seal unsealed sessions (chain of custody) only")
+    parser.add_argument("--smb-only",      action="store_true", help="SMB forensic analysis only")
+    parser.add_argument("--profile-only",  action="store_true", help="LLM profiling only (high-risk IPs)")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
     parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
     parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
@@ -911,6 +990,11 @@ def main():
         engine.run_ioc_extraction(args.hours)
     elif args.coc_only:
         engine.run_chain_of_custody()
+    elif args.smb_only:
+        engine.run_smb_analysis()
+    elif args.profile_only:
+        scored = engine.run_session_scoring(args.hours)
+        engine.run_profiling(scored)
     else:
         engine.run_full_analysis(args.hours)
 

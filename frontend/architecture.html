@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForenHive — Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css?v=8">
+<style>
+  body { background: #060810; color: #FFFFFF; font-family: 'Inter',sans-serif; }
+  .pub-nav { position: sticky; top: 0; z-index: 100; display:flex; justify-content:space-between; align-items:center; padding: 14px 6%; background: rgba(11,14,24,.92); backdrop-filter: blur(14px); border-bottom: 1px solid rgba(140,26,43,.18); }
+  .pub-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+  .pub-logo .hex { font-size: 22px; color: #8C1A2B; }
+  .pub-logo .name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; color:#8C1A2B; letter-spacing:2px; }
+  .pub-nav a { color:#E8E8F0; text-decoration:none; margin-left:26px; font-size:14px; font-weight:500; }
+  .pub-nav a:hover { color:#8C1A2B; }
+  .pub-nav a.active { color:#8C1A2B; }
+  .pub-nav .cta { padding:8px 18px; border:1px solid rgba(140,26,43,.4); color:#8C1A2B; border-radius:5px; font-family:'Rajdhani',sans-serif; font-weight:700; letter-spacing:1px; }
+  .pub-nav .cta-primary { background:#8C1A2B; color:#060810; border-color:#8C1A2B; }
+
+  .pub-hero { padding: 90px 6% 30px; text-align:center; }
+  .pub-tag { display:inline-block; font-family:'Share Tech Mono',monospace; font-size:11px; color:#8C1A2B; background:rgba(140,26,43,.08); border:1px solid rgba(140,26,43,.28); padding:5px 14px; border-radius:20px; letter-spacing:2px; }
+  .pub-h1 { font-size: clamp(2.2rem,5vw,4rem); font-weight:700; margin-top:18px; line-height:1.1; }
+  .pub-h1 span { background: linear-gradient(135deg,#8C1A2B,#E8B84B); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .pub-sub { color:#E8E8F0; max-width:680px; margin:18px auto 0; font-size:1.1rem; line-height:1.6; }
+
+  .arch { max-width: 1280px; margin: 50px auto; padding: 0 6%; }
+  .layer { display:grid; grid-template-columns: 100px 1fr; gap: 18px; align-items:stretch; margin-bottom: 14px; }
+  .layer-tag { background: linear-gradient(135deg,#0B0E18,#181C2A); border: 1px solid rgba(140,26,43,.28); border-radius: 8px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 16px 0; }
+  .layer-tag .num { font-family:'Share Tech Mono',monospace; font-size: 24px; color: #8C1A2B; }
+  .layer-tag .lab { font-family:'Share Tech Mono',monospace; font-size: 9px; color:#9AA0B4; letter-spacing:2px; margin-top:4px; }
+  .layer-body { background: linear-gradient(180deg,#0B0E18,#121622); border:1px solid rgba(140,26,43,.14); border-radius: 8px; padding: 18px 22px; }
+  .layer-body h3 { font-family:'Rajdhani',sans-serif; font-size: 1.4rem; color:#8C1A2B; letter-spacing:.5px; }
+  .layer-body p { color:#9AA0B4; font-size: 13px; margin-top: 6px; }
+  .layer-comps { display:flex; flex-wrap:wrap; gap: 8px; margin-top: 12px; }
+  .comp { font-family:'Share Tech Mono',monospace; font-size: 11px; padding: 4px 10px; background: rgba(140,26,43,.08); border:1px solid rgba(140,26,43,.22); color:#8C1A2B; border-radius: 4px; letter-spacing:.5px; }
+  .comp.r { background: rgba(198,40,40,.10); border-color: rgba(198,40,40,.30); color:#EF5350; }
+  .comp.b { background: rgba(21,101,192,.10); border-color: rgba(21,101,192,.30); color:#42A5F5; }
+
+  .flow-arrow { text-align:center; color:#8C1A2B; font-size: 22px; margin: 4px 0; }
+
+  .meta { display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin: 40px 0 80px; }
+  .meta-card { background: linear-gradient(180deg,#0B0E18,#121622); border:1px solid rgba(140,26,43,.14); border-radius: 8px; padding: 16px 18px; }
+  .meta-k { font-family:'Share Tech Mono',monospace; font-size: 9px; color:#9AA0B4; letter-spacing:2px; text-transform:uppercase; }
+  .meta-v { font-family:'Rajdhani',sans-serif; font-size: 1.2rem; color:#8C1A2B; margin-top: 4px; }
+  .meta-v.mono { font-family:'Share Tech Mono',monospace; font-size: 14px; }
+
+  .pub-foot { padding: 30px 6%; border-top: 1px solid rgba(140,26,43,.14); color:#9AA0B4; font-family:'Share Tech Mono',monospace; font-size:11px; text-align:center; letter-spacing:1px; }
+  .pub-foot a { color:#8C1A2B; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<header class="pub-nav">
+  <a class="pub-logo" href="index.html"><span class="hex"></span><span class="name">FORENHIVE</span></a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="features.html">Features</a>
+    <a href="architecture.html" class="active">Architecture</a>
+    <a href="technologies.html">Technologies</a>
+    <a class="cta cta-primary" href="pages/login.html">Login</a>
+  </nav>
+</header>
+
+<section class="pub-hero">
+  <span class="pub-tag"> SYSTEM ARCHITECTURE</span>
+  <h1 class="pub-h1">5 couches <span>indépendantes</span></h1>
+  <p class="pub-sub">Du capteur au rapport  pipeline complet de capture, normalisation, enrichissement, analyse forensique et présentation analyste.</p>
+</section>
+
+<div class="arch">
+
+  <div class="layer">
+    <div class="layer-tag"><div class="num">C1</div><div class="lab">CAPTURE</div></div>
+    <div class="layer-body">
+      <h3> Honeypots & Sensors</h3>
+      <p>Surface d'attaque exposée — capture brute des interactions adverses. Dockerisé, isolé sur réseau <span class="comp">honeypot-net</span>.</p>
+      <div class="layer-comps">
+        <span class="comp">Cowrie  SSH:2222</span>
+        <span class="comp r">Dionaea  SMB:445 + 10 ports</span>
+        <span class="comp b">Galah  HTTP:8080 + Mistral 7B</span>
+        <span class="comp">Zeek  NDR eno12399</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow"></div>
+
+  <div class="layer">
+    <div class="layer-tag"><div class="num">C2</div><div class="lab">ETL</div></div>
+    <div class="layer-body">
+      <h3> Pipeline d'Ingestion</h3>
+      <p>Filebeat tail les logs de chaque honeypot, Logstash normalise vers le schéma ECS, GeoIP enrichit, Elasticsearch indexe quotidiennement.</p>
+      <div class="layer-comps">
+        <span class="comp">Filebeat (tail)</span>
+        <span class="comp">Logstash  main.conf  4 workers</span>
+        <span class="comp b">Elasticsearch  honeypot-logs-YYYY.MM.dd</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow"></div>
+
+  <div class="layer">
+    <div class="layer-tag"><div class="num">C3</div><div class="lab">FORENSIC</div></div>
+    <div class="layer-body">
+      <h3> Forensic Engine</h3>
+      <p>Boucle d'enrichissement, profilage, scoring de risque et scellement cryptographique. Écrit dans PostgreSQL.</p>
+      <div class="layer-comps">
+        <span class="comp">AbuseIPDB  MaxMind  IPLocate</span>
+        <span class="comp r">YARA + VirusTotal</span>
+        <span class="comp">Mistral 7B  MITRE mapping</span>
+        <span class="comp b">Risk score 0-100</span>
+        <span class="comp">SHA-256 + RFC 3161 (TSA)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow"></div>
+
+  <div class="layer">
+    <div class="layer-tag"><div class="num">C4</div><div class="lab">BACKEND</div></div>
+    <div class="layer-body">
+      <h3>️ FastAPI Backend</h3>
+      <p>API REST sécurisée par JWT  double persistance Elasticsearch (logs) + PostgreSQL (utilisateurs, sessions, audit, rapports).</p>
+      <div class="layer-comps">
+        <span class="comp">FastAPI 0.115  async</span>
+        <span class="comp">JWT auth  RBAC (Admin/Analyst)</span>
+        <span class="comp b">PostgreSQL 15  async SQLAlchemy</span>
+        <span class="comp">WeasyPrint  PDF reports</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow"></div>
+
+  <div class="layer">
+    <div class="layer-tag"><div class="num">C5</div><div class="lab">UI</div></div>
+    <div class="layer-body">
+      <h3> Web Console (SPA)</h3>
+      <p>Single-page application (vanilla JS)  sidebar groupée  12 modules  Leaflet pour la carte, Chart.js pour les KPIs.</p>
+      <div class="layer-comps">
+        <span class="comp">Dashboard  Sessions  Timeline</span>
+        <span class="comp r">Alerts  Reconstruction  Evidence</span>
+        <span class="comp b">Geomap  Profiling  Reporting</span>
+        <span class="comp">Honeypots  Access Control</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="meta-card"><div class="meta-k">SERVER</div><div class="meta-v">Dell PowerEdge R750</div></div>
+    <div class="meta-card"><div class="meta-k">OS</div><div class="meta-v mono">Ubuntu 24.10</div></div>
+    <div class="meta-card"><div class="meta-k">RUNTIME</div><div class="meta-v mono">Docker 28.4.0</div></div>
+    <div class="meta-card"><div class="meta-k">NETWORKS</div><div class="meta-v mono">honeypot-net  backend-net</div></div>
+  </div>
+
+</div>
+
+<footer class="pub-foot">
+  PFE 2025/2026  ISET RADÈS  STANDARD SHARING SOFTWARE  <a href="pages/login.html"> ACCÈS PLATEFORME</a>
+</footer>
+
+</body>
+</html>
