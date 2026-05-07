@@ -674,6 +674,61 @@ class ForensicEngine:
         )
         return {"fired": alert_count, "failed": failed_count}
 
+    # ── Phase 9: Unified risk scoring ────────────────────────────────────────
+
+    def _store_unified_risk_score(self, score_data: dict) -> None:
+        """Upsert unified IP-level risk score into forensic_sessions."""
+        synthetic_id = f"unified-{score_data['source_ip']}"
+        try:
+            with _pg_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO forensic_sessions
+                            (session_id, honeypot_type, source_ip,
+                             started_at, ended_at,
+                             risk_score, risk_level, confidence,
+                             signal_breakdown, honeypots_hit, honeypot_count,
+                             sessions_count, mitre_techniques, enrichment_data,
+                             kill_chain_stage, kill_chain_phase,
+                             scored_at, updated_at)
+                        VALUES (%s, 'unified', %s,
+                                NOW(), NOW(),
+                                %s, %s, %s,
+                                %s, %s, %s,
+                                %s, %s::jsonb, %s::jsonb,
+                                0, 'unknown',
+                                NOW(), NOW())
+                        ON CONFLICT (session_id) DO UPDATE SET
+                            risk_score       = EXCLUDED.risk_score,
+                            risk_level       = EXCLUDED.risk_level,
+                            confidence       = EXCLUDED.confidence,
+                            signal_breakdown = EXCLUDED.signal_breakdown,
+                            honeypots_hit    = EXCLUDED.honeypots_hit,
+                            honeypot_count   = EXCLUDED.honeypot_count,
+                            sessions_count   = EXCLUDED.sessions_count,
+                            scored_at        = NOW(),
+                            updated_at       = NOW()
+                        """,
+                        (
+                            synthetic_id,
+                            score_data["source_ip"],
+                            score_data["risk_score"],
+                            score_data["risk_level"],
+                            score_data["confidence"],
+                            json.dumps(score_data.get("signal_breakdown", {})),
+                            score_data.get("honeypots_hit", []),
+                            score_data.get("honeypot_count", 0),
+                            score_data.get("sessions_count", 0),
+                            json.dumps([]),
+                            json.dumps(score_data.get("enrichment_snapshot", {})),
+                        ),
+                    )
+                conn.commit()
+            log.info(f"Unified risk score stored for {score_data['source_ip']}")
+        except Exception as e:
+            log.error(f"Store unified risk score failed for {score_data['source_ip']}: {e}")
+
     # ── Timeline build ────────────────────────────────────────────────────────
 
     def run_timeline_build(self, hours_back: int = 24):
@@ -1024,6 +1079,28 @@ class ForensicEngine:
         log.info("=== Phase 8: Alert Evaluation ===")
         alert_stats = self.run_alert_evaluation(scored)
 
+        # Phase 9 — Unified risk scoring (one score per IP across all honeypots)
+        log.info("=== Phase 9: Unified Risk Scoring (All Honeypots) ===")
+        from risk_score_optimized import RiskScorer
+        scorer = RiskScorer()
+        unique_ips = list({src_ip for _, src_ip, _, _, _ in scored})
+        unified_count = 0
+        for src_ip in unique_ips:
+            try:
+                unified_score = scorer.calculate_risk_score(
+                    source_ip=src_ip,
+                    time_window_hours=hours_back,
+                )
+                log.info(
+                    f"Unified score for {src_ip}: "
+                    f"{unified_score['risk_score']}/{unified_score['risk_level']}"
+                )
+                self._store_unified_risk_score(unified_score)
+                unified_count += 1
+            except Exception as e:
+                log.warning(f"Unified scoring failed for {src_ip}: {e}")
+        log.info(f"Unified scoring complete: {unified_count}/{len(unique_ips)} IPs scored")
+
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
         log.info(f"{'='*60}")
@@ -1056,6 +1133,7 @@ class ForensicEngine:
                  f"TSA={coc_stats.get('tsa_status')}")
         log.info(f"  LLM profiles   : {profiled}")
         log.info(f"  Alerts fired   : {alert_stats.get('fired', 0)} (failed: {alert_stats.get('failed', 0)})")
+        log.info(f"  Unified scores : {unified_count}/{len(unique_ips)} IPs")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
