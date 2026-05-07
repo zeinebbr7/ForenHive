@@ -128,9 +128,49 @@ def _build_score_signals(profile: dict, detail: dict) -> List[dict]:
 
 
 async def _build_forensic_context(session_id: str) -> dict:
+    from sqlalchemy import text
+    from db import session_scope
+
     es = get_es()
     detail = await es.session_detail(session_id) or {}
     source_ip: Optional[str] = detail.get("source_ip")
+
+    # ── Try PostgreSQL forensic_sessions first (forensic engine enriched data) ──
+    pg_row: Dict[str, Any] = {}
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text("""
+                    SELECT session_id, source_ip, honeypot_type, risk_score,
+                           kill_chain_phase, kill_chain_stage, primary_technique,
+                           forensic_narrative, mitre_techniques, started_at
+                    FROM forensic_sessions
+                    WHERE session_id = :sid
+                    LIMIT 1
+                """),
+                {"sid": session_id},
+            )
+            row = result.mappings().fetchone()
+            if row:
+                pg_row = dict(row)
+                # Normalise mitre_techniques to list
+                mt = pg_row.get("mitre_techniques") or []
+                if isinstance(mt, str):
+                    try:
+                        mt = json.loads(mt)
+                    except Exception:
+                        mt = []
+                pg_row["mitre_techniques"] = mt
+                # Fill detail gaps from PG row
+                if not source_ip and pg_row.get("source_ip"):
+                    source_ip = pg_row["source_ip"]
+                    detail.setdefault("source_ip", source_ip)
+                if not detail.get("honeypot") and pg_row.get("honeypot_type"):
+                    detail["honeypot"] = pg_row["honeypot_type"]
+                if not detail.get("started_at") and pg_row.get("started_at"):
+                    detail["started_at"] = pg_row["started_at"]
+    except Exception as exc:
+        log.debug("PG forensic_sessions query failed for %s: %s", session_id, exc)
 
     profile_dict: dict = {}
     if source_ip:
@@ -140,7 +180,11 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
-    risk_score = int(profile_dict.get("risk_score") or 0)
+    # Prefer PG risk_score (forensic engine) over profiler estimate
+    if pg_row.get("risk_score") is not None:
+        risk_score = int(pg_row["risk_score"])
+    else:
+        risk_score = int(profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
 
     now = datetime.now(tz=timezone.utc)
@@ -193,7 +237,11 @@ async def _build_forensic_context(session_id: str) -> dict:
     mitre_seen: set = set()
     mitre_rows = []
 
-    for t_id in (profile_dict.get("mitre_techniques") or []):
+    # PG mitre_techniques take priority over profiler-derived ones
+    pg_mitre = pg_row.get("mitre_techniques") or []
+    mitre_source = pg_mitre if pg_mitre else (profile_dict.get("mitre_techniques") or [])
+
+    for t_id in mitre_source:
         if t_id in mitre_seen:
             continue
         mitre_seen.add(t_id)
@@ -232,16 +280,24 @@ async def _build_forensic_context(session_id: str) -> dict:
         mitre_rows.append({"id": "T1059.004", "technique": "Unix Shell", "tactic": "Execution", "confidence": "100%", "evidence": f"{len(cmds)} commandes exécutées"})
 
     # ── Kill chain stage ──────────────────────────────────
-    kc_reached = 0
-    if logins:
-        kc_reached = max(kc_reached, 3)  # exploitation
-    if auth_success:
-        kc_reached = max(kc_reached, 3)
-    if cmds:
-        kc_reached = max(kc_reached, 4)  # installation
-    for c in cmds:
-        if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
-            kc_reached = max(kc_reached, 5)  # C2
+    # Prefer PG kill_chain_stage (forensic engine) over heuristic
+    if pg_row.get("kill_chain_stage") is not None:
+        kc_reached = int(pg_row["kill_chain_stage"])
+    else:
+        kc_reached = 0
+        if logins:
+            kc_reached = max(kc_reached, 3)  # exploitation
+        if auth_success:
+            kc_reached = max(kc_reached, 3)
+        if cmds:
+            kc_reached = max(kc_reached, 4)  # installation
+        for c in cmds:
+            if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
+                kc_reached = max(kc_reached, 5)  # C2
+
+    # Inject PG forensic narrative into profile so the template picks it up
+    if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
+        profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
     score_signals = _build_score_signals(profile_dict, detail)
@@ -357,9 +413,53 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
     pages expect: session_id, source_ip, honeypot_type, risk_score,
     kill_chain_phase, primary_technique, started_at.
 
-    Backed by /api/sessions data. When the forensic engine has not produced
-    enriched fields yet, sensible defaults are used.
+    Queries PostgreSQL forensic_sessions (written by the forensic engine) first,
+    falls back to raw ES sessions if PostgreSQL is empty or unavailable.
     """
+    from sqlalchemy import text
+    from db import session_scope
+
+    pg_rows: List[Dict[str, Any]] = []
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT session_id, source_ip, honeypot_type,
+                           risk_score, kill_chain_phase, kill_chain_stage,
+                           primary_technique, forensic_narrative,
+                           mitre_techniques, started_at
+                    FROM forensic_sessions
+                    ORDER BY started_at DESC
+                    LIMIT :lim
+                    """
+                ),
+                {"lim": limit},
+            )
+            for row in result.mappings():
+                mitre = row["mitre_techniques"] or []
+                if isinstance(mitre, str):
+                    try:
+                        mitre = json.loads(mitre)
+                    except Exception:
+                        mitre = []
+                pg_rows.append({
+                    "session_id":        row["session_id"],
+                    "source_ip":         row["source_ip"],
+                    "honeypot_type":     row["honeypot_type"],
+                    "risk_score":        row["risk_score"],
+                    "kill_chain_phase":  row["kill_chain_phase"],
+                    "kill_chain_stage":  row["kill_chain_stage"],
+                    "primary_technique": row["primary_technique"],
+                    "started_at":        row["started_at"],
+                })
+    except Exception as exc:
+        log.warning("forensic_sessions: PG query failed (%s), falling back to ES", exc)
+
+    if pg_rows:
+        return pg_rows
+
+    # Fallback: raw ES sessions (no forensic engine data yet)
     rows = await get_es().sessions(limit=limit, active_only=False)
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -387,15 +487,15 @@ async def forensic_generate(request: Request, session_id: str):
     except ImportError:
         raise HTTPException(status_code=503, detail="WeasyPrint not installed")
 
-    detail = await get_es().session_detail(session_id)
-    if not detail:
-        raise HTTPException(status_code=404, detail="session not found")
-
     try:
         ctx = await _build_forensic_context(session_id)
     except Exception as exc:
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
@@ -437,14 +537,15 @@ async def forensic_generate(request: Request, session_id: str):
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
     """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""
-    detail = await get_es().session_detail(session_id)
-    if not detail:
-        raise HTTPException(status_code=404, detail="session not found")
     try:
         ctx = await _build_forensic_context(session_id)
     except Exception as exc:
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),

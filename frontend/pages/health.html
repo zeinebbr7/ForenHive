@@ -55,6 +55,7 @@
 </div>
 
 <div style="font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.4px;margin-bottom:10px;">Services &amp; Containers</div>
+<div id="svc-chart-root" style="margin-bottom:10px"></div>
 <div class="hc-svc-grid mb-20" id="svc-grid">
   <div class="alert info" style="grid-column:1/-1">Checking services…</div>
 </div>
@@ -135,6 +136,10 @@
 (async function(){
   const { fmt, esc, $ } = FH;
   const { evNormalize } = FH;
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+  let __protoRoot = null, __ipsRoot = null, __svcRoot = null;
 
   const SVC_META = {
     api:           { name:'Backend API',    icon:'API', layer:'c4', desc:'FastAPI · Python 3.11' },
@@ -182,15 +187,50 @@
       $('#kpi-zeek-weird').textContent = fmt.num(weirdCount);
       $('#kpi-zeek-ips').textContent   = fmt.num(Object.keys(ipCounts).length);
       const topProto = Object.entries(protoCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
-      const maxP = topProto[0] ? topProto[0][1] : 1;
-      $('#zeek-protos').innerHTML = topProto.length
-        ? topProto.map(([p,c]) => `<div class="bar-row"><span class="lab">${esc(p)}</span><div class="bar-track"><div class="bar-fill" style="width:${(c/maxP)*100}%"></div></div><span class="v">${c}</span></div>`).join('')
-        : '<div class="alert info">No Zeek events.</div>';
       const topIp = Object.entries(ipCounts).sort((a,b) => b[1]-a[1]).slice(0, 10);
-      const maxI = topIp[0] ? topIp[0][1] : 1;
-      $('#zeek-ips').innerHTML = topIp.length
-        ? topIp.map(([ip,c]) => `<div class="bar-row"><span class="lab" style="color:var(--blue2)">${esc(ip)}</span><div class="bar-track"><div class="bar-fill" style="width:${(c/maxI)*100}%"></div></div><span class="v">${c}</span></div>`).join('')
-        : '<div class="alert info">No source IPs.</div>';
+
+      // Protocols chart
+      const protoData = topProto.map(([p,c])=>({proto:p, count:c}));
+      if (R && RD && RC && protoData.length) {
+        const hh = R.createElement;
+        function ProtoChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(120, protoData.length*28+20)},
+            hh(RC.BarChart,{data:protoData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'proto',width:100,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' events','Count']}),
+              hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:14,fill:'#50a0ffbb'})
+            )
+          );
+        }
+        if (!__protoRoot) __protoRoot = RD.createRoot($('#zeek-protos'));
+        __protoRoot.render(hh(ProtoChart,null));
+      } else {
+        $('#zeek-protos').innerHTML = protoData.length ? '' : '<div class="alert info">No Zeek events.</div>';
+      }
+
+      // Top IPs chart
+      const ipData = topIp.map(([ip,c])=>({ip, count:c}));
+      if (R && RD && RC && ipData.length) {
+        const hh = R.createElement;
+        function IpsChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(140, ipData.length*28+20)},
+            hh(RC.BarChart,{data:ipData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'ip',width:130,tick:{...AXIS_TICK,fill:'#50a0ff'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' events','Count']}),
+              hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:14,fill:'#8C1A2Bbb'})
+            )
+          );
+        }
+        if (!__ipsRoot) __ipsRoot = RD.createRoot($('#zeek-ips'));
+        __ipsRoot.render(hh(IpsChart,null));
+      } else {
+        $('#zeek-ips').innerHTML = ipData.length ? '' : '<div class="alert info">No source IPs.</div>';
+      }
+
       $('#zeek-stream').innerHTML = normalized.slice(0, 20).length
         ? normalized.slice(0, 20).map(n => `<div class="zlog"><span class="t">${fmt.time(n.timestamp)}</span><span class="ip">${esc(n.source_ip || '—')}</span><span class="m">${esc(n.message || n.event_action || '—')}${n.dest_port ? ' → :'+esc(n.dest_port) : ''}</span></div>`).join('')
         : '<div class="alert info">No events.</div>';
@@ -230,6 +270,32 @@
           <div class="hc-svc-detail">${esc(detail||meta.desc||(status==='unknown'?'not exposed by /health':'—'))}</div>
         </div>`;
       }).join('');
+      // Services overview Recharts bar
+      if (R && RD && RC) {
+        const hh = R.createElement;
+        const svcData = entries.map(([name, st]) => {
+          const status = (typeof st==='string') ? st : (st.status||'unknown');
+          const meta = SVC_META[name] || { name, icon:'⬡' };
+          const col = DOTCLS[status]==='up' ? '#00bfa5cc' : DOTCLS[status]==='down' ? '#c93d55cc' : '#e8b84bcc';
+          const val = DOTCLS[status]==='up' ? 3 : DOTCLS[status]==='down' ? 1 : 2;
+          return { name: meta.name || name, status, col, val };
+        });
+        function SvcChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(80, svcData.length*20+10)},
+            hh(RC.BarChart,{data:svcData,layout:'vertical',margin:{top:0,right:80,bottom:0,left:0}},
+              hh(RC.XAxis,{type:'number',hide:true,domain:[0,3]}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:130,tick:{...AXIS_TICK,fill:'#c8d0de'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:(_,__,props)=>[props.payload.status.toUpperCase(),'Status']}),
+              hh(RC.Bar,{dataKey:'val',name:'Status',radius:[0,3,3,0],barSize:11},
+                ...svcData.map((d,i)=>hh(RC.Cell,{key:i,fill:d.col}))
+              )
+            )
+          );
+        }
+        if (!__svcRoot) __svcRoot = RD.createRoot(document.getElementById('svc-chart-root'));
+        __svcRoot.render(hh(SvcChart,null));
+      }
+
       const stOf = name => { const v=components[name]; return typeof v==='string'?v:(v&&v.status)||'unknown'; };
       const c1 = ['cowrie','dionaea','galah','zeek'].map(stOf);
       setPipeDot('#pdot-c1', c1.includes('up')?'up':c1.includes('down')?'warn':'warn');
@@ -270,5 +336,11 @@
 
   $('#refresh-now').addEventListener('click', refreshAll);
   await refreshAll();
+
+  window.__pageCleanup = () => {
+    if (__protoRoot) { __protoRoot.unmount(); __protoRoot = null; }
+    if (__ipsRoot)   { __ipsRoot.unmount();   __ipsRoot = null; }
+    if (__svcRoot)   { __svcRoot.unmount();   __svcRoot = null; }
+  };
 })();
 </script>

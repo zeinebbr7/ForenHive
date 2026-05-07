@@ -576,6 +576,104 @@ class ForensicEngine:
         log.info(f"Profiling complete: {count}/{len(high_risk_ips)} profiles generated")
         return count
 
+    # ── Phase 8: Alert evaluation ─────────────────────────────────────────────
+
+    def run_alert_evaluation(self, scored: list) -> dict:
+        """Index alerts for sessions with risk_score >= 60 into forenhive-alerts ES index."""
+        log.info("Evaluating sessions for alerts...")
+        alert_count = 0
+        failed_count = 0
+
+        for session_id, source_ip, risk_score, level, honeypot_type in scored:
+            if risk_score < 60:
+                continue
+
+            try:
+                # Fetch enrichment from PostgreSQL
+                enrich = {}
+                attempts = 0
+                mitre_raw = []
+                try:
+                    with _pg_conn() as conn:
+                        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                            cur.execute(
+                                "SELECT enrichment_data, mitre_techniques FROM forensic_sessions WHERE session_id = %s",
+                                (session_id,),
+                            )
+                            row = cur.fetchone()
+                            if row:
+                                enrich = row["enrichment_data"] or {}
+                                mitre_raw = row["mitre_techniques"] or []
+                                if isinstance(mitre_raw, str):
+                                    mitre_raw = json.loads(mitre_raw)
+                except Exception as pg_err:
+                    log.debug(f"PG lookup failed for {session_id}: {pg_err}")
+
+                # Normalise MITRE tags to plain strings
+                mitre_tags = []
+                for t in (mitre_raw if isinstance(mitre_raw, list) else []):
+                    if isinstance(t, dict):
+                        tid = t.get("id") or t.get("technique_id", "")
+                        if tid:
+                            mitre_tags.append(tid)
+                    elif isinstance(t, str):
+                        mitre_tags.append(t)
+
+                # Geo / reputation fields
+                geo = enrich.get("geo", {}) or {}
+                reputation = enrich.get("reputation", {}) or {}
+                threat = enrich.get("threat_summary", {}) or {}
+
+                country = (
+                    geo.get("country_code")
+                    or reputation.get("country_code")
+                    or enrich.get("attribution", {}).get("country_code")
+                    or None
+                )
+                abuseipdb_score = int(reputation.get("abuse_score") or 0)
+
+                yara_matches = enrich.get("yara_matches") or []
+                yara_match = yara_matches[0] if yara_matches else None
+
+                threat_type = threat.get("tier") or "suspicious_activity"
+
+                alert_doc = {
+                    "id": session_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "severity": level.lower(),
+                    "threat_type": threat_type,
+                    "source_ip": source_ip,
+                    "country": country,
+                    "honeypot": honeypot_type,
+                    "risk_score": int(risk_score),
+                    "attempts": int(attempts),
+                    "mitre_tags": mitre_tags,
+                    "yara_match": yara_match,
+                    "abuseipdb_score": abuseipdb_score,
+                    "ioc_hash": None,
+                    "tsa_timestamp": None,
+                    "mistral_analysis": None,
+                    "recipients": [],
+                    "dispatched": False,
+                    "dispatch_error": None,
+                }
+
+                self.es.index(index="forenhive-alerts", id=session_id, body=alert_doc)
+                alert_count += 1
+                log.info(
+                    f"Alert fired for {source_ip} "
+                    f"(session {session_id[:12]}..., score={risk_score})"
+                )
+
+            except Exception as e:
+                log.warning(f"Alert fire failed for session {session_id}: {e}")
+                failed_count += 1
+
+        log.info(
+            f"Alert evaluation complete: {alert_count} fired, {failed_count} failed"
+        )
+        return {"fired": alert_count, "failed": failed_count}
+
     # ── Timeline build ────────────────────────────────────────────────────────
 
     def run_timeline_build(self, hours_back: int = 24):
@@ -922,6 +1020,10 @@ class ForensicEngine:
         # Phase 7 — LLM behavioral profiling for high-risk IPs
         profiled = self.run_profiling(scored)
 
+        # Phase 8 — Alert evaluation (fire alerts for high-risk sessions)
+        log.info("=== Phase 8: Alert Evaluation ===")
+        alert_stats = self.run_alert_evaluation(scored)
+
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
         log.info(f"{'='*60}")
@@ -953,6 +1055,7 @@ class ForensicEngine:
                  f"batch=#{coc_stats.get('batch_id')}, "
                  f"TSA={coc_stats.get('tsa_status')}")
         log.info(f"  LLM profiles   : {profiled}")
+        log.info(f"  Alerts fired   : {alert_stats.get('fired', 0)} (failed: {alert_stats.get('failed', 0)})")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 

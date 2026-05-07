@@ -51,6 +51,11 @@
 <script>
 (async function(){
   const { SOURCE_META, fmt, esc, $, $$, flag, evNormalize } = FH;
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+  const HP_COLORS = { dionaea:'#ff5050', cowrie:'#8C1A2B', galah:'#b464ff', zeek:'#50a0ff' };
+  let __countryRoot = null, __ipChartRoot = null;
 
   const map = L.map('map', {
     center: [20, 10], zoom: 2, zoomControl: true, attributionControl: false,
@@ -139,24 +144,54 @@
       byCountry[k].count += d.count; byCountry[k].ips++;
     });
     const countries = Object.values(byCountry).sort((a,b) => b.count - a.count);
-    const maxC = countries[0] ? countries[0].count : 1;
-    $('#geo-countries').innerHTML = `
-      <table class="tbl"><thead><tr><th>Country</th><th>IPs</th><th>Events</th><th style="width:80px"></th></tr></thead>
-      <tbody>${countries.map(c => `<tr>
-        <td>${flag(c.code)} ${esc(c.name)}</td><td class="mono">${c.ips}</td><td class="mono">${c.count}</td>
-        <td><div style="background:rgba(140,26,43,.15);border-radius:3px;height:5px;overflow:hidden">
-          <div style="background:var(--gold);height:100%;width:${Math.round(c.count/maxC*100)}%"></div></div></td>
-      </tr>`).join('')}</tbody></table>`;
 
-    $('#geo-ips').innerHTML = `
-      <table class="tbl"><thead><tr><th>IP</th><th>Location</th><th>Events</th></tr></thead>
-      <tbody>${ipList.slice(0,15).map(d => `
+    // Countries Recharts chart
+    const countryBarData = countries.slice(0,12).map(c=>({
+      name: flag(c.code)+' '+c.name.slice(0,12),
+      count: c.count,
+      ips: c.ips,
+    }));
+    if (R && RD && RC && countryBarData.length) {
+      const hh = R.createElement;
+      function CountryChart() {
+        return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(180, countryBarData.length*30+20)},
+          hh(RC.BarChart,{data:countryBarData,layout:'vertical',margin:{top:0,right:40,bottom:0,left:0}},
+            hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+            hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+            hh(RC.YAxis,{type:'category',dataKey:'name',width:160,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+            hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:(v,n,p)=>[v+' events ('+p.payload.ips+' IPs)','Events']}),
+            hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:16,fill:'#8C1A2Bbb',label:{position:'right',style:{fill:'#8892a4',fontSize:10,fontFamily:"'JetBrains Mono',monospace"},formatter:v=>v}})
+          )
+        );
+      }
+      if (!__countryRoot) __countryRoot = RD.createRoot($('#geo-countries'));
+      __countryRoot.render(hh(CountryChart,null));
+    } else {
+      $('#geo-countries').innerHTML = countryBarData.length ? '' : '<div class="alert info">No geolocated IPs in the last 7 days.</div>';
+    }
+
+    // Keep table for click-to-fly, but prepend a mini chart
+    const ipBarData = ipList.slice(0,8).map(d=>({
+      ip: flag(d.geo.country_code)+' '+d.ip,
+      count: d.count,
+      color: HP_COLORS[d.honeypot]||'#888',
+      rawIp: d.ip,
+    }));
+
+    let ipsHTML = '';
+    if (R && RD && RC && ipBarData.length) {
+      ipsHTML = '<div id="geo-ip-chart-root" style="margin-bottom:12px"></div>';
+    }
+    ipsHTML += `<table class="tbl"><thead><tr><th>IP</th><th>Location</th><th>Events</th></tr></thead>
+      <tbody>${ipList.slice(0,15).map(d=>`
         <tr class="geo-ip-row" data-ip="${esc(d.ip)}" style="cursor:pointer">
           <td class="mono" style="font-size:11px">${esc(d.ip)}</td>
           <td style="font-size:11px">${flag(d.geo.country_code)} ${esc(d.geo.country_name)}${d.geo.city?' · '+esc(d.geo.city):''}</td>
           <td><span class="badge ${d.honeypot==='zeek'?'blue':d.honeypot==='dionaea'?'red':'gold'}">${d.count}</span></td>
         </tr>`).join('')}</tbody></table>`;
+    $('#geo-ips').innerHTML = ipsHTML;
 
+    // Re-attach click handlers
     $$('.geo-ip-row').forEach(row => {
       row.addEventListener('click', () => {
         const marker = markerMap[row.dataset.ip]; if (!marker) return;
@@ -165,6 +200,32 @@
         setTimeout(() => marker.openPopup(), 1100);
       });
     });
+
+    // Render IP bar chart
+    const ipChartEl = document.getElementById('geo-ip-chart-root');
+    if (ipChartEl && R && RD && RC && ipBarData.length) {
+      const hh = R.createElement;
+      function IpChart() {
+        return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(120, ipBarData.length*24+20)},
+          hh(RC.BarChart,{data:ipBarData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+            hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+            hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+            hh(RC.YAxis,{type:'category',dataKey:'ip',width:155,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+            hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' events','Count']}),
+            hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:12},
+              ...ipBarData.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'bb'}))
+            )
+          )
+        );
+      }
+      if (!__ipChartRoot) __ipChartRoot = RD.createRoot(ipChartEl);
+      __ipChartRoot.render(hh(IpChart,null));
+    }
+
+    window.__pageCleanup = () => {
+      if (__countryRoot) { __countryRoot.unmount(); __countryRoot = null; }
+      if (__ipChartRoot) { __ipChartRoot.unmount(); __ipChartRoot = null; }
+    };
   } catch (e) {
     console.error('GeoMap error:', e);
     $('#geo-badge').textContent = 'Error';

@@ -16,6 +16,8 @@
   <div class="kpi b"><div class="kpi-label">Avg Score</div><div class="kpi-val" id="p-k-avg">—</div><div class="kpi-delta">out of 100</div></div>
 </div>
 
+<div id="p-charts-root" style="margin-bottom:14px"></div>
+
 <div class="filters" id="p-filters" style="margin-bottom:14px">
   <button class="btn btn-gh btn-sm p-filter active" data-sev="ALL">All</button>
   <button class="btn btn-gh btn-sm p-filter" data-sev="CRITICAL">CRITICAL</button>
@@ -375,6 +377,8 @@
     return `<div class="sect-h">${esc(title)}</div>${rows}`;
   }
 
+  const HP_COLORS_P = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff', zeek:'#50a0ff' };
+
   function renderDetail(p) {
     const sev = p.severity || 'LOW';
     const soph = SOPH_MAP[p.sophistication] || null;
@@ -382,103 +386,220 @@
     const confidencePct = p.confidence != null ? Math.round(Number(p.confidence) * 100) : null;
     const ts = p.last_seen || p.first_seen;
     const dossierNum = STATE.activeId != null ? `#${STATE.activeId}` : '';
+    const score = Number(p.risk_score) || 0;
 
-    const geoProfile = {};
-    if (p.country)   geoProfile.country      = p.country;
-    if (p.city)      geoProfile.city         = p.city;
-    if (p.asn)       geoProfile.asn          = String(p.asn);
-    if (p.as_org)    geoProfile.organization = p.as_org;
-    if (p.is_tor)    geoProfile.tor          = 'yes';
-    if (p.is_vpn)    geoProfile.vpn          = 'yes';
-    if (p.abuseipdb_score != null) geoProfile.abuseipdb = `${p.abuseipdb_score}/100 (${p.abuseipdb_reports ?? 0} reports)`;
+    const sevColor = { CRITICAL:'var(--red2)', HIGH:'var(--gold)', MEDIUM:'var(--blue2)', LOW:'var(--text3)' }[sev] || 'var(--text3)';
+    const sevBg    = { CRITICAL:'rgba(201,61,85,.1)', HIGH:'rgba(232,184,75,.08)', MEDIUM:'rgba(106,176,255,.08)', LOW:'rgba(154,160,180,.04)' }[sev];
 
-    const activityProfile = {};
-    if (p.event_count)   activityProfile.events             = p.event_count;
-    if (p.session_count) activityProfile.sessions           = p.session_count;
-    if (Array.isArray(p.honeypots) && p.honeypots.length) activityProfile.honeypots_targeted = p.honeypots;
-    if (p.first_seen)    activityProfile.first_contact      = new Date(p.first_seen).toLocaleString('en-US');
-    if (p.last_seen)     activityProfile.last_contact       = new Date(p.last_seen).toLocaleString('en-US');
+    // Geo line
+    const geoParts = [];
+    if (p.country) geoParts.push(flag(p.country) + ' ' + esc(p.country));
+    if (p.city)    geoParts.push(esc(p.city));
+    if (p.asn)     geoParts.push('AS' + esc(String(p.asn)));
+    if (p.as_org)  geoParts.push(esc(p.as_org));
+    if (p.is_tor)  geoParts.push('<span style="color:var(--red2);font-weight:700">TOR</span>');
+    if (p.is_vpn)  geoParts.push('<span style="color:var(--gold);font-weight:700">VPN</span>');
+
+    // Mini stats tiles
+    const tiles = [];
+    if (p.event_count)   tiles.push(['Events',   fmt.num(p.event_count)]);
+    if (p.session_count) tiles.push(['Sessions', fmt.num(p.session_count)]);
+    if (p.abuseipdb_score != null && p.abuseipdb_score > 0) tiles.push(['AbuseIPDB', `${p.abuseipdb_score}/100`]);
+    if (p.first_seen)    tiles.push(['First Seen', fmt.ago(p.first_seen) + ' ago']);
+    if (p.last_seen)     tiles.push(['Last Seen',  fmt.ago(p.last_seen) + ' ago']);
+
+    const tileHtml = tiles.length ? `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:18px">
+        ${tiles.map(([l,v]) => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px 10px">
+          <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px">${l}</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--text1)">${v}</div>
+        </div>`).join('')}
+      </div>` : '';
+
+    // Flex-wrapped tag helper
+    const flexTags = (arr, style='') => arr.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${arr.map(t => `<span class="trait-tag" ${style}>${esc(String(t))}</span>`).join('')}</div>`
+      : '';
+
+    // Honeypot colored badges
+    const hpBadges = Array.isArray(p.honeypots) && p.honeypots.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${p.honeypots.map(hp => {
+          const col = HP_COLORS_P[hp] || '#888';
+          return `<span class="trait-tag" style="border-color:${col}55;color:${col}">${esc(hp)}</span>`;
+        }).join('')}</div>` : '';
+
+    // Only show kill chain if score > 0 or LLM explicitly set it
+    const showKC = score > 0 || (p.kill_chain_stage && p.kill_chain_stage !== 'actions_on_objectives');
 
     $('#p-detail').innerHTML = `
-      <div class="card">
-        <div class="card-h" style="align-items:flex-start">
-          <div>
-            <div class="card-t" style="font-size:18px">${esc(p.source_ip || p.ip || '—')}</div>
-            <div class="card-sub">Dossier ${esc(dossierNum)} · ${ts ? fmt.ago(ts) + ' ago' : '—'}</div>
+      <div class="card" style="padding:0;overflow:hidden">
+
+        <!-- Header -->
+        <div style="background:${sevBg};border-bottom:2px solid ${sevColor}44;padding:18px 20px;display:flex;align-items:flex-start;gap:16px">
+          <div style="flex:1;min-width:0">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:var(--text1);margin-bottom:5px">${esc(p.source_ip || p.ip || '—')}</div>
+            <div style="font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;line-height:1.6">
+              Dossier ${esc(dossierNum)}${ts ? ' · ' + esc(fmt.ago(ts)) + ' ago' : ''}
+              ${geoParts.length ? '<br>' + geoParts.join(' · ') : ''}
+            </div>
           </div>
-          <div style="text-align:right">
-            <div class="p-card-score sev-${sev}" style="font-size:32px">${p.risk_score ?? 0}</div>
-            <div class="card-sub" style="margin-top:4px">${sev}</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-family:'Rajdhani',sans-serif;font-size:40px;font-weight:800;color:${sevColor};line-height:1">${score}</div>
+            <div style="font-size:10px;font-family:'Share Tech Mono',monospace;color:${sevColor};letter-spacing:1.2px;text-transform:uppercase;margin-top:2px">${sev}</div>
           </div>
         </div>
 
-        <div class="flex gap-8 mb-12" style="flex-wrap:wrap;align-items:center">
-          ${soph ? `<span class="sev-badge ${soph.cls}">${soph.text}</span>` : ''}
-          ${actor ? `<span class="trait-tag">${esc(actor)}</span>` : ''}
-          ${confidencePct != null ? `<span class="trait-tag">Confidence ${confidencePct}%</span>` : ''}
-          ${p.is_tor ? `<span class="trait-tag" style="color:var(--red2);border-color:rgba(201,61,85,.3)">TOR</span>` : ''}
-          ${p.is_vpn ? `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">VPN</span>` : ''}
-          ${p.recidivism && p.recidivism.seen_before ? `<span class="trait-tag" style="border-color:var(--border2);color:var(--gold)">Recidivism (${p.recidivism.previous_sessions ?? '?'})</span>` : ''}
+        <div style="padding:16px 20px">
+
+          <!-- Badges row -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">
+            ${soph ? `<span class="sev-badge ${soph.cls}">${soph.text}</span>` : ''}
+            ${actor ? `<span class="trait-tag">${esc(actor)}</span>` : ''}
+            ${confidencePct != null ? `<span class="trait-tag">Confidence ${confidencePct}%</span>` : ''}
+            ${p.recidivism && p.recidivism.seen_before ? `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">Recidivism ×${p.recidivism.previous_sessions ?? '?'}</span>` : ''}
+          </div>
+
+          ${tileHtml}
+
+          ${hpBadges ? `<div class="sect-h">Honeypots Targeted</div>${hpBadges}<div style="margin-bottom:16px"></div>` : ''}
+
+          ${p.detective_narrative || p.mistral_analysis ? `
+            <div class="sect-h">Forensic Analysis</div>
+            <div class="narrative" style="margin-bottom:16px">${esc(p.detective_narrative || p.mistral_analysis)}</div>` : ''}
+
+          ${showKC ? `<div class="sect-h">Kill Chain</div>${killChain(p, sev)}<div style="margin-bottom:4px"></div>` : ''}
+
+          ${p.organised_score != null && score > 0 ? `
+            <div class="sect-h">Organization Level</div>${organisedBar(p)}` : ''}
+
+          ${(Array.isArray(p.top_usernames) && p.top_usernames.length) || (Array.isArray(p.top_passwords) && p.top_passwords.length) ? `
+            <div class="sect-h">Attempted Credentials</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+              ${Array.isArray(p.top_usernames) && p.top_usernames.length ? `
+                <div>
+                  <div style="font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Usernames</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:5px">${p.top_usernames.map(u => `<span class="trait-tag" style="font-family:'JetBrains Mono',monospace;font-size:11px">${esc(u)}</span>`).join('')}</div>
+                </div>` : ''}
+              ${Array.isArray(p.top_passwords) && p.top_passwords.length ? `
+                <div>
+                  <div style="font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Passwords</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:5px">${p.top_passwords.map(pw => `<span class="trait-tag" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red2);border-color:rgba(201,61,85,.25)">${esc(pw)}</span>`).join('')}</div>
+                </div>` : ''}
+            </div>` : ''}
+
+          ${Array.isArray(p.top_commands) && p.top_commands.length ? `
+            <div class="sect-h">Executed Commands</div>
+            <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px">
+              ${p.top_commands.map(cmd => `<div style="padding:4px 10px;border-radius:4px;background:rgba(0,0,0,.35);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2)">$ ${esc(cmd)}</div>`).join('')}
+            </div>` : ''}
+
+          ${Array.isArray(p.mitre_techniques) && p.mitre_techniques.length ? `
+            <div class="sect-h">MITRE ATT&amp;CK</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">
+              ${p.mitre_techniques.map(t => `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2);font-family:'JetBrains Mono',monospace;font-size:11px">${esc(String(t))}</span>`).join('')}
+            </div>` : ''}
+
+          ${Array.isArray(p.yara_matches) && p.yara_matches.length ? `
+            <div class="sect-h">YARA Matches</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">${p.yara_matches.map(y => `<span class="trait-tag" style="color:var(--red2);border-color:rgba(201,61,85,.3)">${esc(String(y))}</span>`).join('')}</div>` : ''}
+
+          ${Array.isArray(p.behavioral_traits) && p.behavioral_traits.length ? `
+            <div class="sect-h">Behavioral Traits</div>
+            ${flexTags(p.behavioral_traits)}<div style="margin-bottom:16px"></div>` : ''}
+
+          ${Array.isArray(p.signature_behaviors) && p.signature_behaviors.length ? `
+            <div class="sect-h">Behavioral Signatures</div>
+            ${flexTags(p.signature_behaviors)}<div style="margin-bottom:16px"></div>` : ''}
+
+          ${kvSection('Modus Operandi', p.modus_operandi)}
+          ${kvSection('Locard Traces', p.locard_traces)}
+
+          ${p.recommended_action ? `
+            <div class="sect-h">Recommended Action</div>
+            <div class="action-box" style="margin-bottom:16px">${esc(p.recommended_action)}</div>` : ''}
+
+          <details style="margin-top:8px">
+            <summary style="cursor:pointer;color:var(--text3);font-size:11px;font-family:'JetBrains Mono',monospace;user-select:none">▶ Raw JSON dossier</summary>
+            <pre class="pre" style="max-height:300px;overflow:auto;margin-top:8px;font-size:10px">${esc(JSON.stringify(p, null, 2))}</pre>
+          </details>
+
         </div>
-
-        ${p.detective_narrative || p.mistral_analysis ? `
-          <div class="sect-h">Forensic Analysis</div>
-          <div class="narrative">${esc(p.detective_narrative || p.mistral_analysis)}</div>` : ''}
-
-        <div class="sect-h">Kill Chain</div>
-        ${killChain(p, sev)}
-
-        ${p.organised_score != null ? `
-          <div class="sect-h">Organization</div>
-          ${organisedBar(p)}` : ''}
-
-        ${Object.keys(activityProfile).length ? kvSection('Activity', activityProfile) : ''}
-        ${Object.keys(geoProfile).length ? kvSection('Geographic Profile', geoProfile) : ''}
-
-        ${Array.isArray(p.behavioral_traits) && p.behavioral_traits.length ? `
-          <div class="sect-h">Behavioral Traits</div>
-          <div>${listOrNA(p.behavioral_traits)}</div>` : ''}
-
-        ${Array.isArray(p.signature_behaviors) && p.signature_behaviors.length ? `
-          <div class="sect-h">Behavioral Signatures</div>
-          <div>${listOrNA(p.signature_behaviors)}</div>` : ''}
-
-        ${Array.isArray(p.top_commands) && p.top_commands.length ? `
-          <div class="sect-h">Executed Commands</div>
-          <div>${listOrNA(p.top_commands)}</div>` : ''}
-
-        ${Array.isArray(p.top_usernames) && p.top_usernames.length ? `
-          <div class="sect-h">Attempted Usernames</div>
-          <div>${listOrNA(p.top_usernames)}</div>` : ''}
-
-        ${Array.isArray(p.top_passwords) && p.top_passwords.length ? `
-          <div class="sect-h">Attempted Passwords</div>
-          <div>${listOrNA(p.top_passwords)}</div>` : ''}
-
-        ${Array.isArray(p.mitre_techniques) && p.mitre_techniques.length ? `
-          <div class="sect-h">MITRE ATT&amp;CK</div>
-          <div>${p.mitre_techniques.map(t => `<span class="trait-tag" style="color:var(--gold);border-color:var(--border2)">${esc(String(t))}</span>`).join('')}</div>` : ''}
-
-        ${Array.isArray(p.yara_matches) && p.yara_matches.length ? `
-          <div class="sect-h">YARA Matches</div>
-          <div>${listOrNA(p.yara_matches)}</div>` : ''}
-
-        ${kvSection('Modus Operandi', p.modus_operandi)}
-        ${kvSection('Locard Traces', p.locard_traces)}
-        ${kvSection('Recidivism', p.recidivism)}
-
-        ${p.recommended_action ? `
-          <div class="sect-h">Recommended Action</div>
-          <div class="action-box">${esc(p.recommended_action)}</div>` : ''}
-
-        <details style="margin-top:20px">
-          <summary style="cursor:pointer;color:var(--text3);font-size:12px;font-family:'JetBrains Mono',monospace">Raw Dossier (JSON)</summary>
-          <pre class="pre" style="max-height:340px;overflow:auto;margin-top:10px">${esc(JSON.stringify(p, null, 2))}</pre>
-        </details>
       </div>`;
   }
 
-  $('#p-refresh').addEventListener('click', () => { loadStats(); loadList(); });
+  function renderProfileCharts() {
+    const chartEl = document.getElementById('p-charts-root');
+    if (!chartEl || !window.React || !window.ReactDOM || !window.Recharts) return;
+    if (!STATE.profiles.length) return;
+
+    const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+    const hh = R.createElement;
+    const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+    const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+    const SEV_COLORS = { CRITICAL:'#ff5050', HIGH:'#ff9933', MEDIUM:'#f59e0b', LOW:'#2dd4bf' };
+    const SOPH_COLORS = { low:'#8892a4', intermediate:'#50a0ff', high:'#ff9933', apt:'#ff5050' };
+
+    // severity distribution
+    const bySev = { CRITICAL:0, HIGH:0, MEDIUM:0, LOW:0 };
+    STATE.profiles.forEach(p => {
+      const s = (p.severity||'LOW').toUpperCase();
+      if (s in bySev) bySev[s]++;
+    });
+    const sevData = Object.entries(bySev).map(([k,v])=>({name:k.charAt(0)+k.slice(1).toLowerCase(),value:v,color:SEV_COLORS[k]}));
+    const sevTotal = STATE.profiles.length || 1;
+
+    // sophistication distribution
+    const bySoph = { low:0, intermediate:0, high:0, apt:0 };
+    STATE.profiles.forEach(p => { const s=p.sophistication||'low'; if(s in bySoph) bySoph[s]++; });
+    const sophLabels = { low:'Script Kiddie', intermediate:'Semi-Organized', high:'Professional', apt:'APT / State' };
+    const sophData = Object.entries(bySoph).filter(([,v])=>v>0).map(([k,v])=>({name:sophLabels[k]||k,value:v,color:SOPH_COLORS[k]}));
+
+    function ProfileCharts() {
+      const sevCard = hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+        hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Severity Distribution'),
+        hh('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:12}},'Profile count by risk level'),
+        hh('div',{style:{display:'flex',alignItems:'center',gap:16}},
+          hh(RC.PieChart,{width:130,height:130},
+            hh(RC.Pie,{data:sevData,dataKey:'value',nameKey:'name',cx:61,cy:61,innerRadius:37,outerRadius:56,paddingAngle:2},
+              ...sevData.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'cc',stroke:e.color,strokeWidth:1}))
+            ),
+            hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE})
+          ),
+          hh('div',{style:{display:'flex',flexDirection:'column',gap:7,flex:1}},
+            ...sevData.map((e,i)=>hh('div',{key:i,style:{display:'flex',alignItems:'center',gap:8}},
+              hh('span',{style:{width:9,height:9,borderRadius:'50%',background:e.color,flexShrink:0,display:'inline-block'}}),
+              hh('span',{style:{fontSize:11,flex:1}},e.name),
+              hh('span',{style:{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:'var(--text2)'}},e.value+' ('+((e.value/sevTotal)*100).toFixed(0)+'%)')
+            ))
+          )
+        )
+      );
+
+      const sophCard = hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+        hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Sophistication'),
+        hh('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:12}},'Attacker classification by LLM profiler'),
+        sophData.length ? hh(RC.ResponsiveContainer,{width:'100%',height:120},
+          hh(RC.BarChart,{data:sophData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+            hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+            hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+            hh(RC.YAxis,{type:'category',dataKey:'name',width:120,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+            hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' profiles','Count']}),
+            hh(RC.Bar,{dataKey:'value',name:'Profiles',radius:[0,3,3,0],barSize:18},
+              ...sophData.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'bb'}))
+            )
+          )
+        ) : hh('div',{style:{color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",fontSize:11}},'No sophistication data — profiler pending.')
+      );
+
+      return hh('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},sevCard,sophCard);
+    }
+
+    if (!window.__profChartRoot) window.__profChartRoot = RD.createRoot(chartEl);
+    window.__profChartRoot.render(hh(ProfileCharts,null));
+    window.__pageCleanup = () => { if(window.__profChartRoot){window.__profChartRoot.unmount();window.__profChartRoot=null;} };
+  }
+
+  $('#p-refresh').addEventListener('click', () => { loadStats(); loadList().then(renderProfileCharts); });
   $('#p-search').addEventListener('input', e => { STATE.search = e.target.value.trim(); renderList(); });
   $('#p-lookup-go').addEventListener('click', () => lookupIp($('#p-lookup').value));
   $('#p-lookup').addEventListener('keydown', e => { if (e.key === 'Enter') lookupIp(e.target.value); });
@@ -492,5 +613,6 @@
   });
 
   await Promise.all([loadStats(), loadList()]);
+  renderProfileCharts();
 })();
 </script>

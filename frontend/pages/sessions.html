@@ -6,6 +6,7 @@
   </div>
 </div>
 
+<div id="sess-charts-root" style="margin-bottom:14px"></div>
 <div id="sess-body"><div class="alert info">Loading…</div></div>
 
 <style>
@@ -31,6 +32,9 @@
 (async function(){
   const { fmt, esc, $ } = FH;
   const { evNormalize } = FH;
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  const HP_COLORS = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff', zeek:'#50a0ff' };
 
   function actionIcon(action) {
     const a = (action||'').toLowerCase();
@@ -99,6 +103,89 @@
     const normalized = await fetchAllSessions();
     const list = buildSessions(normalized);
     $('#sess-count').textContent = list.length;
+
+    // Render summary charts
+    const chartEl = document.getElementById('sess-charts-root');
+    if (chartEl && R && RD && RC && list.length) {
+      const hh = R.createElement;
+
+      // by honeypot
+      const byHp = {};
+      list.forEach(s => { byHp[s.honeypot]=(byHp[s.honeypot]||0)+1; });
+      const hpData = Object.entries(byHp).map(([hp,n])=>({name:hp.charAt(0).toUpperCase()+hp.slice(1),hp,value:n}));
+
+      // success vs blocked
+      const successCount = list.filter(s=>s.events.some(e=>(e.event_action||'').includes('login.success'))).length;
+      const blockedCount = list.length - successCount;
+      const outcomeData = [
+        {name:'Login Success', value:successCount, color:'#ff5050'},
+        {name:'Blocked', value:blockedCount, color:'#2dd4bf'},
+      ];
+
+      // commands count distribution (0, 1-5, 6-20, 20+)
+      const cmdBuckets = [
+        {label:'No cmds', count:0, color:'#8892a4'},
+        {label:'1–5 cmds', count:0, color:'#f59e0b'},
+        {label:'6–20 cmds', count:0, color:'#ff9933'},
+        {label:'20+ cmds', count:0, color:'#ff5050'},
+      ];
+      list.forEach(s => {
+        const n = s.commands.length;
+        if (n===0) cmdBuckets[0].count++;
+        else if (n<=5) cmdBuckets[1].count++;
+        else if (n<=20) cmdBuckets[2].count++;
+        else cmdBuckets[3].count++;
+      });
+
+      function SessionCharts() {
+        const donutCard = (title, sub, data, colorFn) =>
+          hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+            hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:2}},title),
+            hh('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:10}},sub),
+            hh('div',{style:{display:'flex',alignItems:'center',gap:14}},
+              hh(RC.PieChart,{width:120,height:120},
+                hh(RC.Pie,{data,dataKey:'value',nameKey:'name',cx:56,cy:56,innerRadius:33,outerRadius:52,paddingAngle:2},
+                  ...data.map((e,i)=>hh(RC.Cell,{key:i,fill:colorFn(e,i)+'cc',stroke:colorFn(e,i),strokeWidth:1}))
+                ),
+                hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE})
+              ),
+              hh('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+                ...data.map((e,i)=>hh('div',{key:i,style:{display:'flex',alignItems:'center',gap:7}},
+                  hh('span',{style:{width:8,height:8,borderRadius:'50%',background:colorFn(e,i),flexShrink:0,display:'inline-block'}}),
+                  hh('span',{style:{fontSize:11,flex:1}},e.name),
+                  hh('span',{style:{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:'var(--text2)'}},e.value)
+                ))
+              )
+            )
+          );
+
+        const cmdCard = hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+          hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Command Activity'),
+          hh('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:10}},'Shell commands per session'),
+          hh(RC.ResponsiveContainer,{width:'100%',height:100},
+            hh(RC.BarChart,{data:cmdBuckets,margin:{top:0,right:8,bottom:0,left:-20}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',vertical:false}),
+              hh(RC.XAxis,{dataKey:'label',tick:{fontSize:9,fill:'#8892a4',fontFamily:"'JetBrains Mono',monospace"},tickLine:false,axisLine:false}),
+              hh(RC.YAxis,{tick:{fontSize:10,fill:'#8892a4',fontFamily:"'JetBrains Mono',monospace"},tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE}),
+              hh(RC.Bar,{dataKey:'count',name:'Sessions',radius:[3,3,0,0],barSize:28},
+                ...cmdBuckets.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'bb'}))
+              )
+            )
+          )
+        );
+
+        return hh('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}},
+          donutCard('By Honeypot','Sessions per sensor',hpData,(e)=>HP_COLORS[e.hp]||'#888'),
+          donutCard('Login Outcomes','Success vs blocked',outcomeData,(e)=>e.color),
+          cmdCard
+        );
+      }
+
+      if (!window.__sessChartRoot) window.__sessChartRoot = RD.createRoot(chartEl);
+      window.__sessChartRoot.render(hh(SessionCharts,null));
+      window.__pageCleanup = () => { if(window.__sessChartRoot){window.__sessChartRoot.unmount();window.__sessChartRoot=null;} };
+    }
 
     if (!list.length) {
       $('#sess-body').innerHTML = `<div class="alert info">

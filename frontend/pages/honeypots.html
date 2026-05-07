@@ -9,6 +9,8 @@
   </div>
 </div>
 
+<div id="hp-chart-root" style="margin-bottom:14px"></div>
+
 <div class="grid-2" id="hp-grid">
   <div class="alert info">Loading…</div>
 </div>
@@ -46,20 +48,60 @@
 
   async function load() {
     $('#hp-grid').innerHTML = `<div class="alert info">Loading…</div>`;
-    let attacks = { items: [] }, health = {};
-    try { attacks = await api.attacks({ page_size: 500 }); } catch(e){}
-    try { health  = await api.health(); } catch(e){}
+    let split = { split: [] }, health = {};
+    try { split  = await api.geoSplit(); } catch(e){}
+    try { health = await api.health(); } catch(e){}
 
-    const items = (attacks && attacks.items) || [];
+    const splitMap = {};
+    (split.split || []).forEach(s => { splitMap[s.honeypot] = s.count; });
+
     const stats = {};
-    HONEYPOTS.forEach(h => stats[h.id] = { count: 0, last: 0 });
-    items.forEach(ev => {
-      const hp = ev.honeypot || (ev.raw && ev.raw['honeypot.type']);
-      if (!hp || !stats[hp]) return;
-      stats[hp].count++;
-      const t = +new Date(ev.timestamp || (ev.raw && ev.raw['@timestamp']) || 0);
-      if (t > stats[hp].last) stats[hp].last = t;
-    });
+    HONEYPOTS.forEach(h => stats[h.id] = { count: splitMap[h.id] || 0, last: 0 });
+
+    await Promise.all(HONEYPOTS.map(async h => {
+      try {
+        const r = await api.attacks({ page_size: 1, honeypot: h.id });
+        const ev = r && r.items && r.items[0];
+        if (ev) stats[h.id].last = +new Date(ev.timestamp || 0);
+      } catch(e) {}
+    }));
+
+    const chartEl = document.getElementById('hp-chart-root');
+    if (chartEl && window.React && window.ReactDOM && window.Recharts) {
+      const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+      const hh = R.createElement;
+      const barData = HONEYPOTS.map(hp => ({
+        name: hp.name,
+        id: hp.id,
+        events: stats[hp.id].count,
+      })).sort((a,b) => b.events - a.events);
+      const maxEv = Math.max(...barData.map(d=>d.events), 1);
+      const HP_COLORS = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff' };
+      const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+      const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+
+      function HpChart() {
+        return hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 20px'}},
+          hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Event Volume Comparison'),
+          hh('div',{style:{fontSize:11,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:12}},'Total captured events per honeypot sensor'),
+          hh(RC.ResponsiveContainer,{width:'100%',height:100},
+            hh(RC.BarChart,{data:barData,layout:'vertical',margin:{top:0,right:60,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:80,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v.toLocaleString('en-US')+' events','Count']}),
+              hh(RC.Bar,{dataKey:'events',name:'Events',radius:[0,3,3,0],barSize:20,label:{position:'right',style:{fill:'#8892a4',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},formatter:v=>v.toLocaleString('en-US')}},
+                ...barData.map((e,i)=>hh(RC.Cell,{key:i,fill:(HP_COLORS[e.id]||'#888')+'cc'}))
+              )
+            )
+          )
+        );
+      }
+
+      if (!window.__hpChartRoot) window.__hpChartRoot = RD.createRoot(chartEl);
+      window.__hpChartRoot.render(hh(HpChart,null));
+      window.__pageCleanup = () => { if(window.__hpChartRoot){window.__hpChartRoot.unmount();window.__hpChartRoot=null;} };
+    }
 
     const services = (health && health.services) || {};
     $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
