@@ -677,57 +677,69 @@ class ForensicEngine:
     # ── Phase 9: Unified risk scoring ────────────────────────────────────────
 
     def _store_unified_risk_score(self, score_data: dict) -> None:
-        """Upsert unified IP-level risk score into forensic_sessions."""
-        synthetic_id = f"unified-{score_data['source_ip']}"
+        """Upsert unified risk score into ip_risk_scores (keyed by source_ip)."""
         try:
-            with _pg_conn() as conn:
+            with psycopg2.connect(
+                host=config.PG_HOST,
+                database=config.PG_DB,
+                user=config.PG_USER,
+                password=config.PG_PASSWORD,
+            ) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        INSERT INTO forensic_sessions
-                            (session_id, honeypot_type, source_ip,
-                             started_at, ended_at,
-                             risk_score, risk_level, confidence,
-                             signal_breakdown, honeypots_hit, honeypot_count,
-                             sessions_count, mitre_techniques, enrichment_data,
-                             kill_chain_stage, kill_chain_phase,
-                             scored_at, updated_at)
-                        VALUES (%s, 'unified', %s,
-                                NOW(), NOW(),
-                                %s, %s, %s,
-                                %s, %s, %s,
-                                %s, %s::jsonb, %s::jsonb,
-                                0, 'unknown',
-                                NOW(), NOW())
-                        ON CONFLICT (session_id) DO UPDATE SET
-                            risk_score       = EXCLUDED.risk_score,
-                            risk_level       = EXCLUDED.risk_level,
-                            confidence       = EXCLUDED.confidence,
-                            signal_breakdown = EXCLUDED.signal_breakdown,
-                            honeypots_hit    = EXCLUDED.honeypots_hit,
-                            honeypot_count   = EXCLUDED.honeypot_count,
-                            sessions_count   = EXCLUDED.sessions_count,
-                            scored_at        = NOW(),
-                            updated_at       = NOW()
+                        INSERT INTO ip_risk_scores (
+                            source_ip,
+                            risk_score, risk_level, confidence, active_signals,
+                            signal_breakdown,
+                            honeypots_hit, honeypot_count, honeypot_summary, sessions_count,
+                            key_findings, recommendations,
+                            enrichment_snapshot,
+                            scored_at, updated_at
+                        ) VALUES (
+                            %s::inet,
+                            %s, %s, %s, %s,
+                            %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s,
+                            NOW(), NOW()
+                        )
+                        ON CONFLICT (source_ip) DO UPDATE SET
+                            risk_score          = EXCLUDED.risk_score,
+                            risk_level          = EXCLUDED.risk_level,
+                            confidence          = EXCLUDED.confidence,
+                            active_signals      = EXCLUDED.active_signals,
+                            signal_breakdown    = EXCLUDED.signal_breakdown,
+                            honeypots_hit       = EXCLUDED.honeypots_hit,
+                            honeypot_count      = EXCLUDED.honeypot_count,
+                            honeypot_summary    = EXCLUDED.honeypot_summary,
+                            sessions_count      = EXCLUDED.sessions_count,
+                            key_findings        = EXCLUDED.key_findings,
+                            recommendations     = EXCLUDED.recommendations,
+                            enrichment_snapshot = EXCLUDED.enrichment_snapshot,
+                            updated_at          = NOW()
                         """,
                         (
-                            synthetic_id,
                             score_data["source_ip"],
                             score_data["risk_score"],
                             score_data["risk_level"],
                             score_data["confidence"],
+                            score_data.get("active_signals", 0),
                             json.dumps(score_data.get("signal_breakdown", {})),
                             score_data.get("honeypots_hit", []),
                             score_data.get("honeypot_count", 0),
+                            json.dumps(score_data.get("honeypot_summary", {})),
                             score_data.get("sessions_count", 0),
-                            json.dumps([]),
+                            score_data.get("key_findings", []),
+                            json.dumps(score_data.get("recommendations", [])),
                             json.dumps(score_data.get("enrichment_snapshot", {})),
                         ),
                     )
                 conn.commit()
-            log.info(f"Unified risk score stored for {score_data['source_ip']}")
+            log.info(f"Stored unified risk score for {score_data['source_ip']}")
         except Exception as e:
-            log.error(f"Store unified risk score failed for {score_data['source_ip']}: {e}")
+            log.error(f"Failed to store unified risk score: {e}", exc_info=True)
 
     # ── Timeline build ────────────────────────────────────────────────────────
 

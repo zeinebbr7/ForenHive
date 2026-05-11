@@ -11,14 +11,45 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from sqlalchemy import text
+
 from config import get_settings
+from db import session_scope
 from models.report import AttackerProfile, ReportMeta, ReportRequest, ReportScope
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
+from services.report_adapter import adapt_risk_data_for_report
 
 log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+
+async def _query_unified_risk_score(source_ip: str) -> dict:
+    """Query the unified risk score from ip_risk_scores table for an IP."""
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT source_ip, risk_score, risk_level, confidence, active_signals,
+                           signal_breakdown, honeypots_hit, honeypot_count, honeypot_summary,
+                           sessions_count, key_findings, recommendations, enrichment_snapshot
+                    FROM ip_risk_scores
+                    WHERE source_ip = CAST(:ip AS INET)
+                    LIMIT 1
+                    """
+                ),
+                {"ip": source_ip},
+            )
+            row = result.mappings().first()
+            if not row:
+                return {}
+            d = dict(row)
+            d["source_ip"] = str(d["source_ip"])
+            return d
+    except Exception:
+        return {}
 
 
 class ReportService:
@@ -64,6 +95,13 @@ class ReportService:
         title = req.title or self._default_title(req)
         summary = self._summarize(events)
 
+        # Inject unified risk score for IP-scoped reports
+        risk_ctx: dict = {}
+        if req.scope == ReportScope.IP and req.ip:
+            raw_risk = await _query_unified_risk_score(req.ip)
+            if raw_risk:
+                risk_ctx = adapt_risk_data_for_report(raw_risk)
+
         html_body = self.env.get_template("report.html").render(
             report_id=report_id,
             title=title,
@@ -74,6 +112,7 @@ class ReportService:
             events=events[:200],
             event_count=len(events),
             summary=summary,
+            **risk_ctx,
         )
         out_dir = Path(self.settings.reports_dir)
         out_dir.mkdir(parents=True, exist_ok=True)

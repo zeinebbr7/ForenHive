@@ -576,7 +576,13 @@ body {
       </div>
       <div>
         <div class="cover-meta-label">Honeypot</div>
-        <div class="cover-meta-value">{{ (session.get('honeypot') or '—') | upper }}</div>
+        <div class="cover-meta-value">
+          {%- if is_unified and honeypots_hit -%}
+            {{ honeypots_hit | join(' · ') | upper }}
+          {%- else -%}
+            {{ (session.get('honeypot') or '—') | upper }}
+          {%- endif -%}
+        </div>
       </div>
       <div>
         <div class="cover-meta-label">Analysis Engine</div>
@@ -615,7 +621,7 @@ body {
     ("04", "MITRE ATT&amp;CK &amp; Kill Chain Analysis", "Deterministic + LLM hybrid mapping"),
     ("05", "Malware Analysis", "YARA Scanner · VirusTotal · SHA-256"),
     ("06", "Behavioural Profile (FBI BAU Framework)", "Organised/Disorganised · MO · Locard · Mistral 7B Narrative"),
-    ("07", "Risk Score — Signal Breakdown", "Deterministic scoring · AbuseIPDB · YARA · Behavioural"),
+    ("07", "Risk Score — Signal Decomposition", "6-signal unified model · AbuseIPDB · Compromise · Malware · Anonymisation"),
     ("08", "Chain of Custody &amp; IOCs", "SHA-256 · RFC 3161 · STIX 2.1 Export"),
     ("09", "Conclusion &amp; Perspectives", ""),
   ] %}
@@ -701,7 +707,7 @@ body {
     <span class="section-num">§ 02</span>
     <div>
       <div class="section-title">Attacker Identity</div>
-      <div class="section-sub">Geolocation · Network Infrastructure · Threat Reputation · Anonymisation</div>
+      <div class="section-sub">Geolocation · WHOIS · Network Infrastructure · Threat Reputation · Anonymisation</div>
     </div>
   </div>
 
@@ -718,7 +724,13 @@ body {
           <tr><th>Organisation</th><td>{{ profile.get('as_org') or '—' }}</td></tr>
           <tr><th>ISP</th><td>{{ profile.get('isp') or profile.get('as_org') or '—' }}</td></tr>
           <tr><th>Domain</th><td class="mono">{{ profile.get('domain') or '—' }}</td></tr>
-          <tr><th>Target Honeypot</th><td><strong>{{ (session.get('honeypot') or '—') | upper }}</strong></td></tr>
+          <tr><th>Target Honeypot</th><td><strong>
+            {%- if is_unified and honeypots_hit -%}
+              {{ honeypots_hit | join(', ') | upper }}
+            {%- else -%}
+              {{ (session.get('honeypot') or '—') | upper }}
+            {%- endif -%}
+          </strong></td></tr>
           <tr><th>Source Port</th><td class="mono">{{ session.get('source_port') or '—' }}</td></tr>
         </table>
       </div>
@@ -788,6 +800,53 @@ body {
       </div>
     </div>
   </div>
+
+  {# ── WHOIS + Infrastructure enrichment (shown when enrichment_cache is available) ── #}
+  {% set whois = enrichment_cache.get('whois', {}) %}
+  {% set infra = enrichment_cache.get('infrastructure', {}) %}
+  {% set threat = enrichment_cache.get('threat_summary', {}) %}
+  {% set privacy = enrichment_cache.get('privacy', {}) %}
+  {% if whois or infra %}
+  <div class="two-col" style="margin-top:10pt;">
+    <!-- WHOIS -->
+    <div class="box">
+      <div class="box-title">WHOIS — Network Registry</div>
+      <table class="kv-table">
+        {% if whois.get('network_name') %}<tr><th>Network Name</th><td class="mono" style="font-size:8pt;">{{ whois.get('network_name') }}</td></tr>{% endif %}
+        {% if whois.get('cidr') %}<tr><th>Network CIDR</th><td class="mono" style="font-size:8pt;">{{ whois.get('cidr') }}</td></tr>{% endif %}
+        {% if whois.get('asn') %}<tr><th>ASN</th><td class="mono">AS{{ whois.get('asn') }} {% if whois.get('asn_description') %}— {{ whois.get('asn_description') }}{% endif %}</td></tr>{% endif %}
+        {% if whois.get('asn_registry') %}<tr><th>Registry</th><td class="mono" style="font-size:8pt;">{{ whois.get('asn_registry') | upper }}</td></tr>{% endif %}
+        {% if whois.get('network_type') %}<tr><th>Network Type</th><td>{{ whois.get('network_type') }}</td></tr>{% endif %}
+        {% if whois.get('registration') %}<tr><th>Registered</th><td class="mono" style="font-size:8pt;">{{ whois.get('registration')[:10] }}</td></tr>{% endif %}
+        {% if whois.get('last_changed') %}<tr><th>Last Updated</th><td class="mono" style="font-size:8pt;">{{ whois.get('last_changed')[:10] }}</td></tr>{% endif %}
+        {% if whois.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="mono" style="font-size:8pt;color:#8C1A2B;">{{ whois.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
+        {% if privacy.get('company_name') %}<tr><th>Operator</th><td>{{ privacy.get('company_name') }}</td></tr>{% endif %}
+        {% if privacy.get('abuse_contact_name') %}<tr><th>Abuse Officer</th><td style="font-size:8pt;">{{ privacy.get('abuse_contact_name') }} — {{ privacy.get('abuse_contact_email', '') }}</td></tr>{% endif %}
+      </table>
+    </div>
+
+    <!-- Infrastructure (Shodan-equivalent) -->
+    <div class="box">
+      <div class="box-title">Infrastructure &amp; Open Ports</div>
+      <table class="kv-table">
+        {% if infra.get('open_ports') %}<tr><th>Open Ports</th><td class="mono" style="font-size:8pt;">{{ infra.get('open_ports', []) | join(', ') }}</td></tr>{% endif %}
+        {% if infra.get('hostnames') %}<tr><th>Hostnames</th><td class="mono" style="font-size:8pt;color:#1565C0;">{{ infra.get('hostnames', []) | join('<br/>') }}</td></tr>{% endif %}
+        {% if infra.get('cpes') %}<tr><th>Software (CPE)</th><td class="mono" style="font-size:8pt;">{{ infra.get('cpes', []) | join('<br/>') }}</td></tr>{% endif %}
+        {% if infra.get('tags') %}<tr><th>Shodan Tags</th><td>{% for tag in infra.get('tags', []) %}<span style="background:#2a1a2e;color:#e040fb;font-size:7.5pt;padding:1pt 5pt;border-radius:3pt;margin-right:3pt;font-family:'DejaVu Sans Mono',monospace;">{{ tag }}</span>{% endfor %}</td></tr>{% endif %}
+        {% if infra.get('vulns') %}<tr><th>CVEs Detected</th><td style="color:#8C1A2B;font-weight:700;font-size:8pt;">{{ infra.get('vulns', []) | join(', ') or 'None detected' }}</td></tr>{% endif %}
+        {% if threat.get('attack_categories') %}
+        <tr><th>Attack Categories</th><td style="font-size:7.5pt;line-height:1.6;">
+          {% for cat in threat.get('attack_categories', [])[:8] %}
+          <span style="background:#1a1e2e;color:#ef9a9a;font-size:7pt;padding:1pt 4pt;border-radius:3pt;margin:1pt 2pt 1pt 0;display:inline-block;font-family:'DejaVu Sans',sans-serif;">{{ cat }}</span>
+          {% endfor %}
+        </td></tr>
+        {% endif %}
+        {% if threat.get('distinct_reporters') %}<tr><th>AbuseIPDB Reporters</th><td><strong style="color:#8C1A2B;">{{ threat.get('distinct_reporters') }}</strong> distinct reporters</td></tr>{% endif %}
+        {% if threat.get('last_reported_at') %}<tr><th>Last Reported</th><td class="mono" style="font-size:8pt;">{{ threat.get('last_reported_at')[:10] }}</td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- ── Section 03 — Forensic Timeline ── -->
@@ -932,7 +991,7 @@ body {
       </div>
       <div>
         {% if profile.get('ioc_hashes') %}
-        <div class="box-title">Captured Binary Hashes (SHA-256)</div>
+        <div class="box-title">Captured Binary — SHA-256</div>
         <table class="kv-table">
           {% for h in profile.get('ioc_hashes', [])[:4] %}
           <tr>
@@ -940,6 +999,32 @@ body {
             <td class="mono" style="font-size:6.5pt;word-break:break-all;color:#1A3A6B;">{{ h }}</td>
           </tr>
           {% endfor %}
+        </table>
+        {% endif %}
+        {% if vt_result %}
+        <div class="box-title" style="margin-top:8pt;">VirusTotal Analysis</div>
+        <table class="kv-table">
+          <tr><th>Detection</th>
+            <td>
+              <strong style="color:{% if (vt_result.get('malicious')|int) >= 10 %}#8C1A2B{% else %}#388E3C{% endif %};font-size:12pt;">
+                {{ vt_result.get('malicious', 0) }}&thinsp;/&thinsp;{{ vt_result.get('total_engines', '?') }}
+              </strong>
+              <span style="font-size:8pt;color:#666;"> engines</span>
+            </td>
+          </tr>
+          {% if vt_result.get('family') %}<tr><th>Family</th><td><strong>{{ vt_result.get('family') }}</strong></td></tr>{% endif %}
+          {% if vt_result.get('type') %}<tr><th>Type</th><td>{{ vt_result.get('type') }}</td></tr>{% endif %}
+          {% if vt_result.get('tags') %}<tr><th>Tags</th><td class="mono" style="font-size:7.5pt;">{{ vt_result.get('tags', []) | join(', ') }}</td></tr>{% endif %}
+          {% if vt_result.get('first_seen') %}<tr><th>First seen</th><td class="mono" style="font-size:7.5pt;">{{ vt_result.get('first_seen')[:10] }}</td></tr>{% endif %}
+          {% if vt_result.get('engine_hits') %}
+          <tr><th>Top Detections</th>
+            <td style="font-size:7pt;line-height:1.7;">
+              {% for eng, name in (vt_result.get('engine_hits', {})|dictsort)[:6] %}
+              <strong>{{ eng }}:</strong> {{ name }}<br/>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endif %}
         </table>
         {% endif %}
         {% if session.get('downloads') %}
@@ -1084,7 +1169,7 @@ body {
     <span class="section-num">§ 07</span>
     <div>
       <div class="section-title">Risk Score — Signal Decomposition</div>
-      <div class="section-sub">Deterministic 18-signal model · AbuseIPDB · YARA · Behavioural indicators</div>
+      <div class="section-sub">6-signal unified model · AbuseIPDB · Compromise · Brute Force · Malware · Anonymisation · Sophistication</div>
     </div>
   </div>
 
@@ -1104,13 +1189,15 @@ body {
   <div class="method-box">
     <div class="method-title">Scoring Methodology</div>
     <div class="method-body">
-      The risk score is computed deterministically from up to 18 independent signals grouped in four categories:
-      <strong>Reputation</strong> (AbuseIPDB community confidence, up to 40 pts),
-      <strong>Compromise</strong> (authentication success / volume, up to 25 pts),
-      <strong>Malware</strong> (YARA match + captured binary hash, up to 30 pts), and
-      <strong>Behavioural</strong> (Tor/VPN use, shell commands, MITRE breadth, recidivism, up to 50 pts).
-      The total is capped at 100. No machine-learning model is involved — every point is justified by a concrete log event.
-      Thresholds: <strong>CRITICAL</strong> ≥ 80 · <strong>HIGH</strong> ≥ 60 · <strong>MEDIUM</strong> ≥ 40 · <strong>LOW</strong> ≥ 20 · <strong>INFO</strong> &lt; 20.
+      The risk score is computed deterministically from 6 independent signals:
+      <strong>Reputation</strong> (AbuseIPDB abuse confidence, up to 25 pts),
+      <strong>Compromise</strong> (successful authentication = confirmed breach, up to 25 pts),
+      <strong>Brute Force</strong> (attempt volume and velocity, up to 20 pts),
+      <strong>Malware</strong> (YARA match or VirusTotal hit, up to 15 pts),
+      <strong>Anonymisation</strong> (Tor exit node or VPN/proxy detected, up to 10 pts), and
+      <strong>Sophistication</strong> (multi-honeypot correlation, up to 5 pts).
+      The total is capped at 100. No machine-learning model is involved — every point is traceable to a concrete log event or enrichment API response.
+      Thresholds: <strong>CRITIQUE</strong> ≥ 80 · <strong>ÉLEVÉ</strong> ≥ 60 · <strong>MOYEN</strong> ≥ 40 · <strong>FAIBLE</strong> ≥ 20 · <strong>INFO</strong> &lt; 20.
     </div>
   </div>
 

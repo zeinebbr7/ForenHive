@@ -81,6 +81,13 @@
     return all.map(evNormalize);
   }
 
+  async function fetchPgGeoSessions() {
+    try {
+      const data = await api._call('/api/geo/forensic-sessions?limit=200');
+      return (data && data.sessions) || [];
+    } catch (e) { return []; }
+  }
+
   function extractGeo(n) {
     const raw = n.raw || {};
     const sg = raw['source.geo'];
@@ -100,7 +107,9 @@
   }
 
   try {
-    const normalized = await fetchGeoEvents();
+    const [normalized, pgSessions] = await Promise.all([fetchGeoEvents(), fetchPgGeoSessions()]);
+
+    // Build byIP from ES events
     const byIP = {};
     normalized.forEach(n => {
       const geo = extractGeo(n);
@@ -109,8 +118,26 @@
       if (!byIP[ip]) byIP[ip] = { ip, geo, honeypot: n.honeypot, count: 0 };
       byIP[ip].count++;
     });
-    const ipList = Object.values(byIP).sort((a,b) => b.count - a.count);
-    $('#geo-badge').textContent = `${ipList.length} geolocated IP${ipList.length>1?'s':''}`;
+    // Merge PG forensic sessions (enriched IPs with real geo) — overrides ES placeholders
+    pgSessions.forEach(s => {
+      const ip = s.source_ip;
+      if (!ip || isNaN(s.lat) || isNaN(s.lon)) return;
+      const geo = { lat: s.lat, lon: s.lon, country_code: s.country_code || '', country_name: s.country_name || '', city: s.city || '' };
+      if (byIP[ip]) {
+        // Keep count but update geo to the enriched one (correct country)
+        byIP[ip].geo = geo;
+        byIP[ip].risk_score = s.risk_score;
+        byIP[ip].risk_level = s.risk_level;
+        if (s.honeypot_type && s.honeypot_type !== 'unified') byIP[ip].honeypot = s.honeypot_type;
+      } else {
+        byIP[ip] = { ip, geo, honeypot: s.honeypot_type || 'cowrie', count: s.sessions || 1, risk_score: s.risk_score, risk_level: s.risk_level, fromPg: true };
+      }
+    });
+
+    const ipList = Object.values(byIP).sort((a,b) => (b.risk_score||b.count) - (a.risk_score||a.count));
+    const totalGeo = ipList.length;
+    const pgCount = pgSessions.length;
+    $('#geo-badge').textContent = `${totalGeo} geolocated IP${totalGeo>1?'s':''}${pgCount?' ('+pgCount+' enriched)':''}`;
 
     if (!ipList.length) {
       $('#geo-countries').innerHTML = `<div class="alert info">No geolocated IPs in the last 7 days.<br>Local 172.16.x.x traffic is not processed by GeoIP.</div>`;
@@ -126,11 +153,12 @@
       bounds.push([d.geo.lat, d.geo.lon]);
       const circle = L.circleMarker([d.geo.lat, d.geo.lon], { radius:r, fillColor:clr.fill, color:clr.stroke, weight:1.5, fillOpacity:0.85 });
       const meta = SOURCE_META[d.honeypot] || { label: d.honeypot || '?', icon: '' };
+      const riskColor = d.risk_score >= 80 ? '#C62828' : d.risk_score >= 60 ? '#b36000' : d.risk_score >= 40 ? '#1565C0' : '#388E3C';
       circle.bindPopup(`<div style="font-family:'JetBrains Mono',monospace;font-size:12px;min-width:180px">
         <div style="font-size:14px;font-weight:700;margin-bottom:6px">${flag(d.geo.country_code)} ${esc(d.ip)}</div>
         <div style="color:#aaa;margin-bottom:4px">${esc(d.geo.country_name)}${d.geo.city?' · '+esc(d.geo.city):''}</div>
         <div style="margin-bottom:4px">${meta.icon} ${esc(meta.label)}</div>
-        <div style="color:#8C1A2B"><b>${d.count}</b> event${d.count>1?'s':''}</div>
+        ${d.risk_score != null ? `<div style="color:${riskColor};font-weight:700;">Risk: ${d.risk_score}/100 ${d.risk_level||''}</div>` : `<div style="color:#8C1A2B"><b>${d.count}</b> event${d.count>1?'s':''}</div>`}
       </div>`, { maxWidth: 240 });
       circle.addTo(map);
       markerMap[d.ip] = circle;

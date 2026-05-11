@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     es_index_reports: str = "forenhive-reports"
     es_request_timeout: int = 30
 
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
     ollama_host: str = "http://ollama:11434"
     ollama_model: str = "mistral:7b"
     ollama_timeout: int = 30
