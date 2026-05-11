@@ -44,6 +44,18 @@ ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS forensic_narrative TEXT;
 -- updated_at tracks last re-score; used by CoC to detect stale seals
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMP;
 
+-- Unified risk scoring (Option A) — one row per IP aggregating all honeypots
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS risk_level      VARCHAR(20);   -- CRITIQUE|ÉLEVÉ|MOYEN|FAIBLE|INFO
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS confidence      VARCHAR(10);   -- HIGH|MEDIUM|LOW
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS signal_breakdown JSONB;        -- 6-signal breakdown JSON
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS honeypots_hit   TEXT[];        -- ['cowrie','dionaea']
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS honeypot_count  INT DEFAULT 1;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS sessions_count  INT DEFAULT 1;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS scored_at       TIMESTAMP;    -- last unified scoring time
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS login_attempts  INT   DEFAULT 0;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS success_count   INT   DEFAULT 0;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS attack_velocity FLOAT DEFAULT 0.0;
+
 CREATE INDEX IF NOT EXISTS idx_sessions_source_ip    ON forensic_sessions (source_ip);
 CREATE INDEX IF NOT EXISTS idx_sessions_risk_score   ON forensic_sessions (risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_honeypot     ON forensic_sessions (honeypot_type);

@@ -96,8 +96,6 @@ services:
       - dionaea-logs:/var/log/dionaea:ro
       - zeek-logs:/var/log/zeek:ro
       - zeek-spool:/usr/local/zeek/spool:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - galah-logs:/var/log/galah:ro
     networks:
       - honeypot-net
@@ -134,7 +132,7 @@ services:
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     networks:
       - backend-net
 
@@ -192,7 +190,8 @@ services:
     environment:
       - ES_HOST=http://forenhive-elasticsearch:9200
       - OLLAMA_HOST=http://forenhive-ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:latest}
+      - OLLAMA_TIMEOUT=300
       - REPORTS_DIR=/reports
       - PG_HOST=forenhive-postgresql
       - PG_PORT=${POSTGRES_PORT:-5432}

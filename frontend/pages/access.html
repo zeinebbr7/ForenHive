@@ -16,6 +16,8 @@
   <div class="kpi b"><div class="kpi-label">Analysts</div><div class="kpi-val" id="kpi-analyst">—</div><div class="kpi-delta">forensic + monitoring</div></div>
 </div>
 
+<div id="ac-chart-root" style="margin-bottom:16px"></div>
+
 <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
 
   <!-- Users table -->
@@ -64,6 +66,9 @@
 (async function(){
   const { fmt, esc, $ } = FH;
   const me = api.user();
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  let __acRoot = null;
 
   /* ── Permissions matrix ── */
   const PERMS = [
@@ -104,6 +109,57 @@
 
   function avatarColor(role) {
     return role === 'admin' ? 'var(--red2)' : 'var(--gold)';
+  }
+
+  /* ── Charts ── */
+  function renderAcCharts(users) {
+    const chartEl = document.getElementById('ac-chart-root');
+    if (!chartEl || !R || !RD || !RC || !users.length) return;
+    const hh = R.createElement;
+
+    const roleCounts = {};
+    users.forEach(u => { const r=(u.role||'unknown').toLowerCase(); roleCounts[r]=(roleCounts[r]||0)+1; });
+    const roleData = Object.entries(roleCounts).map(([r,c]) => ({ name:r.toUpperCase(), count:c }));
+    const ROLE_COL = { ADMIN:'#8C1A2B', ANALYST:'#e8b84b', UNKNOWN:'#8892a4' };
+
+    const activeCount = users.filter(u => u.is_active !== false).length;
+    const disabledCount = users.length - activeCount;
+    const statusData = [{ name:'Active', count:activeCount }, ...(disabledCount ? [{ name:'Disabled', count:disabledCount }] : [])];
+    const STATUS_COL = { Active:'#00bfa5', Disabled:'#c93d55' };
+
+    function AcCharts() {
+      const mkCard = (title, donut, data, colorMap) => hh('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'8px',padding:'14px 16px'}},
+        hh('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'Share Tech Mono',monospace",textTransform:'uppercase',letterSpacing:'1px',marginBottom:'10px'}},title),
+        hh('div',{style:{display:'flex',alignItems:'center',gap:'14px'}},
+          donut,
+          hh('div',{style:{display:'flex',flexDirection:'column',gap:'6px',flex:1}},
+            ...data.map((d,i) => hh('div',{key:i,style:{display:'flex',alignItems:'center',gap:'8px'}},
+              hh('span',{style:{width:8,height:8,borderRadius:'50%',background:colorMap[d.name]||'#888',display:'inline-block',flexShrink:0}}),
+              hh('span',{style:{fontSize:12,flex:1,color:'var(--text2)'}},d.name),
+              hh('span',{style:{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--text3)'}},d.count)
+            ))
+          )
+        )
+      );
+      const roleDonut = hh(RC.PieChart,{width:110,height:110},
+        hh(RC.Pie,{data:roleData,dataKey:'count',nameKey:'name',cx:50,cy:50,innerRadius:30,outerRadius:48,paddingAngle:2},
+          ...roleData.map((d,i)=>hh(RC.Cell,{key:i,fill:ROLE_COL[d.name]||'#888'}))
+        ),
+        hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE})
+      );
+      const statusDonut = hh(RC.PieChart,{width:110,height:110},
+        hh(RC.Pie,{data:statusData,dataKey:'count',nameKey:'name',cx:50,cy:50,innerRadius:30,outerRadius:48,paddingAngle:2},
+          ...statusData.map((d,i)=>hh(RC.Cell,{key:i,fill:STATUS_COL[d.name]||'#888'}))
+        ),
+        hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE})
+      );
+      return hh('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:'12px'}},
+        mkCard('Role Distribution', roleDonut, roleData, ROLE_COL),
+        mkCard('Account Status', statusDonut, statusData, STATUS_COL)
+      );
+    }
+    if (!__acRoot) __acRoot = RD.createRoot(chartEl);
+    __acRoot.render(hh(AcCharts,null));
   }
 
   /* ── Render ── */
@@ -160,6 +216,7 @@
         return;
       }
       renderRows();
+      renderAcCharts(allItems);
     } catch (e) {
       $('#ac-rows').innerHTML = `<tr><td colspan="5"><div class="alert err" style="margin:8px">${esc(e.message)} — user management requires the ADMIN role.</div></td></tr>`;
     }
@@ -256,5 +313,7 @@
   });
 
   await load();
+
+  window.__pageCleanup = () => { if (__acRoot) { __acRoot.unmount(); __acRoot = null; } };
 })();
 </script>

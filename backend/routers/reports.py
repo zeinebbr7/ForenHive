@@ -1,6 +1,4 @@
-import asyncio
 import hashlib
-import ipaddress
 import json
 import logging
 import tempfile
@@ -60,8 +58,55 @@ _MITRE_DB: Dict[str, tuple] = {
     "T1033":     ("System Owner/User Discovery",        "Discovery"),
 }
 
-_MONTHS_FR = ["", "January", "February", "March", "April", "May", "June",
+_MONTHS_EN = ["", "January", "February", "March", "April", "May", "June",
               "July", "August", "September", "October", "November", "December"]
+
+# YARA rule name → malware intelligence
+_YARA_DB: Dict[str, Dict[str, str]] = {
+    "mirai":      {"type": "Botnet",        "family": "Mirai",          "arch": "MIPS / ARM / x86",
+                   "desc": "Linux botnet targeting IoT devices via Telnet/SSH brute-force. Enslaved hosts launch volumetric DDoS floods (UDP, SYN, ACK). First observed 2016; variants still dominant."},
+    "hajime":     {"type": "Botnet",        "family": "Hajime",         "arch": "MIPS / ARM",
+                   "desc": "Peer-to-peer IoT botnet using a BitTorrent-like DHT for C2. Competes with Mirai for the same attack surface."},
+    "gafgyt":     {"type": "Botnet",        "family": "Gafgyt / BASHLITE", "arch": "MIPS / ARM",
+                   "desc": "IoT botnet spread by Telnet brute-force. Launches UDP/TCP flood DDoS. Shares lineage with Mirai source code."},
+    "tsunami":    {"type": "Backdoor",      "family": "Tsunami / Kaiten","arch": "x86 / MIPS",
+                   "desc": "IRC-controlled DDoS bot targeting Linux servers. Provides a persistent backdoor and flood capabilities."},
+    "wannacry":   {"type": "Ransomware",    "family": "WannaCry",       "arch": "x86 / x64",
+                   "desc": "Self-propagating ransomware worm (May 2017) exploiting EternalBlue (CVE-2017-0144). Encrypts files with AES-128 and demands Bitcoin ransom."},
+    "eternalblue":{"type": "Exploit",       "family": "EternalBlue",    "arch": "x86 / x64",
+                   "desc": "NSA-developed SMBv1 exploit (CVE-2017-0144 / MS17-010). Used by WannaCry and NotPetya to achieve unauthenticated remote code execution."},
+    "conficker":  {"type": "Worm",          "family": "Conficker",      "arch": "x86",
+                   "desc": "Windows worm (2008) exploiting MS08-067. Spreads via network shares and removable drives; disables security services."},
+    "xmrig":      {"type": "Cryptominer",   "family": "XMRig",          "arch": "x86 / x64 / ARM",
+                   "desc": "Open-source Monero CPU/GPU miner repurposed for cryptojacking. Deployed after initial access to maximise resource abuse."},
+    "cobalt":     {"type": "C2 Framework",  "family": "Cobalt Strike",  "arch": "x86 / x64",
+                   "desc": "Commercial red-team framework abused as a post-exploitation RAT. Beacons exfiltrate data and accept tasking over HTTP/HTTPS."},
+    "sliver":     {"type": "C2 Framework",  "family": "Sliver",         "arch": "x86 / x64 / ARM",
+                   "desc": "Open-source adversary simulation framework (Go). Increasingly used as a Cobalt Strike alternative."},
+    "emotet":     {"type": "Trojan Dropper","family": "Emotet",         "arch": "x86 / x64",
+                   "desc": "Modular banking trojan / dropper. Delivered via malicious Office macros; downloads secondary payloads (TrickBot, QakBot)."},
+    "meterpreter":{"type": "RAT / Payload", "family": "Metasploit Meterpreter","arch": "x86 / x64",
+                   "desc": "In-memory post-exploitation payload from the Metasploit Framework. Provides interactive shell, keylogger, and pivoting capabilities."},
+    "darkcomet":  {"type": "RAT",           "family": "DarkComet",      "arch": "x86",
+                   "desc": "Remote Access Trojan (RAT) providing keylogging, webcam capture, file management, and reverse shell."},
+    "nishang":    {"type": "PowerShell RAT","family": "Nishang",        "arch": "x64",
+                   "desc": "Collection of offensive PowerShell scripts and payloads for post-exploitation on Windows."},
+    "linuxback":  {"type": "Backdoor",      "family": "Linux Backdoor", "arch": "x86 / x64",
+                   "desc": "Generic Linux backdoor maintaining persistent remote access; often dropped after initial Cowrie / Dionaea compromise."},
+}
+
+
+def _resolve_malware_info(yara_matches: List[str]) -> Dict[str, str]:
+    """Return the first matching malware descriptor from _YARA_DB."""
+    for rule in yara_matches:
+        rl = rule.lower()
+        for key, info in _YARA_DB.items():
+            if key in rl:
+                return info
+    if yara_matches:
+        return {"type": "Unknown", "family": yara_matches[0], "arch": "—",
+                "desc": "No threat intelligence entry found for this YARA rule. Manual analysis recommended."}
+    return {}
 
 _KC_LABELS = ["Recon", "Weapon", "Delivery", "Exploit", "Install", "C2", "Lateral", "Actions"]
 _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
@@ -69,11 +114,11 @@ _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
 
 
 def _risk_label_color(score: int):
-    if score >= 80: return "CRITICAL", "#dc2626"
-    if score >= 60: return "HIGH",     "#ea580c"
-    if score >= 40: return "MEDIUM",   "#d97706"
-    if score >= 20: return "LOW",      "#0891b2"
-    return "INFO", "#475569"
+    if score >= 80: return "CRITIQUE", "#C62828"
+    if score >= 60: return "ÉLEVÉ",    "#b36000"
+    if score >= 40: return "MOYEN",    "#1565C0"
+    if score >= 20: return "FAIBLE",   "#388E3C"
+    return "INFO", "#757575"
 
 
 def _mitre_lookup(tech_id: str):
@@ -84,130 +129,155 @@ def _mitre_lookup(tech_id: str):
     return _MITRE_DB.get(parent, (tech_id, "Unknown"))
 
 
-_SIGNAL_LABELS = {
-    "successful_compromise":    ("Compromission réussie (T1078)",    "Cowrie"),
-    "login_volume":             ("Volume d'authentifications",        "Cowrie"),
-    "reputation":               ("Score de réputation AbuseIPDB",     "AbuseIPDB"),
-    "reputation_volume":        ("Volume signalements AbuseIPDB",     "AbuseIPDB"),
-    "anonymization":            ("Anonymiseur Tor / VPN",             "IPLocate"),
-    "malware_yara":             ("Correspondance règle YARA",         "YARA"),
-    "malware_vt":               ("Détection VirusTotal",              "VirusTotal"),
-    "exploit_cve":              ("Tentative d'exploit CVE",           "Analyse"),
-    "commands":                 ("Commandes shell exécutées",         "Cowrie"),
-    "exfiltration":             ("Exfiltration de données",           "Cowrie"),
-    "recidivism":               ("Récidivisme (sessions antérieures)","Historique"),
-    "critical_port":            ("Port critique ciblé",               "Réseau"),
-    "multi_honeypot":           ("Ciblage multi-honeypots",           "Moteur"),
-    "smb_epmapper":             ("Scan SMB EPMapper",                 "Dionaea"),
-    "smb_share_enum":           ("Énumération de partages SMB",       "Dionaea"),
-    "attack_velocity":          ("Vélocité d'attaque",                "Temporal"),
-    "temporal_anomaly":         ("Anomalie temporelle (hors heures)", "Temporal"),
-    "attacker_infrastructure":  ("Infrastructure attaquant (Shodan)", "Shodan"),
-}
-
-
-def _build_score_signals(profile: dict, detail: dict, pg_row: Optional[dict] = None) -> List[dict]:
-    """Read the 18 stored signals from forensic engine's signal_breakdown in PostgreSQL.
-    Falls back to empty list if breakdown not available."""
-    enrich = (pg_row or {}).get("enrichment_data") or {}
-    breakdown = enrich.get("signal_breakdown") or {}
-    if not breakdown:
-        return []
-
-    out: List[dict] = []
-    for sig_id, sig_data in breakdown.items():
-        if not isinstance(sig_data, dict):
-            continue
-        label, source = _SIGNAL_LABELS.get(sig_id, (sig_id.replace("_", " ").title(), "Moteur"))
-        out.append({
-            "name":   label,
-            "source": source,
-            "max":    int(sig_data.get("max") or 0),
-            "points": int(sig_data.get("points") or 0),
-            "detail": sig_data.get("detail") or "",
-            "available": bool(sig_data.get("available", True)),
+def _build_score_signals(profile: dict, detail: dict) -> List[dict]:
+    signals = []
+    abuse = int(profile.get("abuseipdb_score") or 0)
+    if abuse:
+        pts = min(39, abuse * 39 // 100)
+        signals.append({
+            "name": "AbuseIPDB Reputation Score",
+            "source": "AbuseIPDB",
+            "points": pts, "max": 40,
+            "value": f"{abuse}/100",
+            "why": "Community-reported abuse confidence level (0–100). Scores ≥80 indicate confirmed malicious infrastructure.",
         })
 
-    out.sort(key=lambda s: (-s["points"], -s["max"]))
-    return out
+    logins = detail.get("login_attempts") or []
+    n_auth = len(logins)
+    auth_success = any(a.get("success") for a in logins)
+    if auth_success:
+        signals.append({
+            "name": "Successful Login — Compromise Confirmed",
+            "source": "Cowrie",
+            "points": 25, "max": 25,
+            "value": "Confirmed compromise",
+            "why": "At least one authentication attempt succeeded. The attacker gained interactive shell access to the honeypot.",
+        })
+    elif n_auth > 0:
+        pts = min(25, n_auth * 25 // 500)
+        signals.append({
+            "name": f"Authentication Volume ({n_auth} attempts)",
+            "source": "Cowrie",
+            "points": pts, "max": 25,
+            "value": f"{n_auth} attempts",
+            "why": "High-volume credential stuffing or dictionary attack detected. Points scale with attempt count (cap: 500).",
+        })
 
+    yara = profile.get("yara_matches") or []
+    if yara:
+        signals.append({
+            "name": "YARA Match — Critical Malware Family",
+            "source": "YARA Engine",
+            "points": 30, "max": 30,
+            "value": yara[0],
+            "why": "Binary captured by Dionaea matched a YARA rule associated with a known malware family. Maximum severity.",
+        })
 
-async def _pg_session_row(session_id: str) -> Dict[str, Any]:
-    """Read one forensic_sessions row from PostgreSQL by session_id."""
-    try:
-        from sqlalchemy import text
-        from db import session_scope
-        async with session_scope() as sess:
-            result = await sess.execute(
-                text("SELECT risk_score, kill_chain_phase, kill_chain_stage, "
-                     "primary_technique, mitre_techniques, forensic_narrative, enrichment_data "
-                     "FROM forensic_sessions WHERE session_id = :sid LIMIT 1"),
-                {"sid": session_id}
-            )
-            row = result.fetchone()
-            if row:
-                return {
-                    "risk_score":         row.risk_score,
-                    "kill_chain_phase":   row.kill_chain_phase,
-                    "kill_chain_stage":   row.kill_chain_stage,
-                    "primary_technique":  row.primary_technique,
-                    "mitre_techniques":   row.mitre_techniques or [],
-                    "forensic_narrative": row.forensic_narrative,
-                    "enrichment_data":    row.enrichment_data or {},
-                }
-    except Exception as exc:
-        log.warning("Could not read forensic_sessions for %s: %s", session_id, exc)
-    return {}
+    hashes = profile.get("ioc_hashes") or []
+    if hashes:
+        signals.append({
+            "name": "Captured Malware Binary (SHA-256)",
+            "source": "Dionaea",
+            "points": 20, "max": 30,
+            "value": hashes[0][:20] + "...",
+            "why": "Dionaea captured a binary payload delivered by the attacker. Hash preserved for chain of custody.",
+        })
+
+    if profile.get("is_tor"):
+        signals.append({
+            "name": "Tor Exit Node",
+            "source": "IPLocate",
+            "points": 15, "max": 15,
+            "value": "YES — confirmed exit node",
+            "why": "Source IP is a known Tor exit node. Anonymisation infrastructure indicates deliberate identity concealment.",
+        })
+    if profile.get("is_vpn"):
+        signals.append({
+            "name": "VPN / Proxy Detected",
+            "source": "IPLocate",
+            "points": 10, "max": 10,
+            "value": "YES",
+            "why": "Source IP belongs to a commercial VPN or anonymising proxy service.",
+        })
+
+    cmds = detail.get("commands") or []
+    if cmds:
+        pts = min(10, len(cmds))
+        signals.append({
+            "name": "Shell Commands Executed",
+            "source": "Cowrie",
+            "points": pts, "max": 10,
+            "value": f"{len(cmds)} command(s)",
+            "why": "Commands executed in the honeypot shell indicate post-access activity (reconnaissance, persistence, exfiltration).",
+        })
+
+    mitre = profile.get("mitre_techniques") or []
+    if mitre:
+        pts = min(15, len(mitre) * 3)
+        signals.append({
+            "name": "MITRE ATT&CK Techniques Mapped",
+            "source": "Forensic Engine",
+            "points": pts, "max": 15,
+            "value": ", ".join(mitre[:3]),
+            "why": "Each mapped technique adds 3 pts (cap: 15). Reflects tactical breadth of the attack chain.",
+        })
+
+    if (profile.get("session_count") or 0) > 1:
+        signals.append({
+            "name": "Recidivism — Prior Sessions",
+            "source": "PostgreSQL",
+            "points": 10, "max": 10,
+            "value": f"{profile.get('session_count')} sessions",
+            "why": "This source IP has attacked the platform multiple times. Repeat offenders are weighted higher.",
+        })
+
+    return signals
 
 
 async def _build_forensic_context(session_id: str) -> dict:
-    es = get_es()
-    detail, pg_row = await asyncio.gather(
-        es.session_detail(session_id),
-        _pg_session_row(session_id),
-    )
-    detail = dict(detail) if detail else {}
-    # Fall back to PG source_ip when ES has no session (e.g. Dionaea, Galah aggregates)
-    source_ip: Optional[str] = detail.get("source_ip") or pg_row.get("source_ip")
-    # If detail has no source_ip but session_id encodes one (e.g. galah-198.20.69.74),
-    # parse it so the template can show the IP.
-    if not source_ip and session_id:
-        for prefix in ("galah-", "dionaea-", "cowrie-"):
-            if session_id.startswith(prefix):
-                candidate = session_id[len(prefix):]
-                # naive IPv4 sanity check
-                if candidate.count(".") == 3:
-                    source_ip = candidate
-                    break
+    from sqlalchemy import text
+    from db import session_scope
 
-    # If no direct PG match, try to find an aggregated session for the same IP.
-    # This happens when the user clicks an ES sub-session (e.g. galah-XXX-00) but
-    # the engine only stored an aggregate (e.g. galah-<ip>).
-    if not pg_row and source_ip:
-        try:
-            from sqlalchemy import text
-            from db import session_scope
-            async with session_scope() as sess:
-                result = await sess.execute(
-                    text("SELECT risk_score, kill_chain_phase, kill_chain_stage, "
-                         "primary_technique, mitre_techniques, forensic_narrative, enrichment_data "
-                         "FROM forensic_sessions WHERE source_ip = :ip "
-                         "ORDER BY risk_score DESC NULLS LAST LIMIT 1"),
-                    {"ip": source_ip}
-                )
-                row = result.fetchone()
-                if row:
-                    pg_row = {
-                        "risk_score":         row.risk_score,
-                        "kill_chain_phase":   row.kill_chain_phase,
-                        "kill_chain_stage":   row.kill_chain_stage,
-                        "primary_technique":  row.primary_technique,
-                        "mitre_techniques":   row.mitre_techniques or [],
-                        "forensic_narrative": row.forensic_narrative,
-                        "enrichment_data":    row.enrichment_data or {},
-                    }
-        except Exception as exc:
-            log.warning("PG fallback lookup failed for IP %s: %s", source_ip, exc)
+    es = get_es()
+    detail = await es.session_detail(session_id) or {}
+    source_ip: Optional[str] = detail.get("source_ip")
+
+    # ── Try PostgreSQL forensic_sessions first (forensic engine enriched data) ──
+    pg_row: Dict[str, Any] = {}
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text("""
+                    SELECT session_id, source_ip, honeypot_type, risk_score,
+                           kill_chain_phase, kill_chain_stage, primary_technique,
+                           forensic_narrative, mitre_techniques, started_at
+                    FROM forensic_sessions
+                    WHERE session_id = :sid
+                    LIMIT 1
+                """),
+                {"sid": session_id},
+            )
+            row = result.mappings().fetchone()
+            if row:
+                pg_row = dict(row)
+                # Normalise mitre_techniques to list
+                mt = pg_row.get("mitre_techniques") or []
+                if isinstance(mt, str):
+                    try:
+                        mt = json.loads(mt)
+                    except Exception:
+                        mt = []
+                pg_row["mitre_techniques"] = mt
+                # Fill detail gaps from PG row
+                if not source_ip and pg_row.get("source_ip"):
+                    source_ip = pg_row["source_ip"]
+                    detail.setdefault("source_ip", source_ip)
+                if not detail.get("honeypot") and pg_row.get("honeypot_type"):
+                    detail["honeypot"] = pg_row["honeypot_type"]
+                if not detail.get("started_at") and pg_row.get("started_at"):
+                    detail["started_at"] = pg_row["started_at"]
+    except Exception as exc:
+        log.debug("PG forensic_sessions query failed for %s: %s", session_id, exc)
 
     profile_dict: dict = {}
     if source_ip:
@@ -217,95 +287,16 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
-    # Prefer PostgreSQL engine-scored risk over live re-computation
-    risk_score = int(pg_row.get("risk_score") or profile_dict.get("risk_score") or 0)
+    # Prefer PG risk_score (forensic engine) over profiler estimate
+    if pg_row.get("risk_score") is not None:
+        risk_score = int(pg_row["risk_score"])
+    else:
+        risk_score = int(profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
-
-    # Merge PostgreSQL MITRE into profile so score signals and report sections see them
-    pg_mitre = pg_row.get("mitre_techniques") or []
-    if pg_mitre:
-        profile_dict["mitre_techniques"] = sorted(set(pg_mitre + (profile_dict.get("mitre_techniques") or [])))
-
-    # Keep both Ollama outputs separate — do NOT merge them
-    forensic_narrative = pg_row.get("forensic_narrative") or None
-
-    # Pull all enrichment fields from PG cache if profiler returned nothing
-    enrich = pg_row.get("enrichment_data") or {}
-    geo = enrich.get("geo") or {}
-    privacy = enrich.get("privacy") or {}
-    rep = enrich.get("reputation") or {}
-    if not profile_dict.get("country") and geo.get("country"):
-        profile_dict["country"] = geo["country"]
-    if not profile_dict.get("city") and geo.get("city"):
-        profile_dict["city"] = geo["city"]
-    if not profile_dict.get("country_iso") and geo.get("country_code"):
-        profile_dict["country_iso"] = geo["country_code"]
-    if not profile_dict.get("asn") and geo.get("asn"):
-        profile_dict["asn"] = geo["asn"]
-    if not profile_dict.get("as_org") and geo.get("org"):
-        profile_dict["as_org"] = geo["org"]
-    if not profile_dict.get("is_tor") and privacy.get("is_tor"):
-        profile_dict["is_tor"] = privacy["is_tor"]
-    if not profile_dict.get("is_vpn") and privacy.get("is_vpn"):
-        profile_dict["is_vpn"] = privacy["is_vpn"]
-    if not profile_dict.get("abuseipdb_score") and rep.get("abuse_score") is not None:
-        profile_dict["abuseipdb_score"] = rep.get("abuse_score") or 0
-        profile_dict["abuseipdb_reports"] = rep.get("total_reports") or 0
-    # Shodan / WHOIS context (used in 02b section)
-    if enrich.get("infrastructure"):
-        profile_dict.setdefault("shodan_data", enrich.get("infrastructure"))
-    if enrich.get("whois"):
-        profile_dict.setdefault("whois_data", enrich.get("whois"))
-
-    # ── Fill the `session` (detail) object so template kv-rows are not "—" ──
-    # ES has no `galah-<ip>` session_id (Galah events use random sessionIDs); when
-    # the template falls through to session.get(...), provide PG/ES-aggregated
-    # fallbacks so IP SOURCE / HONEYPOT CIBLÉ / PORT CIBLE etc. render.
-    if not detail.get("source_ip") and source_ip:
-        detail["source_ip"] = source_ip
-    if not detail.get("honeypot"):
-        detail["honeypot"] = (pg_row.get("honeypot_type")
-                              or (session_id.split("-", 1)[0] if "-" in session_id else "unknown"))
-    # Source port + event/session counters — pull from ES first event for this IP
-    if source_ip:
-        try:
-            evs = await get_es().events_for_ip(source_ip, size=1)
-            if evs:
-                first = evs[0]
-                if not detail.get("source_port"):
-                    detail["source_port"] = (first.get("source_port")
-                                              or (first.get("source") or {}).get("port")
-                                              or first.get("destination.port")
-                                              or (first.get("destination") or {}).get("port"))
-        except Exception as exc:
-            log.debug("events_for_ip failed: %s", exc)
-        # Total events (ES count)
-        try:
-            _es_client = get_es()
-            _resp = await _es_client.client.count(
-                index=_es_client.settings.honeypot_indices,
-                body={"query": {"term": {"source.ip": source_ip}}},
-                ignore_unavailable=True,
-                allow_no_indices=True,
-            )
-            profile_dict.setdefault("event_count", int(_resp.get("count", 0)))
-        except Exception as exc:
-            log.debug("ES count failed: %s", exc)
-        # Total scored sessions for this IP (PG)
-        try:
-            from sqlalchemy import text as _sql_text
-            from db import session_scope as _sscope
-            async with _sscope() as _s:
-                _r = await _s.execute(_sql_text(
-                    "SELECT COUNT(*) FROM forensic_sessions WHERE source_ip = :ip"
-                ), {"ip": source_ip})
-                profile_dict.setdefault("session_count", int(_r.scalar() or 0))
-        except Exception as exc:
-            log.debug("PG session_count failed: %s", exc)
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
-    generated_at_str = f"{now.day} {_MONTHS_FR[now.month]} {now.year} · {now.strftime('%H:%M')} UTC"
+    generated_at_str = f"{now.day} {_MONTHS_EN[now.month]} {now.year} · {now.strftime('%H:%M')} UTC"
 
     # ── Timeline ──────────────────────────────────────────
     timeline = []
@@ -341,45 +332,7 @@ async def _build_forensic_context(session_id: str) -> dict:
     ended = detail.get("ended_at")
     if ended:
         timeline.append({"ts": str(ended), "source": "SESSION", "action": "Session fermée",
-                         "detail": f"Durée : {float(detail.get('duration_seconds') or 0):.1f}s", "mitre": ""})
-
-    # Fallback for Galah / Dionaea aggregate sessions: build timeline directly from
-    # ES events when ES `session_detail` returned nothing (no session.id match).
-    if not timeline and source_ip:
-        try:
-            evs = await get_es().events_for_ip(source_ip, size=50)
-            evs = sorted(evs, key=lambda e: str(e.get("@timestamp") or ""))
-            for ev in evs:
-                ts  = ev.get("@timestamp") or ev.get("timestamp") or ""
-                hp  = (ev.get("honeypot") or {}).get("type") if isinstance(ev.get("honeypot"), dict) else ev.get("honeypot.type")
-                hp  = hp or ev.get("honeypot") or "honeypot"
-                src = "HTTP" if hp == "galah" else hp.upper() if isinstance(hp, str) else "EVENT"
-                method = (ev.get("http") or {}).get("request", {}).get("method") if isinstance(ev.get("http"), dict) else ev.get("http.request.method")
-                uri    = (ev.get("http") or {}).get("request", {}).get("uri")    if isinstance(ev.get("http"), dict) else ev.get("http.request.uri")
-                ua     = (ev.get("http") or {}).get("request", {}).get("user_agent") if isinstance(ev.get("http"), dict) else ev.get("http.request.user_agent")
-                if uri:
-                    action = f"{method or 'GET'} {uri}"
-                    detail_txt = (ua or "")[:80]
-                    mitre_id = "T1190"
-                    uri_l = uri.lower()
-                    if any(p in uri_l for p in ("'", "%27", "union", "1=1", "select")):
-                        mitre_id = "T1190"
-                    elif any(p in uri_l for p in ("../", "%2e%2e", "/etc/passwd", "/proc/self")):
-                        mitre_id = "T1083"
-                    elif any(p in uri_l for p in (".env", ".git/", "wp-config", "backup.zip", "id_rsa")):
-                        mitre_id = "T1083"
-                    elif any(p in uri_l for p in ("cmd=", "exec=", "whoami", "/bin/sh")):
-                        mitre_id = "T1059"
-                    elif any(p in uri_l for p in (".sh", "wget+http", "curl+http", "/tmp/")):
-                        mitre_id = "T1105"
-                    timeline.append({"ts": str(ts), "source": src, "action": action,
-                                     "detail": detail_txt, "mitre": mitre_id})
-                else:
-                    timeline.append({"ts": str(ts), "source": src,
-                                     "action": ev.get("event.action") or ev.get("event", {}).get("action") or "event",
-                                     "detail": (ev.get("message") or "")[:120], "mitre": ""})
-        except Exception as exc:
-            log.debug("timeline fallback for %s failed: %s", source_ip, exc)
+                         "detail": f"Durée : {detail.get('duration_seconds', 0):.1f}s", "mitre": ""})
 
     try:
         timeline.sort(key=lambda x: x.get("ts") or "")
@@ -391,7 +344,11 @@ async def _build_forensic_context(session_id: str) -> dict:
     mitre_seen: set = set()
     mitre_rows = []
 
-    for t_id in (profile_dict.get("mitre_techniques") or []):
+    # PG mitre_techniques take priority over profiler-derived ones
+    pg_mitre = pg_row.get("mitre_techniques") or []
+    mitre_source = pg_mitre if pg_mitre else (profile_dict.get("mitre_techniques") or [])
+
+    for t_id in mitre_source:
         if t_id in mitre_seen:
             continue
         mitre_seen.add(t_id)
@@ -409,6 +366,7 @@ async def _build_forensic_context(session_id: str) -> dict:
             evidence = "wget/curl capturé par Dionaea"
         mitre_rows.append({"id": t_id, "technique": name, "tactic": tactic, "confidence": "100%", "evidence": evidence})
 
+    # Add from commands if not already present
     for c in cmds:
         inp = c.get("input", "")
         if any(x in inp for x in ["wget", "curl", "tftp"]) and "T1105" not in mitre_seen:
@@ -429,22 +387,30 @@ async def _build_forensic_context(session_id: str) -> dict:
         mitre_rows.append({"id": "T1059.004", "technique": "Unix Shell", "tactic": "Execution", "confidence": "100%", "evidence": f"{len(cmds)} commandes exécutées"})
 
     # ── Kill chain stage ──────────────────────────────────
-    # Use PostgreSQL engine stage as baseline (it uses MITRE-mapped phase)
-    pg_kc_stage = pg_row.get("kill_chain_stage")
-    kc_reached = (_KC_STAGES.index(pg_row["kill_chain_phase"]) + 1
-                  if pg_row.get("kill_chain_phase") in _KC_STAGES else 0)
-    if logins:
-        kc_reached = max(kc_reached, 3)
-    if auth_success:
-        kc_reached = max(kc_reached, 3)
-    if cmds:
-        kc_reached = max(kc_reached, 4)
-    for c in cmds:
-        if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
-            kc_reached = max(kc_reached, 5)
+    # Prefer PG kill_chain_stage (forensic engine) over heuristic
+    if pg_row.get("kill_chain_stage") is not None:
+        kc_reached = int(pg_row["kill_chain_stage"])
+    else:
+        kc_reached = 0
+        if logins:
+            kc_reached = max(kc_reached, 3)  # exploitation
+        if auth_success:
+            kc_reached = max(kc_reached, 3)
+        if cmds:
+            kc_reached = max(kc_reached, 4)  # installation
+        for c in cmds:
+            if any(x in (c.get("input") or "") for x in ["wget", "curl", "tftp"]):
+                kc_reached = max(kc_reached, 5)  # C2
+
+    # Inject PG forensic narrative into profile so the template picks it up
+    if pg_row.get("forensic_narrative") and not profile_dict.get("mistral_analysis"):
+        profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    score_signals = _build_score_signals(profile_dict, detail, pg_row)
+    score_signals = _build_score_signals(profile_dict, detail)
+
+    # ── Malware intelligence ───────────────────────────────
+    malware_info = _resolve_malware_info(profile_dict.get("yara_matches") or [])
 
     # ── SHA-256 chain of custody ──────────────────────────
     session_bytes = json.dumps(detail, sort_keys=True, default=str).encode()
@@ -474,29 +440,10 @@ async def _build_forensic_context(session_id: str) -> dict:
         "kc_stages_labels": _KC_LABELS,
         "org_score_pct": org_score_pct,
         "auth_success": auth_success,
-        "forensic_narrative": forensic_narrative,
-        "mapping_source": enrich.get("mapping_source") or "",
+        "malware_info": malware_info,
+        # Jinja2 helper
+        "enumerate": enumerate,
     }
-
-
-# ─── Coarse kill-chain helper (needed before router routes) ──────────────────
-
-def _phase_from_techniques(mitre: List[str]) -> str | None:
-    """Coarse kill-chain phase from MITRE technique prefixes."""
-    if not mitre:
-        return None
-    pfx = {t[:5] for t in mitre if isinstance(t, str)}
-    if pfx & {"T1595", "T1590", "T1589"}: return "reconnaissance"
-    if pfx & {"T1587", "T1588"}:          return "weaponization"
-    if pfx & {"T1566"}:                   return "delivery"
-    if pfx & {"T1190", "T1110", "T1203"}: return "exploitation"
-    if pfx & {"T1547", "T1543"}:          return "installation"
-    if pfx & {"T1071", "T1095"}:          return "command_and_control"
-    if pfx & {"T1021", "T1550"}:          return "lateral_movement"
-    return "actions_on_objectives"
-
-
-# ─── Router ───────────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 limiter = Limiter(key_func=get_remote_address)
@@ -522,133 +469,134 @@ async def list_reports(limit: int = Query(100, ge=1, le=500)) -> ReportListRespo
     return ReportListResponse(total=total, items=items)
 
 
-# ─── Routes statiques forensic — AVANT les routes dynamiques /{report_id} ────
-
-_PRIVATE_NETS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-]
-
-def _is_private(ip: str) -> bool:
+@router.get("/{report_id}/download")
+async def download_report(report_id: str):
+    svc = get_reports()
+    meta = await svc.get_meta(report_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="report not found")
     try:
-        addr = ipaddress.ip_address(ip)
-        return any(addr in net for net in _PRIVATE_NETS)
-    except ValueError:
-        return False
+        path = svc.resolve_pdf_path(meta)
+    except FileNotFoundError:
+        raise HTTPException(status_code=410, detail="report file missing on disk")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="report path rejected")
+    return FileResponse(
+        path=str(path),
+        media_type="application/pdf",
+        filename=f"{meta.id}.pdf",
+        headers={"X-ForenHive-SHA256": meta.sha256},
+    )
 
-def _is_noise(source_ip: Optional[str], risk_score) -> bool:
-    """Filter out zero-score private-IP sessions (internal network scan noise)."""
-    if not source_ip:
-        return False
-    score = risk_score if risk_score is not None else 0
-    return _is_private(source_ip) and score == 0
+
+@router.post("/{report_id}/stix")
+async def export_stix(report_id: str):
+    bundle = await get_reports().stix_for(report_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return JSONResponse(
+        bundle,
+        headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
+    )
 
 
-async def _pg_all_sessions(limit: int) -> List[Dict[str, Any]]:
-    """Read all forensic_sessions rows from PostgreSQL (scored sessions with full metadata)."""
-    try:
-        from sqlalchemy import text
-        from db import session_scope
-        async with session_scope() as sess:
-            result = await sess.execute(text(
-                "SELECT session_id, honeypot_type, source_ip, started_at, "
-                "risk_score, kill_chain_phase, kill_chain_stage, primary_technique, "
-                "mitre_techniques FROM forensic_sessions "
-                "ORDER BY risk_score DESC NULLS LAST LIMIT :lim"
-            ), {"lim": limit})
-            return [dict(row._mapping) for row in result.fetchall()]
-    except Exception as exc:
-        log.warning("Could not read forensic_sessions from PostgreSQL: %s", exc)
-        return []
+# ─── Forensic per-session reports (Sprint 4 surface used by the SPA) ────────
+
+
+def _phase_from_techniques(mitre: List[str]) -> str | None:
+    """Coarse kill-chain phase from MITRE technique prefixes."""
+    if not mitre:
+        return None
+    pfx = {t[:5] for t in mitre if isinstance(t, str)}
+    if pfx & {"T1595", "T1590", "T1589"}: return "reconnaissance"
+    if pfx & {"T1587", "T1588"}:          return "weaponization"
+    if pfx & {"T1566"}:                   return "delivery"
+    if pfx & {"T1190", "T1110", "T1203"}: return "exploitation"
+    if pfx & {"T1547", "T1543"}:          return "installation"
+    if pfx & {"T1071", "T1095"}:          return "command_and_control"
+    if pfx & {"T1021", "T1550"}:          return "lateral_movement"
+    return "actions_on_objectives"
 
 
 @router.get("/forensic/sessions")
 async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
-    """List sessions leading with PostgreSQL scored data, supplemented by ES metadata.
-    Includes Dionaea (no session.id in ES) and handles session_id mismatches.
+    """List sessions in the flat shape the dashboard reconstruction/reporting
+    pages expect: session_id, source_ip, honeypot_type, risk_score,
+    kill_chain_phase, primary_technique, started_at.
+
+    Queries PostgreSQL forensic_sessions (written by the forensic engine) first,
+    falls back to raw ES sessions if PostgreSQL is empty or unavailable.
     """
-    pg_sessions, es_rows = await asyncio.gather(
-        _pg_all_sessions(limit),
-        get_es().sessions(limit=limit, active_only=False),
-    )
+    from sqlalchemy import text
+    from db import session_scope
 
-    # Build ES lookup by session_id and by source_ip (for fallback)
-    es_by_sid: Dict[str, Any] = {r["session_id"]: r for r in es_rows}
-    es_by_ip:  Dict[str, Any] = {}
-    for r in es_rows:
-        ip = r.get("source_ip")
-        if ip and ip not in es_by_ip:
-            es_by_ip[ip] = r
+    pg_rows: List[Dict[str, Any]] = []
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT session_id, source_ip, honeypot_type,
+                           risk_score, kill_chain_phase, kill_chain_stage,
+                           primary_technique, forensic_narrative,
+                           mitre_techniques, started_at
+                    FROM forensic_sessions
+                    ORDER BY started_at DESC
+                    LIMIT :lim
+                    """
+                ),
+                {"lim": limit},
+            )
+            for row in result.mappings():
+                mitre = row["mitre_techniques"] or []
+                if isinstance(mitre, str):
+                    try:
+                        mitre = json.loads(mitre)
+                    except Exception:
+                        mitre = []
+                pg_rows.append({
+                    "session_id":        row["session_id"],
+                    "source_ip":         row["source_ip"],
+                    "honeypot_type":     row["honeypot_type"],
+                    "risk_score":        row["risk_score"],
+                    "kill_chain_phase":  row["kill_chain_phase"],
+                    "kill_chain_stage":  row["kill_chain_stage"],
+                    "primary_technique": row["primary_technique"],
+                    "started_at":        row["started_at"],
+                })
+    except Exception as exc:
+        log.warning("forensic_sessions: PG query failed (%s), falling back to ES", exc)
 
+    if pg_rows:
+        return pg_rows
+
+    # Fallback: raw ES sessions (no forensic engine data yet)
+    rows = await get_es().sessions(limit=limit, active_only=False)
     out: List[Dict[str, Any]] = []
-    seen_sids: set = set()
-    pg_ips: set = {pg.get("source_ip") for pg in pg_sessions if pg.get("source_ip")}
-
-    # 1. PG scored sessions first (has risk_score, kill_chain, etc.)
-    for pg in pg_sessions:
-        sid = pg["session_id"]
-        seen_sids.add(sid)
-        src_ip = pg.get("source_ip")
-        if _is_noise(src_ip, pg.get("risk_score")):
-            continue
-        es = es_by_sid.get(sid) or es_by_ip.get(src_ip or "") or {}
-        mitre = pg.get("mitre_techniques") or []
+    for r in rows:
+        mitre = r.get("mitre_techniques") or r.get("techniques") or []
         if isinstance(mitre, dict):
-            mitre = list(mitre.keys())
+            mitre = []
         out.append({
-            "session_id":        sid,
-            "source_ip":         src_ip,
-            "honeypot_type":     pg.get("honeypot_type") or es.get("honeypot"),
-            "risk_score":        pg.get("risk_score"),
-            "kill_chain_phase":  pg.get("kill_chain_phase"),
-            "kill_chain_stage":  pg.get("kill_chain_stage"),
-            "primary_technique": pg.get("primary_technique") or (mitre[0] if mitre else None),
-            "started_at":        pg.get("started_at") or es.get("started_at"),
+            "session_id":        r.get("session_id"),
+            "source_ip":         r.get("source_ip"),
+            "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
+            "risk_score":        r.get("risk_score"),
+            "kill_chain_phase":  r.get("kill_chain_phase") or _phase_from_techniques(mitre),
+            "kill_chain_stage":  r.get("kill_chain_stage"),
+            "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
+            "started_at":        r.get("started_at"),
         })
-
-    # 2. ES sessions not yet in PG (no engine score yet)
-    #    Skip if a PG aggregate already exists for the same IP (avoid sub-session duplicates).
-    for r in es_rows:
-        sid = r.get("session_id")
-        if sid and sid not in seen_sids:
-            src_ip = r.get("source_ip")
-            if src_ip in pg_ips:
-                continue
-            if _is_noise(src_ip, None):
-                continue
-            seen_sids.add(sid)
-            mitre = r.get("mitre_techniques") or r.get("techniques") or []
-            if isinstance(mitre, dict):
-                mitre = []
-            out.append({
-                "session_id":        sid,
-                "source_ip":         src_ip,
-                "honeypot_type":     r.get("honeypot") or r.get("honeypot_type"),
-                "risk_score":        None,
-                "kill_chain_phase":  _phase_from_techniques(mitre),
-                "kill_chain_stage":  None,
-                "primary_technique": mitre[0] if mitre else None,
-                "started_at":        r.get("started_at"),
-            })
-
     return out
 
 
 @router.post("/forensic/{session_id}/generate")
 async def forensic_generate(request: Request, session_id: str):
-    """Generate and download a forensic PDF for one session."""
+    """Generate and download a forensic PDF for one session using the rich forensic template."""
     try:
         from weasyprint import HTML as WeasyprintHTML
     except ImportError:
         raise HTTPException(status_code=503, detail="WeasyPrint not installed")
-
-    # Session must exist in ES or PG; Dionaea has no session.id in ES so we allow PG-only
-    detail = await get_es().session_detail(session_id)
-    pg_check = await _pg_session_row(session_id)
-    if not detail and not pg_check:
-        raise HTTPException(status_code=404, detail="session not found")
 
     try:
         ctx = await _build_forensic_context(session_id)
@@ -656,10 +604,15 @@ async def forensic_generate(request: Request, session_id: str):
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
 
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
+
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
+    env.globals["enumerate"] = enumerate
     try:
         html_body = env.get_template("forensic_report.html").render(**ctx)
     except Exception as exc:
@@ -694,58 +647,25 @@ async def forensic_generate(request: Request, session_id: str):
 
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
-    """Full forensic HTML dossier for a single session."""
-    # Dionaea sessions have no session.id in ES — allow PG-only sessions through
-    detail = await get_es().session_detail(session_id)
-    pg_check = await _pg_session_row(session_id)
-    if not detail and not pg_check:
-        raise HTTPException(status_code=404, detail="session not found")
+    """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""
     try:
         ctx = await _build_forensic_context(session_id)
     except Exception as exc:
         log.exception("forensic context build failed for %s", session_id)
         raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
 
+    # Session not found in ES or PG
+    if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
+        raise HTTPException(status_code=404, detail="session not found")
+
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
+    env.globals["enumerate"] = enumerate
     try:
         html_body = env.get_template("forensic_report.html").render(**ctx)
     except Exception as exc:
         log.exception("template render failed")
         raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
     return HTMLResponse(html_body)
-
-
-# ─── Routes dynamiques /{report_id} — APRÈS les routes statiques ─────────────
-
-@router.get("/{report_id}/download")
-async def download_report(report_id: str):
-    svc = get_reports()
-    meta = await svc.get_meta(report_id)
-    if not meta:
-        raise HTTPException(status_code=404, detail="report not found")
-    try:
-        path = svc.resolve_pdf_path(meta)
-    except FileNotFoundError:
-        raise HTTPException(status_code=410, detail="report file missing on disk")
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="report path rejected")
-    return FileResponse(
-        path=str(path),
-        media_type="application/pdf",
-        filename=f"{meta.id}.pdf",
-        headers={"X-ForenHive-SHA256": meta.sha256},
-    )
-
-
-@router.post("/{report_id}/stix")
-async def export_stix(report_id: str):
-    bundle = await get_reports().stix_for(report_id)
-    if bundle is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return JSONResponse(
-        bundle,
-        headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
-    )

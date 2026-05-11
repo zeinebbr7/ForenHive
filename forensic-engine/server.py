@@ -47,14 +47,10 @@ _engine_lock = threading.Lock()
 
 # ── PostgreSQL helper ─────────────────────────────────────────────────────────
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST,
-        port=config.PG_PORT,
-        dbname=config.PG_DB,
-        user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", ""),
-    )
+    return db_pool.pooled_conn()
 
 
 # ── Engine scheduler ──────────────────────────────────────────────────────────
@@ -211,7 +207,13 @@ def mitre_map(req: MitreRequest) -> Dict[str, Any]:
         return {"techniques": []}
 
 
-# ── Manual trigger ───────────────────────────────────────────────────────────
+# ── Manual trigger + status ──────────────────────────────────────────────────
+
+@app.get("/status")
+def engine_status() -> Dict[str, Any]:
+    """Returns whether an engine run is currently in progress."""
+    return {"running": _engine_lock.locked()}
+
 
 @app.post("/run-now")
 def run_now(hours: int = 24) -> Dict[str, Any]:

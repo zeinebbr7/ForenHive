@@ -4,7 +4,9 @@
     <h2 class="page-title">Evidence <span>Logs</span></h2>
     <div class="page-sub">Raw honeypot logs · filter by sensor · SHA-256 verification per entry.</div>
   </div>
-  <div class="page-actions">
+  <div class="page-actions" style="gap:10px;align-items:center">
+    <span id="ev-run-status" style="font-size:12px;color:var(--text3)"></span>
+    <button class="btn btn-primary btn-sm" id="ev-run-btn"> Run Analysis Now</button>
     <button class="btn btn-gh btn-sm" id="ev-refresh">Refresh</button>
   </div>
 </div>
@@ -250,4 +252,66 @@
 
   await load();
 })();
+
+// ── Run Analysis Now button ───────────────────────────────────────────────────
+(function () {
+  const runBtn = document.getElementById('ev-run-btn');
+  const runStatus = document.getElementById('ev-run-status');
+  let pollInterval = null;
+
+  function setRunning(isRunning) {
+    runBtn.disabled = isRunning;
+    runBtn.textContent = isRunning ? '⏳ Running...' : ' Run Analysis Now';
+  }
+
+  async function fetchStatus() {
+    try { return await api._call('/api/forensics/status'); } catch (e) { return null; }
+  }
+
+  // Show last-run info on load
+  fetchStatus().then(s => {
+    if (!s || !s.timestamp) return;
+    if (s.status === 'running') {
+      setRunning(true);
+      runStatus.textContent = '⏳ Analysis in progress...';
+      startPolling();
+    } else {
+      const when = new Date(s.timestamp).toLocaleString();
+      runStatus.textContent = `Last run: ${when} · ${s.status}`;
+    }
+  });
+
+  function startPolling() {
+    if (pollInterval) return;
+    pollInterval = setInterval(async () => {
+      const s = await fetchStatus();
+      if (!s) return;
+      if (s.status === 'completed') {
+        clearInterval(pollInterval); pollInterval = null;
+        setRunning(false);
+        runStatus.textContent = '✅ Completed! Refreshing...';
+        setTimeout(() => location.reload(), 2000);
+      } else if (['error', 'failed', 'timeout'].includes(s.status)) {
+        clearInterval(pollInterval); pollInterval = null;
+        setRunning(false);
+        runStatus.textContent = `❌ Failed: ${s.error || s.status}`;
+      } else {
+        runStatus.textContent = `Status: ${s.status}`;
+      }
+    }, 10000);
+  }
+
+  runBtn.addEventListener('click', async () => {
+    setRunning(true);
+    runStatus.textContent = 'Queuing analysis...';
+    try {
+      await api._call('/api/forensics/run', { method: 'POST' });
+      runStatus.textContent = '✅ Queued — may take 2–5 min.';
+      startPolling();
+    } catch (e) {
+      setRunning(false);
+      runStatus.textContent = `Error: ${e.message}`;
+    }
+  });
+}());
 </script>

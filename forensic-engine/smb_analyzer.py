@@ -42,6 +42,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("smb_analyzer")
 
+def _ts_to_iso(epoch: float) -> str:
+    """Convert Unix timestamp to tz-aware ISO 8601 UTC string."""
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 DIONAEA_DB   = os.environ.get(
@@ -252,7 +257,7 @@ def extract_dionaea(db_path: str) -> dict:
         ip = r["remote_host"]
         data[ip]["connections"].append({
             "connection_id": r["connection"],
-            "ts":            datetime.utcfromtimestamp(r["connection_timestamp"]).isoformat() + "Z",
+            "ts":            datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
             "remote_port":   r["remote_port"],
         })
 
@@ -277,7 +282,7 @@ def extract_dionaea(db_path: str) -> dict:
             "uuid":            r["dcerpcbind_uuid"],
             "service":         svc,
             "transfersyntax":  r["dcerpcbind_transfersyntax"],
-            "ts":              datetime.utcfromtimestamp(r["connection_timestamp"]).isoformat() + "Z",
+            "ts":              datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
         })
 
     # DCE/RPC requests over SMB
@@ -300,7 +305,7 @@ def extract_dionaea(db_path: str) -> dict:
             "opnum":    opnum,
             "op_name":  op_name,
             "advisory": advisory,
-            "ts":       datetime.utcfromtimestamp(r["connection_timestamp"]).isoformat() + "Z",
+            "ts":       datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
         })
 
     # File downloads via SMB
@@ -314,7 +319,7 @@ def extract_dionaea(db_path: str) -> dict:
         ip = r["remote_host"]
         data[ip]["downloads"].append({
             "md5": r["download_md5_hash"],
-            "ts":  datetime.utcfromtimestamp(r["connection_timestamp"]).isoformat() + "Z",
+            "ts":  datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
         })
 
     # Epmapper (port 135) — same attacker probing RPC endpoint mapper before SMB

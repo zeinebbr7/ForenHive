@@ -6,6 +6,8 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
+from apscheduler.schedulers.background import BackgroundScheduler
+
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +19,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import get_settings
 from db import dispose as dispose_db, init_db
-from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, sessions
+from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, risk_score, sessions
+from services import forensic_runner
 from services import audit_service
 from services.alert_watcher import get_watcher
 from services.auth_service import bootstrap_admin, get_current_user
@@ -61,7 +64,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("watcher start failed: %s", exc)
 
+    # Forensic engine scheduler (every 6 hours)
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(forensic_runner.run_forensic_engine, "interval", hours=6)
+    scheduler.start()
+    log.info("Forensic scheduler started (every 6 h)")
+
     yield
+
+    scheduler.shutdown(wait=False)
 
     try:
         await get_watcher().stop()
@@ -230,6 +241,7 @@ app.include_router(geo.router, dependencies=_protected_deps)
 app.include_router(alerts.router, dependencies=_protected_deps)
 app.include_router(profiling.router, dependencies=_protected_deps)
 app.include_router(reports.router, dependencies=_protected_deps)
+app.include_router(risk_score.router, dependencies=_protected_deps)
 app.include_router(forensics.router, dependencies=_protected_deps)
 app.include_router(audit.router)  # audit has its own admin guard
 

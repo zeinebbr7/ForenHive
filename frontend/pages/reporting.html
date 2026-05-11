@@ -37,7 +37,7 @@
     </div>
 
     <!-- Report HTML area -->
-    <div id="rep-preview" style="flex:1;overflow-y:auto;background:#1a1a1a;min-height:500px">
+    <div id="rep-preview" style="flex:1;overflow-y:auto;background:#f0f0f0;min-height:500px">
       <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#888;padding:60px;height:100%">
         <div style="font-size:48px;opacity:.3">📄</div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:13px">No report selected</div>
@@ -942,37 +942,67 @@
 </div>`;
   }
 
-  /* ── Generate preview ──────────────────────────────────── */
+  /* ── Generate preview — loads backend-rendered template ── */
   async function generatePreview(sid) {
-$('#rep-preview').innerHTML = `
+    $('#rep-preview').innerHTML = `
       <div class="rep-loading">
         <div class="rep-spinner"></div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:12px">Building forensic report…</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px">Génération du rapport forensique…</div>
       </div>`;
     $('#rep-status').style.display = 'none';
     $('#rep-download').disabled = true;
     $('#rep-print').disabled    = true;
     $('#rep-reload').disabled   = true;
 
-    const s = sessions.find(x => x.session_id === sid) || { session_id: sid };
-
-    // Fetch profile data (best-effort)
-    let profile = null;
     try {
-      if (s.source_ip) profile = await api.profile(s.source_ip);
-    } catch(_) {}
+      const tok = api.token();
+      const res = await fetch(`/api/reports/forensic/${sid}/preview`, {
+        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
+      });
 
-    // Fetch timeline (best-effort)
-    let timeline = [];
-    try {
-      const tlRes = await api.forensicsTimeline({ session_id: sid, page_size: 20 });
-      timeline = (tlRes && tlRes.events) || [];
-    } catch(_) {}
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        throw new Error(`Server returned ${res.status}: ${err}`);
+      }
 
-    $('#rep-reload').disabled   = false;
-    $('#rep-download').disabled = false;
-    $('#rep-print').disabled    = false;
-    $('#rep-preview').innerHTML = buildReport(s, profile, timeline);
+      const html = await res.text();
+
+      // Render in a sandboxed iframe so styles don't leak into the SPA
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'width:100%;height:100%;min-height:800px;border:none;background:#fff;';
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      $('#rep-preview').innerHTML = '';
+      $('#rep-preview').appendChild(iframe);
+
+      // Write the full HTML document into the iframe
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      // Auto-resize to content height once loaded
+      iframe.addEventListener('load', () => {
+        try {
+          const h = iframe.contentDocument.documentElement.scrollHeight;
+          if (h > 400) iframe.style.height = h + 'px';
+        } catch(_) {}
+      });
+
+    } catch(e) {
+      $('#rep-preview').innerHTML = `
+        <div style="padding:32px;text-align:center;color:#ef4444;font-family:'JetBrains Mono',monospace;font-size:12px">
+          <div style="font-size:32px;margin-bottom:12px">⚠</div>
+          <div>Preview failed: ${esc(e.message)}</div>
+          <div style="margin-top:8px;opacity:.6;font-size:11px">Check backend logs — session may not exist in Elasticsearch.</div>
+        </div>`;
+      $('#rep-status').style.display = 'block';
+      $('#rep-status').textContent   = '✗ ' + e.message;
+      $('#rep-status').style.color   = 'var(--red2, #ef4444)';
+    } finally {
+      $('#rep-reload').disabled   = false;
+      $('#rep-download').disabled = false;
+      $('#rep-print').disabled    = false;
+    }
   }
 
   /* ── Select session ────────────────────────────────────── */
@@ -993,48 +1023,17 @@ $('#rep-preview').innerHTML = `
     generatePreview(sid);
   }
 
-  /* ── Print HTML report (browser print dialog) ─────────── */
+  /* ── Print HTML report — triggers print inside the iframe ─ */
   $('#rep-print').addEventListener('click', () => {
     if (!activeSid) return;
-    const reportEl = $('#rep-preview').querySelector('.fh-report');
-    if (!reportEl) return;
-
-    const fonts = `
-      <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">`;
-
-    const allCss = Array.from(document.styleSheets)
-      .flatMap(ss => { try { return Array.from(ss.cssRules).map(r => r.cssText); } catch(_){ return []; } })
-      .filter(r => r.includes('fh-') || r.includes('@keyframes') || r.includes('*'))
-      .join('\n');
-
-    const printWin = window.open('', '_blank', 'width=960,height=800');
-    printWin.document.write(`<!DOCTYPE html><html><head>
-      <meta charset="UTF-8">
-      <title>ForenHive — ${activeSid}</title>
-      ${fonts}
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #fff; }
-        ${allCss}
-        .fh-report { box-shadow: none; margin: 0; max-width: 100%; }
-        .fh-page + .fh-page { page-break-before: always; border-top: none; }
-        @media print {
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .fh-page { page-break-after: always; }
-          .fh-page:last-child { page-break-after: avoid; }
-        }
-      </style>
-    </head><body>
-      ${reportEl.outerHTML}
-      <script>
-        window.addEventListener('load', () => {
-          setTimeout(() => { window.print(); window.close(); }, 800);
-        });
-      <\/script>
-    </body></html>`);
-    printWin.document.close();
+    const iframe = $('#rep-preview').querySelector('iframe');
+    if (!iframe) return;
+    try {
+      iframe.contentWindow.print();
+    } catch(_) {
+      // Cross-origin fallback: open preview URL in new tab and let user print
+      window.open(`/api/reports/forensic/${activeSid}/preview`, '_blank');
+    }
   });
 
   /* ── Download WeasyPrint certified PDF from backend ────── */

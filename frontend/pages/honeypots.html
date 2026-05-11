@@ -9,6 +9,8 @@
   </div>
 </div>
 
+<div id="hp-chart-root" style="margin-bottom:14px"></div>
+
 <div class="grid-2" id="hp-grid">
   <div class="alert info">Loading…</div>
 </div>
@@ -46,39 +48,66 @@
 
   async function load() {
     $('#hp-grid').innerHTML = `<div class="alert info">Loading…</div>`;
-    let health = {};
+    let split = { split: [] }, health = {};
+    try { split  = await api.geoSplit(); } catch(e){}
     try { health = await api.health(); } catch(e){}
 
+    const splitMap = {};
+    (split.split || []).forEach(s => { splitMap[s.honeypot] = s.count; });
+
     const stats = {};
-    HONEYPOTS.forEach(h => stats[h.id] = { count: 0, last: 0 });
-    try {
-      const [r_cowrie, r_dionaea, r_galah] = await Promise.all([
-        api.attacks({ page_size: 1, honeypot: 'cowrie'  }).catch(() => ({ total: 0, items: [] })),
-        api.attacks({ page_size: 1, honeypot: 'dionaea' }).catch(() => ({ total: 0, items: [] })),
-        api.attacks({ page_size: 1, honeypot: 'galah'   }).catch(() => ({ total: 0, items: [] })),
-      ]);
-      stats['cowrie'].count  = r_cowrie.total  || 0;
-      stats['dionaea'].count = r_dionaea.total || 0;
-      stats['galah'].count   = r_galah.total   || 0;
-      // last event timestamp
-      const setLast = (r, hp) => {
-        const ev = r.items && r.items[0];
-        if (ev) stats[hp].last = +new Date(ev.timestamp || 0);
-      };
-      setLast(r_cowrie,  'cowrie');
-      setLast(r_dionaea, 'dionaea');
-      setLast(r_galah,   'galah');
-    } catch(e){ console.error('honeypot stats failed', e); }
+    HONEYPOTS.forEach(h => stats[h.id] = { count: splitMap[h.id] || 0, last: 0 });
+
+    await Promise.all(HONEYPOTS.map(async h => {
+      try {
+        const r = await api.attacks({ page_size: 1, honeypot: h.id });
+        const ev = r && r.items && r.items[0];
+        if (ev) stats[h.id].last = +new Date(ev.timestamp || 0);
+      } catch(e) {}
+    }));
+
+    const chartEl = document.getElementById('hp-chart-root');
+    if (chartEl && window.React && window.ReactDOM && window.Recharts) {
+      const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+      const hh = R.createElement;
+      const barData = HONEYPOTS.map(hp => ({
+        name: hp.name,
+        id: hp.id,
+        events: stats[hp.id].count,
+      })).sort((a,b) => b.events - a.events);
+      const maxEv = Math.max(...barData.map(d=>d.events), 1);
+      const HP_COLORS = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff' };
+      const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+      const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+
+      function HpChart() {
+        return hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 20px'}},
+          hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Event Volume Comparison'),
+          hh('div',{style:{fontSize:11,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:12}},'Total captured events per honeypot sensor'),
+          hh(RC.ResponsiveContainer,{width:'100%',height:100},
+            hh(RC.BarChart,{data:barData,layout:'vertical',margin:{top:0,right:60,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:80,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v.toLocaleString('en-US')+' events','Count']}),
+              hh(RC.Bar,{dataKey:'events',name:'Events',radius:[0,3,3,0],barSize:20,label:{position:'right',style:{fill:'#8892a4',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},formatter:v=>v.toLocaleString('en-US')}},
+                ...barData.map((e,i)=>hh(RC.Cell,{key:i,fill:(HP_COLORS[e.id]||'#888')+'cc'}))
+              )
+            )
+          )
+        );
+      }
+
+      if (!window.__hpChartRoot) window.__hpChartRoot = RD.createRoot(chartEl);
+      window.__hpChartRoot.render(hh(HpChart,null));
+      window.__pageCleanup = () => { if(window.__hpChartRoot){window.__hpChartRoot.unmount();window.__hpChartRoot=null;} };
+    }
 
     const services = (health && health.services) || {};
-    // If the health endpoint is reachable and OK, assume honeypots are up
-    // even if the container image predates the services field.
-    const backendOk = health && (health.status === 'ok' || health.status === 'degraded');
     $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
       const s = stats[h.id];
-      const svc = services[h.id] || services[h.container];
-      const upDown = svc || (s.count > 0 ? 'up' : (backendOk ? 'up' : 'unknown'));
-      const isUp = String(upDown).toLowerCase() === 'up';
+      const upDown = services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
+      const isUp = String(upDown).toLowerCase() === 'up' || s.count > 0;
       return `<div class="hp-card hp-${h.id}">
         <div class="hp-card-h">
           <div>
