@@ -302,6 +302,46 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
+    # ── Fallback: fill missing geo from PG enrichment_data (forensic engine) ─
+    # iplocate.io returns {} when quota is exhausted or no API key is set.
+    # The forensic engine always writes geo into enrichment_data, so use it.
+    if source_ip and not profile_dict.get("country"):
+        try:
+            async with session_scope() as db:
+                ed_row = await db.execute(
+                    text("""
+                        SELECT enrichment_data
+                        FROM forensic_sessions
+                        WHERE source_ip = :ip
+                          AND enrichment_data IS NOT NULL
+                          AND enrichment_data->>'geo' IS NOT NULL
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """),
+                    {"ip": source_ip},
+                )
+                ed = (ed_row.mappings().first() or {})
+            if ed:
+                ed_data = ed.get("enrichment_data") or {}
+                if isinstance(ed_data, str):
+                    import json as _json
+                    ed_data = _json.loads(ed_data)
+                geo  = ed_data.get("geo") or {}
+                ts   = ed_data.get("threat_summary") or {}
+                profile_dict.setdefault("country",     geo.get("country") or ts.get("country"))
+                profile_dict.setdefault("country_iso", geo.get("country_code") or ts.get("country_code"))
+                profile_dict.setdefault("city",        geo.get("city") or ts.get("city") or "")
+                profile_dict.setdefault("asn",         geo.get("asn") or ts.get("asn"))
+                profile_dict.setdefault("as_org",      geo.get("org") or ts.get("org"))
+                profile_dict.setdefault("isp",         ts.get("org") or geo.get("org"))
+                profile_dict.setdefault("is_tor",      bool(ts.get("is_tor")))
+                profile_dict.setdefault("is_vpn",      bool(ts.get("is_vpn")))
+                profile_dict.setdefault("is_proxy",    bool(ts.get("is_proxy")))
+                profile_dict.setdefault("usage_type",  ts.get("usage_type") or "")
+                profile_dict.setdefault("abuseipdb_score", ts.get("abuse_score"))
+        except Exception as exc:
+            log.warning("enrichment_data fallback failed for %s: %s", source_ip, exc)
+
     # ── Pre-flight: aggregate individual sessions for unified rows ───────────
     # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated
     is_unified = pg_row.get("honeypot_type") == "unified" or session_id.startswith("unified-")
