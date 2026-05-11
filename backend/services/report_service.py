@@ -11,14 +11,45 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from sqlalchemy import text
+
 from config import get_settings
+from db import session_scope
 from models.report import AttackerProfile, ReportMeta, ReportRequest, ReportScope
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
+from services.report_adapter import adapt_risk_data_for_report
 
 log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+
+async def _query_unified_risk_score(source_ip: str) -> dict:
+    """Query the unified risk score from ip_risk_scores table for an IP."""
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT source_ip, risk_score, risk_level, confidence, active_signals,
+                           signal_breakdown, honeypots_hit, honeypot_count, honeypot_summary,
+                           sessions_count, key_findings, recommendations, enrichment_snapshot
+                    FROM ip_risk_scores
+                    WHERE source_ip = CAST(:ip AS INET)
+                    LIMIT 1
+                    """
+                ),
+                {"ip": source_ip},
+            )
+            row = result.mappings().first()
+            if not row:
+                return {}
+            d = dict(row)
+            d["source_ip"] = str(d["source_ip"])
+            return d
+    except Exception:
+        return {}
 
 
 class ReportService:
@@ -55,90 +86,21 @@ class ReportService:
         resp = await es.search_docs(self.settings.honeypot_indices, body)
         return [h["_source"] | {"_id": h["_id"]} for h in resp["hits"]["hits"]]
 
-    async def _collect_forensic_data(self, req: ReportRequest) -> Dict[str, Any]:
-        """Fetch enrichment + forensic data from PostgreSQL for the report."""
-        import asyncpg
-        import json as _json
-        data: Dict[str, Any] = {
-            "sessions": [], "enrichment": None, "iocs": [], "profiles": []
-        }
-
-        def _parse_json(v: Any) -> Any:
-            """asyncpg returns jsonb as str; normalize to dict/list."""
-            if isinstance(v, str):
-                try:
-                    return _json.loads(v)
-                except Exception:
-                    return v
-            return v
-
-        try:
-            conn = await asyncpg.connect(
-                host=self.settings.pg_host,
-                port=self.settings.pg_port,
-                database=self.settings.pg_db,
-                user=self.settings.pg_user,
-                password=self.settings.pg_password or "",
-            )
-            # Sessions forensiques
-            if req.scope == ReportScope.IP and req.ip:
-                rows = await conn.fetch(
-                    """SELECT session_id, honeypot_type, source_ip, risk_score,
-                              kill_chain_phase, kill_chain_stage, primary_technique,
-                              mitre_techniques, forensic_narrative, started_at, ended_at
-                       FROM forensic_sessions WHERE source_ip = $1
-                       ORDER BY risk_score DESC NULLS LAST""", req.ip)
-                sessions = []
-                for r in rows:
-                    d = dict(r)
-                    d["mitre_techniques"] = _parse_json(d.get("mitre_techniques"))
-                    sessions.append(d)
-                data["sessions"] = sessions
-                # Enrichissement IP
-                row = await conn.fetchrow(
-                    "SELECT data FROM ip_enrichment_cache WHERE ip = $1", req.ip)
-                if row:
-                    data["enrichment"] = _parse_json(row["data"])
-                # IOCs
-                ioc_rows = await conn.fetch(
-                    """SELECT ioc_type, ioc_value, occurrences, first_seen, last_seen
-                       FROM forensic_iocs WHERE source_ip = $1
-                       ORDER BY occurrences DESC LIMIT 30""", req.ip)
-                data["iocs"] = [dict(r) for r in ioc_rows]
-            elif req.scope == ReportScope.SESSION and req.session_id:
-                row = await conn.fetchrow(
-                    """SELECT session_id, honeypot_type, source_ip, risk_score,
-                              kill_chain_phase, kill_chain_stage, primary_technique,
-                              mitre_techniques, forensic_narrative, started_at, ended_at
-                       FROM forensic_sessions WHERE session_id = $1""", req.session_id)
-                if row:
-                    d = dict(row)
-                    d["mitre_techniques"] = _parse_json(d.get("mitre_techniques"))
-                    data["sessions"] = [d]
-                    ip = row["source_ip"]
-                    enrich = await conn.fetchrow(
-                        "SELECT data FROM ip_enrichment_cache WHERE ip = $1", ip)
-                    if enrich:
-                        data["enrichment"] = _parse_json(enrich["data"])
-                    ioc_rows = await conn.fetch(
-                        """SELECT ioc_type, ioc_value, occurrences
-                           FROM forensic_iocs WHERE source_ip = $1
-                           ORDER BY occurrences DESC LIMIT 20""", ip)
-                    data["iocs"] = [dict(r) for r in ioc_rows]
-            await conn.close()
-        except Exception as exc:
-            log.warning("Could not fetch forensic data from PostgreSQL: %s", exc)
-        return data
-
     async def generate(self, req: ReportRequest) -> ReportMeta:
         # WeasyPrint is imported lazily so the app can still boot if libs are missing.
         from weasyprint import HTML
 
         report_id = str(uuid.uuid4())
         events = await self._collect_events(req)
-        forensic = await self._collect_forensic_data(req)
         title = req.title or self._default_title(req)
         summary = self._summarize(events)
+
+        # Inject unified risk score for IP-scoped reports
+        risk_ctx: dict = {}
+        if req.scope == ReportScope.IP and req.ip:
+            raw_risk = await _query_unified_risk_score(req.ip)
+            if raw_risk:
+                risk_ctx = adapt_risk_data_for_report(raw_risk)
 
         html_body = self.env.get_template("report.html").render(
             report_id=report_id,
@@ -150,9 +112,7 @@ class ReportService:
             events=events[:200],
             event_count=len(events),
             summary=summary,
-            sessions=forensic["sessions"],
-            enrichment=forensic["enrichment"],
-            iocs=forensic["iocs"],
+            **risk_ctx,
         )
         out_dir = Path(self.settings.reports_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -267,24 +227,29 @@ class ReportService:
 
     @staticmethod
     def _summarize(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # ES stores fields as flat dot-notation strings ("source.ip", "honeypot.type")
-        ips: Counter = Counter()
-        honeypots: Counter = Counter()
-        event_types: Counter = Counter()
+        ips = Counter()
+        countries = Counter()
+        honeypots = Counter()
+        severities = Counter()
         for e in events:
-            ip = e.get("source.ip") or e.get("src_ip")
+            src = (e.get("source") or {})
+            ip = src.get("ip") or e.get("src_ip")
             if ip:
                 ips[ip] += 1
-            hp = e.get("honeypot.type") or e.get("honeypot")
+            country = (src.get("geo") or {}).get("country_name")
+            if country:
+                countries[country] += 1
+            hp = e.get("honeypot")
             if hp:
                 honeypots[hp] += 1
-            ev = e.get("event.id") or e.get("eventid") or e.get("event.action")
-            if ev:
-                event_types[ev] += 1
+            sev = e.get("severity")
+            if sev:
+                severities[str(sev)] += 1
         return {
             "top_ips": ips.most_common(10),
+            "top_countries": countries.most_common(10),
             "honeypots": honeypots.most_common(),
-            "event_types": event_types.most_common(10),
+            "severities": severities.most_common(),
         }
 
     @staticmethod

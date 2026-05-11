@@ -187,3 +187,28 @@ DO $$ BEGIN
         CREATE ROLE postgres SUPERUSER LOGIN;
     END IF;
 END $$;
+
+-- Aggregated per-IP risk scores (Phase 9 unified scoring)
+-- Created separately from forensic_sessions to avoid PK conflicts.
+-- See docs/schema_risk.sql for the standalone migration script.
+CREATE TABLE IF NOT EXISTS ip_risk_scores (
+    source_ip           INET PRIMARY KEY,
+    risk_score          INT NOT NULL DEFAULT 0,
+    risk_level          VARCHAR(20) NOT NULL,
+    confidence          VARCHAR(10) NOT NULL,
+    active_signals      INT DEFAULT 0,
+    signal_breakdown    JSONB NOT NULL DEFAULT '{}',
+    honeypots_hit       TEXT[] DEFAULT '{}',
+    honeypot_count      INT DEFAULT 1,
+    honeypot_summary    JSONB DEFAULT '{}',
+    sessions_count      INT DEFAULT 1,
+    key_findings        TEXT[] DEFAULT '{}',
+    recommendations     JSONB DEFAULT '[]'::jsonb,
+    enrichment_snapshot JSONB DEFAULT '{}',
+    scored_at           TIMESTAMP DEFAULT NOW(),
+    updated_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ip_risk_score  ON ip_risk_scores(risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_ip_risk_level  ON ip_risk_scores(risk_level);
+CREATE INDEX IF NOT EXISTS idx_ip_risk_scored ON ip_risk_scores(scored_at DESC);

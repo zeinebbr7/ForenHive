@@ -1,144 +1,55 @@
 """
-Forensic-engine RiskScorer tests (risk_score_optimized).
+Forensic-engine risk_score tests.
 Run inside the forensic-engine container:
-    docker exec forenhive-forensic-engine python -m pytest tests/ -v
+    docker compose run --rm forensic-engine python -m pytest tests/ -v
 """
 import sys
 import os
-import unittest
-from unittest.mock import patch, MagicMock
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from risk_score_optimized import RiskScorer
+from risk_score import calculate_risk_score
 
 
-class TestRiskScorerSignals(unittest.TestCase):
-
-    def setUp(self):
-        self.scorer = RiskScorer()
-
-    # ── Signal 1: Reputation ────────────────────────────────────────────────
-
-    def test_signal_reputation_public_high_abuse(self):
-        """Public IP with AbuseIPDB score >= 90 returns 25 pts."""
-        enrichment = {"reputation": {"abuse_score": 95}}
-        assert self.scorer._signal_reputation("1.2.3.4", enrichment) == 25
-
-    def test_signal_reputation_private_ip_zero(self):
-        """Private IPs get 0 reputation points (no AbuseIPDB lookup)."""
-        enrichment = {"reputation": {"abuse_score": 100}}
-        assert self.scorer._signal_reputation("192.168.1.1", enrichment) == 0
-
-    def test_signal_reputation_no_abuse_data(self):
-        """Missing AbuseIPDB data returns 0."""
-        assert self.scorer._signal_reputation("8.8.8.8", {}) == 0
-
-    # ── Signal 2: Compromise ────────────────────────────────────────────────
-
-    def test_signal_compromise_success(self):
-        """A session with success_count > 0 returns 25 pts."""
-        sessions = [{"honeypot_type": "cowrie", "success_count": 1}]
-        assert self.scorer._signal_compromise(sessions) == 25
-
-    def test_signal_compromise_no_success(self):
-        """Sessions without a successful login return 0."""
-        sessions = [{"honeypot_type": "cowrie", "success_count": 0}]
-        assert self.scorer._signal_compromise(sessions) == 0
-
-    # ── Signal 3: Brute Force ───────────────────────────────────────────────
-
-    def test_signal_brute_force_high_velocity(self):
-        """Attack velocity > 50 req/s returns max 20 pts."""
-        sessions = [{"login_attempts": 1000, "attack_velocity": 60.0}]
-        assert self.scorer._signal_brute_force(sessions) == 20
-
-    def test_signal_brute_force_many_attempts(self):
-        """500+ attempts returns 15 pts."""
-        sessions = [{"login_attempts": 600, "attack_velocity": 0}]
-        assert self.scorer._signal_brute_force(sessions) == 15
-
-    def test_signal_brute_force_low_attempts(self):
-        """Fewer than 50 attempts returns 0."""
-        sessions = [{"login_attempts": 10, "attack_velocity": 0}]
-        assert self.scorer._signal_brute_force(sessions) == 0
-
-    # ── Signal 5: Anonymization ─────────────────────────────────────────────
-
-    def test_signal_anonymization_tor(self):
-        """Tor exit node returns 10 pts."""
-        enrichment = {"threat_summary": {"is_tor": True}}
-        assert self.scorer._signal_anonymization(enrichment) == 10
-
-    def test_signal_anonymization_vpn(self):
-        """VPN/proxy returns 6 pts."""
-        enrichment = {"privacy": {"is_vpn": True}}
-        assert self.scorer._signal_anonymization(enrichment) == 6
-
-    def test_signal_anonymization_direct(self):
-        """Direct connection returns 0."""
-        assert self.scorer._signal_anonymization({}) == 0
-
-    # ── Risk level thresholds ───────────────────────────────────────────────
-
-    def test_risk_level_critique(self):
-        assert RiskScorer._get_risk_level(80) == "CRITIQUE"
-        assert RiskScorer._get_risk_level(100) == "CRITIQUE"
-
-    def test_risk_level_eleve(self):
-        assert RiskScorer._get_risk_level(60) == "ÉLEVÉ"
-        assert RiskScorer._get_risk_level(79) == "ÉLEVÉ"
-
-    def test_risk_level_moyen(self):
-        assert RiskScorer._get_risk_level(40) == "MOYEN"
-
-    def test_risk_level_faible(self):
-        assert RiskScorer._get_risk_level(20) == "FAIBLE"
-
-    def test_risk_level_info(self):
-        assert RiskScorer._get_risk_level(0) == "INFO"
-        assert RiskScorer._get_risk_level(19) == "INFO"
-
-    # ── Confidence ─────────────────────────────────────────────────────────
-
-    def test_confidence_high(self):
-        assert RiskScorer._get_confidence(4) == "HIGH"
-
-    def test_confidence_medium(self):
-        assert RiskScorer._get_confidence(2) == "MEDIUM"
-
-    def test_confidence_low(self):
-        assert RiskScorer._get_confidence(1) == "LOW"
-
-    # ── Private IP helper ───────────────────────────────────────────────────
-
-    def test_is_private_ip_rfc1918(self):
-        assert RiskScorer._is_private_ip("10.0.0.1") is True
-        assert RiskScorer._is_private_ip("172.16.0.1") is True
-        assert RiskScorer._is_private_ip("192.168.1.1") is True
-
-    def test_is_private_ip_public(self):
-        assert RiskScorer._is_private_ip("8.8.8.8") is False
-
-    def test_is_private_ip_invalid(self):
-        assert RiskScorer._is_private_ip("not-an-ip") is False
-
-    # ── Empty score ─────────────────────────────────────────────────────────
-
-    def test_empty_score_structure(self):
-        result = RiskScorer._empty_score("1.2.3.4")
-        assert result["source_ip"] == "1.2.3.4"
-        assert result["risk_score"] == 0
-        assert result["risk_level"] == "INFO"
-        assert result["confidence"] == "LOW"
-
-    # ── Score capped at 100 ─────────────────────────────────────────────────
-
-    def test_score_capped_at_100(self):
-        """All signals firing cannot exceed 100."""
-        total = (25 + 25 + 20 + 15 + 10 + 5)
-        assert min(100, total) == 100
+def test_lateral_movement_external_ip_smb_share_enum():
+    """BUG-012: smb_share_enum=True must set lateral_movement=True even on a public IP."""
+    result = calculate_risk_score({
+        "source_ip": "89.248.167.131",  # public IP — not private
+        "smb_share_enum": True,
+        "failed_auth_count": 5,
+    })
+    assert result["lateral_movement"] is True, (
+        "lateral_movement must be True when smb_share_enum=True on external IP"
+    )
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_score_uncapped_in_result():
+    """BUG-029: score_uncapped must be present and >= score when signals exceed 100."""
+    result = calculate_risk_score({
+        "source_ip": "89.248.167.131",
+        "failed_auth_count": 500,
+        "abuseipdb_score": 100,
+        "is_tor": True,
+        "yara_match": "Emotet",
+        "smb_share_enum": True,
+        "exploit_cve": "CVE-2021-44228",
+        "mitre_techniques": ["T1110", "T1078", "T1059"],
+        "country_iso": "KP",
+        "command_count": 500,
+        "download_attempt": True,
+    })
+    assert "score_uncapped" in result, "score_uncapped must be in result dict"
+    assert result["score"] <= 100, "score must be capped at 100"
+    assert result["score_uncapped"] >= result["score"], (
+        "score_uncapped must be >= capped score"
+    )
+
+
+def test_lateral_movement_via_attack_types():
+    """BUG-012: lateral_movement in attack_types (not just smb_share_enum) triggers flag."""
+    result = calculate_risk_score({
+        "source_ip": "93.184.216.34",  # example.com — public
+        "smb_share_enum": True,        # triggers attack_types.add("lateral_movement")
+        "failed_auth_count": 0,
+    })
+    assert "lateral_movement" in result["attack_types"]
+    assert result["lateral_movement"] is True

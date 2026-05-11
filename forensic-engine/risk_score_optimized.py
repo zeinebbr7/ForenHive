@@ -1,39 +1,70 @@
 """
-ForenHive — Unified Risk Scorer (Option A)
+ForenHive Unified Risk Scorer — v2.0
+6-signal risk scoring: one score per source_ip aggregating all honeypots.
 
-One score per source_ip aggregating all honeypots (Cowrie, Dionaea, Galah)
-within a configurable time window. 6-signal direct 0-100 scale.
+Signals (0-100 total):
+  1. IP Reputation        (0-25)  — AbuseIPDB score
+  2. Compromise Confirmed (0-25)  — successful login/exploit
+  3. Brute Force          (0-20)  — attempt volume + velocity
+  4. Malware Detected     (0-15)  — YARA + VirusTotal
+  5. Anonymization        (0-10)  — Tor/VPN + critical port targeting
+  6. Sophistication       (0-5)   — kill chain depth + multi-honeypot
 """
 
+import ipaddress
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+import psycopg2
+import psycopg2.extras
+from elasticsearch import Elasticsearch
 
 import config
-import db_pool
 
 log = logging.getLogger("risk_score_optimized")
 
 
 class RiskScorer:
     """
-    Simplified 6-signal risk scoring (0-100 direct).
-    One score per source_ip aggregating all honeypots in time window.
+    Unified risk scorer. One score per source_ip.
+    Aggregates Cowrie + Dionaea + Galah data within a configurable time window.
+    Reads from forensic_sessions (written by the engine) and ip_enrichment_cache.
     """
 
-    def calculate_risk_score(self, source_ip: str, time_window_hours: int = 24) -> Dict:
-        """
-        Calculate unified risk score for an IP across all honeypots in time window.
+    def __init__(self):
+        self.es = Elasticsearch(
+            f"http://{config.ES_HOST}:{config.ES_PORT}",
+            request_timeout=30,
+        )
+        # Store DSN — do NOT hold an open connection
+        self._pg_dsn = dict(
+            host=config.PG_HOST,
+            database=config.PG_DB,
+            user=config.PG_USER,
+            password=config.PG_PASSWORD,
+        )
 
-        Args:
-            source_ip: The attacker IP (e.g. '185.220.101.5')
-            time_window_hours: Look back this many hours (default 24h)
+    # ── connection helper ───────────────────────────────────────
+    def _pg_connect(self):
+        """Return a new psycopg2 connection (use as context manager)."""
+        return psycopg2.connect(**self._pg_dsn)
 
-        Returns:
-            Dict with score (0-100), level, confidence, signals breakdown
+    # ── public entry point ──────────────────────────────────────
+    def calculate_risk_score(
+        self,
+        source_ip: str,
+        time_window_hours: int = 24,
+    ) -> Dict:
         """
-        log.info(f"Calculating risk score for {source_ip} (window: {time_window_hours}h)")
+        Calculate unified risk score for an IP across all honeypots.
+
+        Returns dict with: source_ip, risk_score (0-100), risk_level,
+        confidence, signal_breakdown, honeypots_hit, key_findings,
+        recommendations, enrichment_snapshot.
+        """
+        log.info(f"Calculating risk score for {source_ip} (window={time_window_hours}h)")
 
         try:
             all_sessions = self._query_sessions_by_ip(source_ip, time_window_hours)
@@ -42,87 +73,91 @@ class RiskScorer:
                 log.warning(f"No sessions found for {source_ip}")
                 return self._empty_score(source_ip)
 
-            log.info(f"Found {len(all_sessions)} sessions for {source_ip}")
+            log.info(f"Found {len(all_sessions)} session(s) for {source_ip}")
 
             enrichment = self._query_enrichment(source_ip)
 
-            signal_1 = self._signal_reputation(source_ip, enrichment)
-            signal_2 = self._signal_compromise(all_sessions)
-            signal_3 = self._signal_brute_force(all_sessions)
-            signal_4 = self._signal_malware(all_sessions)
-            signal_5 = self._signal_anonymization(enrichment)
-            signal_6 = self._signal_sophistication(all_sessions, enrichment)
+            sig1 = self._signal_reputation(source_ip, enrichment)
+            sig2 = self._signal_compromise(all_sessions)
+            sig3 = self._signal_brute_force(all_sessions)
+            sig4 = self._signal_malware(all_sessions)
+            sig5 = self._signal_anonymization(enrichment, all_sessions)
+            sig6 = self._signal_sophistication(all_sessions)
 
-            signals = {
-                "reputation":     signal_1,
-                "compromise":     signal_2,
-                "brute_force":    signal_3,
-                "malware":        signal_4,
-                "anonymization":  signal_5,
-                "sophistication": signal_6,
-            }
+            raw_signals = dict(
+                reputation=sig1,
+                compromise=sig2,
+                brute_force=sig3,
+                malware=sig4,
+                anonymization=sig5,
+                sophistication=sig6,
+            )
 
-            risk_score  = min(100, sum(signals.values()))
-            risk_level  = self._get_risk_level(risk_score)
-            active_signals = sum(1 for v in signals.values() if v > 0)
-            confidence  = self._get_confidence(active_signals)
+            risk_score = min(100, sum(raw_signals.values()))
+            risk_level = self._risk_level(risk_score)
 
-            honeypots_hit = list({s["honeypot_type"] for s in all_sessions if s.get("honeypot_type")})
+            active_signals = sum(1 for v in raw_signals.values() if v > 0)
+            confidence = self._confidence(active_signals)
+
+            honeypots_hit = sorted(set(
+                s["honeypot_type"] for s in all_sessions if s.get("honeypot_type")
+            ))
             honeypot_summary = {
-                "cowrie":  len([s for s in all_sessions if s.get("honeypot_type") == "cowrie"]),
-                "dionaea": len([s for s in all_sessions if s.get("honeypot_type") == "dionaea"]),
-                "galah":   len([s for s in all_sessions if s.get("honeypot_type") == "galah"]),
+                "cowrie":  sum(1 for s in all_sessions if s.get("honeypot_type") == "cowrie"),
+                "dionaea": sum(1 for s in all_sessions if s.get("honeypot_type") == "dionaea"),
+                "galah":   sum(1 for s in all_sessions if s.get("honeypot_type") == "galah"),
+                "zeek":    0,
             }
 
             signal_breakdown = {
                 "reputation": {
-                    "points": signal_1,
+                    "points": sig1,
                     "max":    25,
                     "label":  "IP Reputation",
-                    "detail": self._signal_detail_reputation(enrichment),
+                    "detail": self._detail_reputation(enrichment),
                 },
                 "compromise": {
-                    "points": signal_2,
+                    "points": sig2,
                     "max":    25,
                     "label":  "Compromise Confirmed",
-                    "detail": self._signal_detail_compromise(all_sessions),
+                    "detail": self._detail_compromise(all_sessions),
                 },
                 "brute_force": {
-                    "points": signal_3,
+                    "points": sig3,
                     "max":    20,
-                    "label":  "Brute Force Automation",
-                    "detail": self._signal_detail_brute_force(all_sessions),
+                    "label":  "Brute Force / Automation",
+                    "detail": self._detail_brute_force(all_sessions),
                 },
                 "malware": {
-                    "points": signal_4,
+                    "points": sig4,
                     "max":    15,
                     "label":  "Malware Detected",
-                    "detail": self._signal_detail_malware(all_sessions),
+                    "detail": self._detail_malware(all_sessions),
                 },
                 "anonymization": {
-                    "points": signal_5,
+                    "points": sig5,
                     "max":    10,
-                    "label":  "Anonymization/Evasion",
-                    "detail": self._signal_detail_anonymization(enrichment),
+                    "label":  "Anonymization / Evasion",
+                    "detail": self._detail_anonymization(enrichment),
                 },
                 "sophistication": {
-                    "points": signal_6,
+                    "points": sig6,
                     "max":    5,
                     "label":  "Attack Sophistication",
-                    "detail": self._signal_detail_sophistication(all_sessions, honeypots_hit),
+                    "detail": self._detail_sophistication(all_sessions, honeypots_hit),
                 },
             }
 
-            key_findings    = self._generate_key_findings(all_sessions, signals, enrichment)
-            recommendations = self._generate_recommendations(risk_score, all_sessions)
+            key_findings    = self._build_key_findings(raw_signals, enrichment)
+            recommendations = self._build_recommendations(risk_score, all_sessions)
 
-            result = {
-                "source_ip":     source_ip,
-                "risk_score":    risk_score,
-                "risk_level":    risk_level,
-                "confidence":    confidence,
+            return {
+                "source_ip":      source_ip,
+                "risk_score":     risk_score,
+                "risk_level":     risk_level,
+                "confidence":     confidence,
                 "active_signals": active_signals,
-                "timestamp":     datetime.utcnow().isoformat() + "Z",
+                "timestamp":      datetime.utcnow().isoformat() + "Z",
 
                 "signal_breakdown":  signal_breakdown,
                 "honeypots_hit":     honeypots_hit,
@@ -134,281 +169,382 @@ class RiskScorer:
                 "recommendations": recommendations,
 
                 "enrichment_snapshot": {
-                    "country":      enrichment.get("geo", {}).get("country"),
-                    "asn":          enrichment.get("geo", {}).get("asn"),
-                    "organization": enrichment.get("geo", {}).get("org"),
-                    "is_tor":       enrichment.get("privacy", {}).get("is_tor", False),
-                    "is_vpn":       enrichment.get("privacy", {}).get("is_vpn", False),
-                    "is_hosting":   enrichment.get("privacy", {}).get("is_hosting", False),
-                    "abuse_score":  enrichment.get("reputation", {}).get("abuse_score", 0),
+                    "country":    enrichment.get("geo", {}).get("country"),
+                    "city":       enrichment.get("geo", {}).get("city"),
+                    "asn":        enrichment.get("geo", {}).get("asn"),
+                    "org":        enrichment.get("geo", {}).get("org"),
+                    "is_tor":     enrichment.get("privacy", {}).get("is_tor", False),
+                    "is_vpn":     enrichment.get("privacy", {}).get("is_vpn", False),
+                    "is_hosting": enrichment.get("privacy", {}).get("is_hosting", False),
+                    "abuse_score": enrichment.get("reputation", {}).get("abuse_score", 0),
                 },
             }
-
-            log.info(f"Risk score for {source_ip}: {risk_score}/{risk_level}/{confidence}")
-            return result
 
         except Exception as e:
             log.error(f"Risk score calculation failed for {source_ip}: {e}", exc_info=True)
             raise
 
-    # ── Signal 1: IP Reputation ───────────────────────────────────────────────
-
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 1 — IP REPUTATION  (0-25)
+    # ════════════════════════════════════════════════════════════
     def _signal_reputation(self, source_ip: str, enrichment: dict) -> int:
-        """0-25 points. Public IP: AbuseIPDB score. Private IP: 0."""
-        if self._is_private_ip(source_ip):
+        if self._is_private(source_ip):
             return 0
 
-        abuse_score = enrichment.get("reputation", {}).get("abuse_score", 0)
-        if abuse_score >= 90:
+        abuse = enrichment.get("reputation", {}).get("abuse_score", 0)
+        if abuse >= 90:
             return 25
-        elif abuse_score >= 70:
+        elif abuse >= 70:
             return 18
-        elif abuse_score >= 50:
+        elif abuse >= 50:
             return 12
-        elif abuse_score >= 30:
+        elif abuse >= 30:
             return 6
         return 0
 
-    # ── Signal 2: Compromise Confirmed ───────────────────────────────────────
-
-    def _signal_compromise(self, all_sessions: list) -> int:
-        """0-25 points. Did they successfully login/exploit any honeypot?"""
-        for session in all_sessions:
-            if session.get("success_count", 0) > 0:
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 2 — COMPROMISE CONFIRMED  (0-25)
+    # ════════════════════════════════════════════════════════════
+    def _signal_compromise(self, sessions: list) -> int:
+        for s in sessions:
+            if s.get("success_count", 0) > 0:
                 return 25
         return 0
 
-    # ── Signal 3: Brute Force Automation ─────────────────────────────────────
-
-    def _signal_brute_force(self, all_sessions: list) -> int:
-        """0-20 points. Aggregate attempt count and velocity across sessions."""
-        total_attempts = sum(s.get("login_attempts", 0) for s in all_sessions)
-        max_velocity   = max(
-            (s.get("attack_velocity", 0) for s in all_sessions), default=0
-        )
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 3 — BRUTE FORCE / AUTOMATION  (0-20)
+    # ════════════════════════════════════════════════════════════
+    def _signal_brute_force(self, sessions: list) -> int:
+        total_attempts = sum(s.get("login_attempts", 0) for s in sessions)
+        max_velocity   = max((s.get("attack_velocity", 0.0) for s in sessions), default=0.0)
 
         if max_velocity > 50:
-            base_score = 20
+            base = 20
         elif total_attempts >= 500:
-            base_score = 15
+            base = 15
         elif total_attempts >= 200:
-            base_score = 10
+            base = 10
         elif total_attempts >= 50:
-            base_score = 5
+            base = 5
         else:
-            base_score = 0
+            base = 0
 
-        return base_score
+        has_targeted = any(
+            "targeted_wordlist" in (s.get("enrichment_data") or {}).get("attack_types", [])
+            for s in sessions
+        )
+        if has_targeted and base > 0:
+            base = min(20, base + 2)
 
-    # ── Signal 4: Malware Detected ────────────────────────────────────────────
+        return base
 
-    def _signal_malware(self, all_sessions: list) -> int:
-        """0-15 points. YARA matches and VirusTotal across all sessions."""
-        for session in all_sessions:
-            enrich  = session.get("enrichment_data") or {}
-            yara    = enrich.get("yara_matches", []) if isinstance(enrich, dict) else []
-            vt_mal  = enrich.get("vt_malicious", 0) if isinstance(enrich, dict) else 0
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 4 — MALWARE DETECTED  (0-15)
+    # ════════════════════════════════════════════════════════════
+    def _signal_malware(self, sessions: list) -> int:
+        best = 0
+        for s in sessions:
+            enrich = s.get("enrichment_data") or {}
+            yara   = enrich.get("yara_matches", [])
+            vt     = enrich.get("vt_malicious", 0)
 
-            if yara:
-                return 10
-            if vt_mal >= 30:
-                return 10
-            elif vt_mal >= 10:
-                return 5
+            if any(isinstance(m, dict) and m.get("severity") == "CRITICAL" for m in yara):
+                return 15
+            if any(isinstance(m, dict) and m.get("severity") == "HIGH" for m in yara):
+                best = max(best, 10)
+            elif yara:
+                best = max(best, 5)
 
-        return 0
+            if vt >= 30:
+                best = max(best, 10)
+            elif vt >= 10:
+                best = max(best, 5)
 
-    # ── Signal 5: Anonymization/Evasion ──────────────────────────────────────
+        return best
 
-    def _signal_anonymization(self, enrichment: dict) -> int:
-        """0-10 points. Tor/VPN/proxy usage."""
-        privacy  = enrichment.get("privacy", {}) or {}
-        threat   = enrichment.get("threat_summary", {}) or {}
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 5 — ANONYMIZATION / EVASION  (0-10)
+    # ════════════════════════════════════════════════════════════
+    def _signal_anonymization(self, enrichment: dict, sessions: list) -> int:
+        """
+        Score Tor/VPN usage + critical port targeting.
+        Critical port bonus is CONDITIONAL — only if session data
+        confirms targeting of high-value services.
+        """
+        privacy = enrichment.get("privacy", {}) or {}
+        threat  = enrichment.get("threat_summary", {}) or {}
+        pts = 0
 
         is_tor   = threat.get("is_tor", False) or privacy.get("is_tor", False)
         is_vpn   = threat.get("is_vpn", False) or privacy.get("is_vpn", False)
         is_proxy = threat.get("is_proxy", False) or privacy.get("is_proxy", False)
 
         if is_tor:
-            return 10
+            pts += 7
         elif is_vpn or is_proxy:
-            return 6
-        return 0
+            pts += 4
 
-    # ── Signal 6: Attack Sophistication ──────────────────────────────────────
+        # Critical port targeting — inferred from session honeypot type
+        critical_ports = {22, 23, 445, 1433, 3306, 3389, 5432, 27017}
+        ports_targeted = set()
+        for s in sessions:
+            hp = s.get("honeypot_type", "")
+            if hp == "cowrie":
+                ports_targeted.update({22, 23})
+            elif hp == "dionaea":
+                ports_targeted.update({445, 3306, 27017})
+            elif s.get("destination_port"):
+                ports_targeted.add(int(s["destination_port"]))
 
-    def _signal_sophistication(self, all_sessions: list, enrichment: dict) -> int:
-        """0-5 points. Kill chain stage + multi-honeypot coordination."""
-        max_kill_chain = 0
-        for session in all_sessions:
-            kc = session.get("kill_chain_stage") or 0
-            max_kill_chain = max(max_kill_chain, int(kc))
+        if ports_targeted & critical_ports:
+            pts += 3
 
-        if max_kill_chain >= 6:
-            soph_pts = 5
-        elif max_kill_chain >= 4:
-            soph_pts = 3
-        elif max_kill_chain >= 2:
-            soph_pts = 1
+        return min(10, pts)
+
+    # ════════════════════════════════════════════════════════════
+    #  SIGNAL 6 — ATTACK SOPHISTICATION  (0-5)
+    # ════════════════════════════════════════════════════════════
+    def _signal_sophistication(self, sessions: list) -> int:
+        # Use pre-computed kill_chain_stage stored in forensic_sessions
+        max_kc = max(
+            (int(s.get("kill_chain_stage") or 0) for s in sessions),
+            default=0,
+        )
+
+        if max_kc >= 6:
+            pts = 5
+        elif max_kc >= 4:
+            pts = 3
+        elif max_kc >= 2:
+            pts = 1
         else:
-            soph_pts = 0
+            pts = 0
 
-        honeypot_types = {s.get("honeypot_type") for s in all_sessions if s.get("honeypot_type")}
-        if len(honeypot_types) > 1:
-            soph_pts = min(5, soph_pts + 2)
+        types = set(s.get("honeypot_type") for s in sessions if s.get("honeypot_type"))
+        if len(types) > 1:
+            pts = min(5, pts + 2)
 
-        return soph_pts
+        return pts
 
-    # ── Database helpers ──────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════
+    #  DATABASE HELPERS
+    # ════════════════════════════════════════════════════════════
 
-    def _query_sessions_by_ip(self, source_ip: str, hours: int) -> list:
-        """Query all sessions from this IP in time window."""
-        import psycopg2.extras
-        try:
-            with db_pool.pooled_conn() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute(
-                        """
-                        SELECT *
-                        FROM forensic_sessions
-                        WHERE source_ip = %s
-                          AND started_at > NOW() - make_interval(hours => %s)
-                          AND honeypot_type != 'unified'
-                        ORDER BY started_at DESC
-                        """,
-                        (source_ip, int(hours)),
-                    )
-                    return [dict(row) for row in cur.fetchall()]
-        except Exception as e:
-            log.error(f"Query sessions failed for {source_ip}: {e}")
-            return []
+    def _query_sessions_by_ip(self, ip: str, hours: int) -> list:
+        """Query all scored sessions for this IP within the time window."""
+        with self._pg_connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM forensic_sessions
+                    WHERE source_ip = %s
+                      AND started_at > NOW() - make_interval(hours => %s)
+                      AND honeypot_type != 'unified'
+                    ORDER BY started_at DESC
+                    """,
+                    (ip, hours),
+                )
+                return [dict(r) for r in cur.fetchall()]
 
-    def _query_enrichment(self, source_ip: str) -> dict:
-        """Query enrichment data from ip_enrichment_cache."""
-        import psycopg2.extras
-        try:
-            with db_pool.pooled_conn() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute(
-                        "SELECT data FROM ip_enrichment_cache WHERE ip = %s LIMIT 1",
-                        (source_ip,),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        return {}
-                    data = row["data"]
-                    return data if isinstance(data, dict) else json.loads(data)
-        except Exception as e:
-            log.error(f"Query enrichment failed for {source_ip}: {e}")
-            return {}
+    def _query_enrichment(self, ip: str) -> dict:
+        """Query cached enrichment data for this IP."""
+        with self._pg_connect() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT data FROM ip_enrichment_cache WHERE ip = %s LIMIT 1",
+                    (ip,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {}
+                data = row["data"]
+                return data if isinstance(data, dict) else json.loads(data)
 
-    # ── Utility helpers ───────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════
+    #  STATIC UTILITIES
+    # ════════════════════════════════════════════════════════════
 
     @staticmethod
-    def _is_private_ip(ip: str) -> bool:
-        import ipaddress
+    def _is_private(ip: str) -> bool:
         try:
             return ipaddress.ip_address(ip).is_private
         except ValueError:
             return False
 
     @staticmethod
-    def _get_risk_level(score: int) -> str:
+    def _risk_level(score: int) -> str:
         if score >= 80:
-            return "CRITIQUE"
-        elif score >= 60:
-            return "ÉLEVÉ"
-        elif score >= 40:
-            return "MOYEN"
-        elif score >= 20:
-            return "FAIBLE"
+            return "CRITICAL"
+        if score >= 60:
+            return "HIGH"
+        if score >= 40:
+            return "MEDIUM"
+        if score >= 20:
+            return "LOW"
         return "INFO"
 
     @staticmethod
-    def _get_confidence(active_signals: int) -> str:
-        if active_signals >= 4:
+    def _confidence(active: int) -> str:
+        if active >= 4:
             return "HIGH"
-        elif active_signals >= 2:
+        if active >= 2:
             return "MEDIUM"
         return "LOW"
 
-    # ── Detail generators ─────────────────────────────────────────────────────
+    # ════════════════════════════════════════════════════════════
+    #  DETAIL GENERATORS (for signal_breakdown)
+    # ════════════════════════════════════════════════════════════
 
-    def _signal_detail_reputation(self, enrichment: dict) -> str:
-        abuse_score = enrichment.get("reputation", {}).get("abuse_score", 0)
-        return f"AbuseIPDB score {abuse_score}/100"
+    def _detail_reputation(self, enrichment: dict) -> str:
+        rep = enrichment.get("reputation", {})
+        abuse = rep.get("abuse_score", 0)
+        reports = rep.get("total_reports", 0)
+        return f"AbuseIPDB {abuse}/100 ({reports} reports)"
 
-    def _signal_detail_compromise(self, all_sessions: list) -> str:
-        for s in all_sessions:
+    def _detail_compromise(self, sessions: list) -> str:
+        for s in sessions:
             if s.get("success_count", 0) > 0:
-                return f"Login successful on {s.get('honeypot_type', 'unknown')}"
-        return "No compromise detected"
+                hp = s.get("honeypot_type", "unknown")
+                return f"Successful login on {hp}"
+        return "No compromise"
 
-    def _signal_detail_brute_force(self, all_sessions: list) -> str:
-        total = sum(s.get("login_attempts", 0) for s in all_sessions)
-        return f"{total} total login attempts across all honeypots"
+    def _detail_brute_force(self, sessions: list) -> str:
+        total = sum(s.get("login_attempts", 0) for s in sessions)
+        hp_count = len(set(
+            s["honeypot_type"] for s in sessions
+            if s.get("login_attempts", 0) > 0 and s.get("honeypot_type")
+        ))
+        return f"{total} attempts across {hp_count} honeypot(s)"
 
-    def _signal_detail_malware(self, all_sessions: list) -> str:
-        for s in all_sessions:
+    def _detail_malware(self, sessions: list) -> str:
+        families = []
+        for s in sessions:
             enrich = s.get("enrichment_data") or {}
-            yara   = enrich.get("yara_matches", []) if isinstance(enrich, dict) else []
-            if yara:
-                return f"YARA match: {yara[0] if isinstance(yara[0], str) else yara[0].get('rule', 'unknown')}"
+            for m in enrich.get("yara_matches", []):
+                family = m if isinstance(m, str) else (m.get("family") or m.get("rule", "unknown"))
+                if family not in families:
+                    families.append(family)
+        if families:
+            return f"Detected: {', '.join(families[:3])}"
+        for s in sessions:
+            enrich = s.get("enrichment_data") or {}
+            vt = enrich.get("vt_malicious", 0)
+            if vt > 0:
+                return f"VirusTotal {vt} detections (no YARA hit)"
         return "No malware detected"
 
-    def _signal_detail_anonymization(self, enrichment: dict) -> str:
-        threat  = enrichment.get("threat_summary", {}) or {}
-        privacy = enrichment.get("privacy", {}) or {}
-        if threat.get("is_tor") or privacy.get("is_tor"):
-            return "Tor exit node detected"
-        elif threat.get("is_vpn") or privacy.get("is_vpn"):
-            return "VPN/Proxy detected"
+    def _detail_anonymization(self, enrichment: dict) -> str:
+        p = enrichment.get("privacy", {}) or {}
+        t = enrichment.get("threat_summary", {}) or {}
+        if t.get("is_tor") or p.get("is_tor"):
+            return "Tor exit node"
+        if t.get("is_vpn") or p.get("is_vpn"):
+            return "VPN detected"
+        if t.get("is_proxy") or p.get("is_proxy"):
+            return "Proxy detected"
         return "Direct connection"
 
-    def _signal_detail_sophistication(self, all_sessions: list, honeypots_hit: list) -> str:
-        if len(honeypots_hit) > 1:
-            return f"Multi-honeypot attack: {', '.join(honeypots_hit)}"
-        return f"Single service attack: {honeypots_hit[0] if honeypots_hit else 'unknown'}"
+    def _detail_sophistication(self, sessions: list, honeypots_hit: list) -> str:
+        max_kc = max((int(s.get("kill_chain_stage") or 0) for s in sessions), default=0)
+        phases = [
+            "None", "Reconnaissance", "Weaponization", "Exploitation",
+            "Installation", "C2", "Actions", "Lateral Movement", "Exfiltration",
+        ]
+        phase = phases[max_kc] if max_kc < len(phases) else f"Stage {max_kc}"
+        multi = (
+            f" | Multi-honeypot: {', '.join(honeypots_hit)}"
+            if len(honeypots_hit) > 1 else ""
+        )
+        return f"Kill chain: {phase} (stage {max_kc}/8){multi}"
 
-    # ── Key findings and recommendations ─────────────────────────────────────
+    # ════════════════════════════════════════════════════════════
+    #  FINDINGS & RECOMMENDATIONS
+    # ════════════════════════════════════════════════════════════
 
-    def _generate_key_findings(self, all_sessions: list, signals: dict, enrichment: dict) -> list:
+    def _build_key_findings(self, signals: dict, enrichment: dict) -> list:
         findings = []
+        if signals["reputation"] >= 18:
+            abuse = enrichment.get("reputation", {}).get("abuse_score", 0)
+            findings.append(f"IP flagged as malicious (AbuseIPDB {abuse}%)")
         if signals["compromise"] > 0:
-            findings.append("Confirmed system compromise")
+            findings.append("Confirmed system compromise (successful authentication)")
         if signals["brute_force"] > 0:
-            findings.append("Automated brute force attack detected")
+            findings.append("Automated brute-force attack detected")
         if signals["malware"] > 0:
-            findings.append("Malware/botnet payload detected")
-        if signals["anonymization"] > 0:
-            findings.append("Anonymization layer (Tor/VPN) used")
-        if signals["sophistication"] > 0:
-            findings.append("Multi-stage attack with lateral movement indicators")
+            findings.append("Malware or botnet payload detected")
+        if signals["anonymization"] >= 7:
+            findings.append("Tor exit node used for anonymization")
+        elif signals["anonymization"] >= 4:
+            findings.append("VPN/proxy used for evasion")
+        if signals["sophistication"] >= 3:
+            findings.append("Multi-stage attack with advanced kill chain progression")
         return findings
 
-    def _generate_recommendations(self, risk_score: int, all_sessions: list) -> list:
-        recommendations = []
-        if risk_score >= 80:
-            recommendations.append("IMMEDIATE: Block source IP at perimeter firewall")
-            recommendations.append("IMMEDIATE: Force password reset on affected accounts")
-        elif risk_score >= 60:
-            recommendations.append("Block source IP at firewall")
-            recommendations.append("Review access logs for unauthorized activity")
-        recommendations.append("Export IOCs in STIX 2.1 format")
-        return recommendations
+    def _build_recommendations(self, score: int, sessions: list) -> list:
+        recs = []
+        if score >= 80:
+            recs.append({
+                "priority": "IMMEDIATE",
+                "action": "Block source IP at perimeter firewall",
+                "rationale": f"Risk score {score}/100 — confirmed high-severity threat",
+            })
+            recs.append({
+                "priority": "IMMEDIATE",
+                "action": "Force password reset on any compromised accounts",
+                "rationale": "Successful authentication detected on honeypot",
+            })
+        elif score >= 60:
+            recs.append({
+                "priority": "HIGH",
+                "action": "Block source IP at firewall",
+                "rationale": f"Risk score {score}/100 — elevated threat",
+            })
+            recs.append({
+                "priority": "HIGH",
+                "action": "Review access logs for unauthorized activity from this IP/ASN",
+                "rationale": "Attacker may have probed production systems",
+            })
+        elif score >= 40:
+            recs.append({
+                "priority": "MEDIUM",
+                "action": "Add IP to watchlist and monitor for repeat activity",
+                "rationale": f"Risk score {score}/100 — moderate threat",
+            })
 
-    # ── Empty score ───────────────────────────────────────────────────────────
+        if any(
+            (s.get("enrichment_data") or {}).get("yara_matches")
+            or (s.get("enrichment_data") or {}).get("vt_malicious", 0) > 0
+            for s in sessions
+        ):
+            recs.append({
+                "priority": "HIGH",
+                "action": "Quarantine and analyze malware samples; export SHA-256 hashes to TIP",
+                "rationale": "Malware detected — lateral spread risk",
+            })
 
-    @staticmethod
-    def _empty_score(source_ip: str) -> dict:
+        recs.append({
+            "priority": "MEDIUM",
+            "action": "Export IOCs in STIX 2.1 format to SIEM for correlation",
+            "rationale": "Enable cross-environment detection",
+        })
+
+        return recs
+
+    def _empty_score(self, ip: str) -> dict:
         return {
-            "source_ip":      source_ip,
-            "risk_score":     0,
-            "risk_level":     "INFO",
-            "confidence":     "LOW",
-            "active_signals": 0,
+            "source_ip":        ip,
+            "risk_score":       0,
+            "risk_level":       "INFO",
+            "confidence":       "LOW",
+            "active_signals":   0,
+            "timestamp":        datetime.utcnow().isoformat() + "Z",
             "signal_breakdown": {},
-            "honeypots_hit":  [],
-            "honeypot_count": 0,
-            "sessions_count": 0,
+            "honeypots_hit":    [],
+            "honeypot_count":   0,
+            "honeypot_summary": {"cowrie": 0, "dionaea": 0, "galah": 0, "zeek": 0},
+            "sessions_count":   0,
+            "key_findings":     [],
+            "recommendations":  [],
+            "enrichment_snapshot": {},
         }

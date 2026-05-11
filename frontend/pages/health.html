@@ -252,7 +252,8 @@
         const probe = async hp => { try { const r = await api.attacks({ honeypot: hp, page_size: 1 }); return (r && r.total > 0) ? 'up' : 'unknown'; } catch (_) { return 'unknown'; } };
         const [cowrie, dionaea, galah, zeek] = await Promise.all([probe('cowrie'), probe('dionaea'), probe('galah'), probe('zeek')]);
         components.cowrie=cowrie; components.dionaea=dionaea; components.galah=galah; components.zeek=zeek;
-        components.postgresql='unknown'; components.ollama='unknown';
+        components.postgresql = ('postgresql' in h) ? (h.postgresql ? 'up' : 'down') : 'unknown';
+        components.ollama     = ('ollama'     in h) ? (h.ollama     ? 'up' : 'down') : 'unknown';
       }
       const order = ['api','elasticsearch','postgresql','ollama','cowrie','dionaea','galah','zeek','filebeat','logstash','nginx'];
       const entries = Object.entries(components).sort((a,b) => { const ai=order.indexOf(a[0]),bi=order.indexOf(b[0]); return (ai<0?99:ai)-(bi<0?99:bi); });

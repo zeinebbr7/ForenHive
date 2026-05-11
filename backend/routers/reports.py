@@ -108,6 +108,14 @@ def _resolve_malware_info(yara_matches: List[str]) -> Dict[str, str]:
                 "desc": "No threat intelligence entry found for this YARA rule. Manual analysis recommended."}
     return {}
 
+_RISK_LABEL_EN: Dict[str, str] = {
+    "CRITIQUE": "CRITICAL",
+    "ÉLEVÉ":    "HIGH",
+    "MOYEN":    "MEDIUM",
+    "FAIBLE":   "LOW",
+    "INFO":     "INFO",
+}
+
 _KC_LABELS = ["Recon", "Weapon", "Delivery", "Exploit", "Install", "C2", "Lateral", "Actions"]
 _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
               "installation", "command_and_control", "lateral_movement", "actions_on_objectives"]
@@ -239,6 +247,227 @@ def _build_score_signals_legacy(profile: dict, detail: dict) -> List[dict]:
     return signals
 
 
+def _adapt_context_for_v2(ctx: dict) -> dict:
+    """Convert _build_forensic_context() output to forenhive_rapport_v2.html variables."""
+    session = ctx.get("session", {})
+    profile = ctx.get("profile", {})
+    score   = ctx.get("risk_score", 0)
+
+    risk_level = _RISK_LABEL_EN.get(ctx.get("risk_label", ""), "INFO")
+
+    mitre_techniques = [
+        {
+            "tid":      r.get("id", ""),
+            "name":     r.get("technique", ""),
+            "tactic":   r.get("tactic", ""),
+            "evidence": r.get("evidence", ""),
+        }
+        for r in ctx.get("mitre_rows", [])
+    ]
+
+    signal_breakdown = [
+        {
+            "name":       s.get("name", ""),
+            "points":     s.get("points", 0),
+            "max_points": s.get("max", 0),
+        }
+        for s in ctx.get("score_signals", [])
+    ]
+
+    all_timeline = [
+        {
+            "timestamp":  str(ev.get("ts", "")),
+            "event_type": ev.get("action", ev.get("source", "")),
+            "details":    ev.get("detail", ""),
+            "mitre_tid":  ev.get("mitre") or None,
+        }
+        for ev in ctx.get("timeline", [])
+    ]
+
+    logins = session.get("login_attempts") or []
+    auth_attempts = [
+        {
+            "username": a.get("username", ""),
+            "password": a.get("password", ""),
+            "success":  a.get("success", False),
+        }
+        for a in logins
+    ]
+
+    started_at = session.get("started_at", "")
+    ended_at   = session.get("ended_at", "")
+    duration   = session.get("duration_seconds", 0)
+    duration_str = f"{duration:.1f}s" if isinstance(duration, (int, float)) and duration else "N/A"
+
+    source_ip   = str(session.get("source_ip") or profile.get("ip") or "")
+    event_count = len(all_timeline) or session.get("event_count", 0)
+
+    malware_info   = ctx.get("malware_info") or {}
+    malware_family = malware_info.get("family") if malware_info else None
+    yara_matches   = profile.get("yara_matches") or []
+    ioc_hashes     = profile.get("ioc_hashes") or []
+
+    # IOCs: file hashes + any download URLs seen in commands
+    iocs: List[Dict] = [
+        {"type": "SHA-256", "value": h, "context": "File captured by Dionaea"}
+        for h in ioc_hashes
+    ]
+    for cmd in (session.get("commands") or []):
+        inp = cmd.get("input") or ""
+        if any(x in inp for x in ["wget ", "curl "]):
+            for part in inp.split():
+                if part.startswith("http"):
+                    iocs.append({"type": "URL", "value": part, "context": f"Download command: {inp[:60]}"})
+                    break
+
+    # Dropped files (one entry per captured binary)
+    dropped_files: List[Dict] = []
+    if ioc_hashes:
+        vt = ctx.get("vt_result") or {}
+        dropped_files.append({
+            "filename":      profile.get("captured_file", "captured_file"),
+            "sha256":        ioc_hashes[0],
+            "yara_hits":     yara_matches,
+            "vt_detections": vt.get("malicious") if vt else None,
+            "vt_total":      vt.get("total") if vt else None,
+        })
+
+    # Chain of custody (session snapshot hash from existing context)
+    chain_of_custody = [{
+        "artifact":  "Session JSON snapshot",
+        "sha256":    ctx.get("sha256_session", ""),
+        "timestamp": str(started_at),
+        "tsa":       "freetsa.org",
+    }]
+
+    # Verdict
+    if score >= 80:
+        verdict = f"Confirmed high-severity threat ({malware_family or 'malware deployment detected'})"
+    elif score >= 60:
+        verdict = f"Likely malicious activity — {malware_family or 'attack confirmed'}"
+    elif score >= 40:
+        verdict = "Suspicious activity requiring further investigation"
+    else:
+        verdict = "Low-risk activity — continued monitoring recommended"
+
+    # Behavioral profile
+    traits: List[str] = []
+    if profile.get("is_tor"):
+        traits.append("Uses Tor anonymization network")
+    if profile.get("is_vpn"):
+        traits.append("Uses commercial VPN or proxy service")
+    if auth_attempts:
+        traits.append(f"Credential brute-force ({len(auth_attempts)} attempts)")
+    if yara_matches:
+        traits.append(f"Deployed known malware ({', '.join(yara_matches[:2])})")
+    if ctx.get("auth_success"):
+        traits.append("Achieved initial access via valid credentials")
+
+    org_pct = ctx.get("org_score_pct", 50)
+    sophistication = "HIGH" if score >= 70 else ("MEDIUM" if score >= 40 else "LOW")
+    profile_out = {
+        "sophistication":    sophistication,
+        "confidence":        org_pct,
+        "objective":         malware_family or ("Credential harvesting" if auth_attempts else "Unknown"),
+        "organized_score":   min(10, org_pct // 10),
+        "behavioral_traits": traits,
+        "detective_narrative": profile.get("mistral_analysis", ""),
+        "es_reference_cases": [],
+    }
+
+    # Recommendations
+    recommendations: List[Dict] = []
+    if score >= 80:
+        recommendations.append({
+            "priority":  "IMMEDIATE",
+            "action":    f"Block {source_ip} at perimeter firewall and upstream BGP if possible",
+            "rationale": "Critical risk score with confirmed malicious activity",
+        })
+    if ctx.get("auth_success"):
+        recommendations.append({
+            "priority":  "IMMEDIATE",
+            "action":    "Audit all systems for lateral movement originating from this IP",
+            "rationale": "Attacker achieved successful authentication on the honeypot",
+        })
+    if yara_matches:
+        recommendations.append({
+            "priority":  "HIGH",
+            "action":    "Submit captured binary to AV vendors and threat intelligence feeds",
+            "rationale": f"YARA matched: {', '.join(yara_matches[:2])}",
+        })
+    if auth_attempts:
+        recommendations.append({
+            "priority":  "HIGH",
+            "action":    "Enforce MFA and review credential policies on all internet-facing services",
+            "rationale": f"{len(auth_attempts)} authentication attempts observed",
+        })
+    recommendations.append({
+        "priority":  "MEDIUM",
+        "action":    "Update SIEM detection rules with IOCs from this report",
+        "rationale": "Integrate findings into the operational threat intelligence pipeline",
+    })
+
+    enrichment = ctx.get("enrichment_cache") or {}
+    rep = enrichment.get("reputation") or {}
+
+    return {
+        # Cover
+        "report_id":         ctx.get("report_ref", "FH-UNKNOWN"),
+        "session_id":        ctx.get("session_id", ""),
+        "generated_at":      ctx.get("generated_at_str", ""),
+        "engine_version":    "3.1",
+        "classification":    "TLP:AMBER",
+        # Risk
+        "risk_level":        risk_level,
+        "risk_score":        score,
+        "risk_confidence":   "HIGH" if score >= 70 else ("MEDIUM" if score >= 40 else "LOW"),
+        "risk_warnings":     [],
+        # Executive summary
+        "verdict":           verdict,
+        "source_ip":         source_ip,
+        "session_date":      str(started_at)[:10] if started_at else "",
+        "geo_country":       profile.get("country", "Unknown"),
+        "geo_city":          profile.get("city", "Unknown"),
+        "asn":               profile.get("asn", "Unknown"),
+        "isp":               profile.get("isp", ""),
+        "abuse_score":       profile.get("abuseipdb_score") or 0,
+        "abuse_reports":     rep.get("total_reports", "N/A"),
+        "event_count":       event_count,
+        "honeypot_type":     (session.get("honeypot") or profile.get("honeypot", "Cowrie")).title(),
+        "protocol":          session.get("protocol", "SSH"),
+        "session_start":     str(started_at),
+        "session_end":       str(ended_at),
+        "session_duration":  duration_str,
+        "auth_attempts":     auth_attempts,
+        # MITRE
+        "mitre_techniques":  mitre_techniques,
+        "mitre_narrative":   profile.get("mistral_analysis", ""),
+        # Malware
+        "yara_matches":      yara_matches,
+        "yara_rules_used":   10,
+        "malware_family":    malware_family,
+        "dropped_files":     dropped_files,
+        # Risk signals
+        "signal_breakdown":  signal_breakdown,
+        # Timeline
+        "timeline_summary":  all_timeline[:15],
+        "full_timeline":     all_timeline,
+        # Profile
+        "profile":           profile_out,
+        # IOCs
+        "iocs":              iocs,
+        "stix_export_path":  None,
+        # Chain of custody
+        "chain_of_custody":        chain_of_custody,
+        "coc_timestamp_authority": "freetsa.org",
+        # Shodan
+        "shodan_data":       enrichment.get("shodan"),
+        # Recommendations
+        "recommendations":   recommendations,
+        "extra_references":  [],
+    }
+
+
 async def _build_forensic_context(session_id: str) -> dict:
     from sqlalchemy import text
     from db import session_scope
@@ -301,46 +530,6 @@ async def _build_forensic_context(session_id: str) -> dict:
             profile_dict = p.model_dump(mode="json")
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
-
-    # ── Fallback: fill missing geo from PG enrichment_data (forensic engine) ─
-    # iplocate.io returns {} when quota is exhausted or no API key is set.
-    # The forensic engine always writes geo into enrichment_data, so use it.
-    if source_ip and not profile_dict.get("country"):
-        try:
-            async with session_scope() as db:
-                ed_row = await db.execute(
-                    text("""
-                        SELECT enrichment_data
-                        FROM forensic_sessions
-                        WHERE source_ip = :ip
-                          AND enrichment_data IS NOT NULL
-                          AND enrichment_data->>'geo' IS NOT NULL
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                    """),
-                    {"ip": source_ip},
-                )
-                ed = (ed_row.mappings().first() or {})
-            if ed:
-                ed_data = ed.get("enrichment_data") or {}
-                if isinstance(ed_data, str):
-                    import json as _json
-                    ed_data = _json.loads(ed_data)
-                geo  = ed_data.get("geo") or {}
-                ts   = ed_data.get("threat_summary") or {}
-                profile_dict.setdefault("country",     geo.get("country") or ts.get("country"))
-                profile_dict.setdefault("country_iso", geo.get("country_code") or ts.get("country_code"))
-                profile_dict.setdefault("city",        geo.get("city") or ts.get("city") or "")
-                profile_dict.setdefault("asn",         geo.get("asn") or ts.get("asn"))
-                profile_dict.setdefault("as_org",      geo.get("org") or ts.get("org"))
-                profile_dict.setdefault("isp",         ts.get("org") or geo.get("org"))
-                profile_dict.setdefault("is_tor",      bool(ts.get("is_tor")))
-                profile_dict.setdefault("is_vpn",      bool(ts.get("is_vpn")))
-                profile_dict.setdefault("is_proxy",    bool(ts.get("is_proxy")))
-                profile_dict.setdefault("usage_type",  ts.get("usage_type") or "")
-                profile_dict.setdefault("abuseipdb_score", ts.get("abuse_score"))
-        except Exception as exc:
-            log.warning("enrichment_data fallback failed for %s: %s", source_ip, exc)
 
     # ── Pre-flight: aggregate individual sessions for unified rows ───────────
     # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated
@@ -865,13 +1054,15 @@ async def forensic_generate(request: Request, session_id: str):
     if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
         raise HTTPException(status_code=404, detail="session not found")
 
+    v2_ctx = _adapt_context_for_v2(ctx)
+
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
     env.globals["enumerate"] = enumerate
     try:
-        html_body = env.get_template("forensic_report.html").render(**ctx)
+        html_body = env.get_template("forenhive_rapport_v2.html").render(**v2_ctx)
     except Exception as exc:
         log.exception("template render failed")
         raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
@@ -893,11 +1084,11 @@ async def forensic_generate(request: Request, session_id: str):
     return FileResponse(
         path=str(pdf_path),
         media_type="application/pdf",
-        filename=f"ForenHive-{ctx['report_ref']}.pdf",
+        filename=f"ForenHive-{v2_ctx['report_id']}.pdf",
         headers={
             "X-PDF-SHA256": sha256,
             "X-ForenHive-SHA256": sha256,
-            "Content-Disposition": f'attachment; filename="ForenHive-{ctx["report_ref"]}.pdf"',
+            "Content-Disposition": f'attachment; filename="ForenHive-{v2_ctx["report_id"]}.pdf"',
         },
     )
 
@@ -915,13 +1106,15 @@ async def forensic_preview(session_id: str):
     if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
         raise HTTPException(status_code=404, detail="session not found")
 
+    v2_ctx = _adapt_context_for_v2(ctx)
+
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html"]),
     )
     env.globals["enumerate"] = enumerate
     try:
-        html_body = env.get_template("forensic_report.html").render(**ctx)
+        html_body = env.get_template("forenhive_rapport_v2.html").render(**v2_ctx)
     except Exception as exc:
         log.exception("template render failed")
         raise HTTPException(status_code=500, detail=f"template render failed: {exc}")

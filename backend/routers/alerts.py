@@ -44,15 +44,6 @@ async def send_test_alert(request: Request) -> TestAlertResponse:
     cfg = await get_alert_engine().get_config()
     if not cfg.recipients:
         raise HTTPException(status_code=400, detail="no recipients configured")
-    settings = get_settings()
-    if not settings.smtp_host or settings.smtp_host in ("localhost", "127.0.0.1"):
-        log.warning("SMTP not configured — skipping real send")
-        return TestAlertResponse(
-            sent=False,
-            recipients=cfg.recipients,
-            message="SMTP not configured (set SMTP_HOST in .env). Alert would be sent to: "
-                    + ", ".join(cfg.recipients),
-        )
     try:
         await asyncio.to_thread(get_email().send_test, cfg.recipients)
     except Exception as exc:

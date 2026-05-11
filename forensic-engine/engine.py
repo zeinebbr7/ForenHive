@@ -37,6 +37,7 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
+from risk_score import calculate_risk_score, risk_level
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -676,57 +677,69 @@ class ForensicEngine:
     # ── Phase 9: Unified risk scoring ────────────────────────────────────────
 
     def _store_unified_risk_score(self, score_data: dict) -> None:
-        """Upsert unified IP-level risk score into forensic_sessions."""
-        synthetic_id = f"unified-{score_data['source_ip']}"
+        """Upsert unified risk score into ip_risk_scores (keyed by source_ip)."""
         try:
-            with _pg_conn() as conn:
+            with psycopg2.connect(
+                host=config.PG_HOST,
+                database=config.PG_DB,
+                user=config.PG_USER,
+                password=config.PG_PASSWORD,
+            ) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        INSERT INTO forensic_sessions
-                            (session_id, honeypot_type, source_ip,
-                             started_at, ended_at,
-                             risk_score, risk_level, confidence,
-                             signal_breakdown, honeypots_hit, honeypot_count,
-                             sessions_count, mitre_techniques, enrichment_data,
-                             kill_chain_stage, kill_chain_phase,
-                             scored_at, updated_at)
-                        VALUES (%s, 'unified', %s,
-                                NOW(), NOW(),
-                                %s, %s, %s,
-                                %s, %s, %s,
-                                %s, %s::jsonb, %s::jsonb,
-                                0, 'unknown',
-                                NOW(), NOW())
-                        ON CONFLICT (session_id) DO UPDATE SET
-                            risk_score       = EXCLUDED.risk_score,
-                            risk_level       = EXCLUDED.risk_level,
-                            confidence       = EXCLUDED.confidence,
-                            signal_breakdown = EXCLUDED.signal_breakdown,
-                            honeypots_hit    = EXCLUDED.honeypots_hit,
-                            honeypot_count   = EXCLUDED.honeypot_count,
-                            sessions_count   = EXCLUDED.sessions_count,
-                            scored_at        = NOW(),
-                            updated_at       = NOW()
+                        INSERT INTO ip_risk_scores (
+                            source_ip,
+                            risk_score, risk_level, confidence, active_signals,
+                            signal_breakdown,
+                            honeypots_hit, honeypot_count, honeypot_summary, sessions_count,
+                            key_findings, recommendations,
+                            enrichment_snapshot,
+                            scored_at, updated_at
+                        ) VALUES (
+                            %s::inet,
+                            %s, %s, %s, %s,
+                            %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s,
+                            NOW(), NOW()
+                        )
+                        ON CONFLICT (source_ip) DO UPDATE SET
+                            risk_score          = EXCLUDED.risk_score,
+                            risk_level          = EXCLUDED.risk_level,
+                            confidence          = EXCLUDED.confidence,
+                            active_signals      = EXCLUDED.active_signals,
+                            signal_breakdown    = EXCLUDED.signal_breakdown,
+                            honeypots_hit       = EXCLUDED.honeypots_hit,
+                            honeypot_count      = EXCLUDED.honeypot_count,
+                            honeypot_summary    = EXCLUDED.honeypot_summary,
+                            sessions_count      = EXCLUDED.sessions_count,
+                            key_findings        = EXCLUDED.key_findings,
+                            recommendations     = EXCLUDED.recommendations,
+                            enrichment_snapshot = EXCLUDED.enrichment_snapshot,
+                            updated_at          = NOW()
                         """,
                         (
-                            synthetic_id,
                             score_data["source_ip"],
                             score_data["risk_score"],
                             score_data["risk_level"],
                             score_data["confidence"],
+                            score_data.get("active_signals", 0),
                             json.dumps(score_data.get("signal_breakdown", {})),
                             score_data.get("honeypots_hit", []),
                             score_data.get("honeypot_count", 0),
+                            json.dumps(score_data.get("honeypot_summary", {})),
                             score_data.get("sessions_count", 0),
-                            json.dumps([]),
+                            score_data.get("key_findings", []),
+                            json.dumps(score_data.get("recommendations", [])),
                             json.dumps(score_data.get("enrichment_snapshot", {})),
                         ),
                     )
                 conn.commit()
-            log.info(f"Unified risk score stored for {score_data['source_ip']}")
+            log.info(f"Stored unified risk score for {score_data['source_ip']}")
         except Exception as e:
-            log.error(f"Store unified risk score failed for {score_data['source_ip']}: {e}")
+            log.error(f"Failed to store unified risk score: {e}", exc_info=True)
 
     # ── Timeline build ────────────────────────────────────────────────────────
 
@@ -972,31 +985,10 @@ class ForensicEngine:
                 **time_metrics,
             }
 
-            # ── Per-session risk scoring (inline 6-signal, 0-100) ────────────
-            score = 0
-            if session_data.get("success_count", 0) > 0:
-                score += 25
-            abuse = session_data.get("abuse_score", 0)
-            if abuse >= 70:   score += 20
-            elif abuse >= 50: score += 12
-            elif abuse >= 30: score += 6
-            attempts = session_data.get("login_attempts", 0)
-            if attempts >= 200:  score += 15
-            elif attempts >= 50: score += 8
-            if session_data.get("yara_matches"):
-                score += 10
-            if session_data.get("vt_malicious", 0) >= 10:
-                score += 8
-            if session_data.get("is_tor") or session_data.get("is_vpn"):
-                score += 6
-            if len(session_data.get("honeypot_types_hit", [])) > 1:
-                score += 5
-            score = min(100, score)
-            if score >= 80:   level = "CRITIQUE"
-            elif score >= 60: level = "ÉLEVÉ"
-            elif score >= 40: level = "MOYEN"
-            elif score >= 20: level = "FAIBLE"
-            else:             level = "INFO"
+            # ── Deterministic risk scoring (18 signals) ───────────────────────
+            result = calculate_risk_score(session_data)
+            score  = result["score"]
+            level  = result["level"]
 
             # ── Hybrid MITRE mapping (deterministic IDs + LLM narrative) ────────
             if session.get("honeypot_type") == "cowrie":
@@ -1020,14 +1012,24 @@ class ForensicEngine:
             session["forensic_narrative"] = forensic_narrative
             session["enrichment_data"]    = {
                 **enrich,
-                "risk_level":         level,
-                "mitre_techniques":   mitre_techniques,
-                "kill_chain_phase":   kill_chain_phase,
-                "kill_chain_stage":   kill_chain_stage,
-                "kill_chain_label":   mitre_result["kill_chain_label"],
-                "primary_technique":  primary_technique,
-                "forensic_narrative": forensic_narrative,
-                "mapping_source":     mitre_result["mapping_source"],
+                "risk_level":          level,
+                "confidence":          result["confidence"],
+                "attack_types":        result["attack_types"],
+                "lateral_movement":    result["lateral_movement"],
+                "signal_breakdown":    result["signal_breakdown"],
+                "data_quality":        result["data_quality"],
+                "notes":               result["notes"],
+                "narrative":           result["narrative"],
+                "recommended_actions": result["recommended_actions"],
+                "iocs":                result["iocs"],
+                "attribution":         result["attribution"],
+                "mitre_techniques":    mitre_techniques,
+                "kill_chain_phase":    kill_chain_phase,
+                "kill_chain_stage":    kill_chain_stage,
+                "kill_chain_label":    mitre_result["kill_chain_label"],
+                "primary_technique":   primary_technique,
+                "forensic_narrative":  forensic_narrative,
+                "mapping_source":      mitre_result["mapping_source"],
             }
 
             _save_session(session)
@@ -1035,7 +1037,11 @@ class ForensicEngine:
                            session.get("honeypot_type", "")))
 
             if score >= 40:
-                flags = f" [{kill_chain_phase}]" if kill_chain_phase else ""
+                flags = ""
+                if result["lateral_movement"]:
+                    flags += " [LATERAL]"
+                if kill_chain_phase:
+                    flags += f" [{kill_chain_phase}]"
                 log.info(
                     f"[{level}] {session.get('honeypot_type','?'):7s} "
                     f"Session {session['session_id'][:12]}... "

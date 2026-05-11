@@ -1,288 +1,69 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
-<meta charset="UTF-8"/>
+<meta charset="UTF-8" />
 <title>{{ title }}</title>
 <style>
-  @page {
-    size: A4;
-    margin: 20mm 18mm 22mm;
-    @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size:8pt; color:#9ca3af; }
-    @bottom-left  { content: "ForenHive — Rapport Forensique Confidentiel"; font-size:8pt; color:#9ca3af; }
-  }
-  body  { font-family:"DejaVu Sans",sans-serif; color:#111827; font-size:10pt; line-height:1.5; }
-  h1    { color:#ea580c; font-size:20pt; margin:0 0 4pt; }
-  h2    { color:#1e3a5f; font-size:13pt; margin:18pt 0 6pt; border-bottom:1.5pt solid #e5e7eb; padding-bottom:3pt; }
-  h3    { color:#374151; font-size:10.5pt; margin:10pt 0 4pt; }
-  .meta { color:#6b7280; font-size:8.5pt; margin-bottom:14pt; }
-  .badge-critical { background:#fee2e2; color:#b91c1c; padding:1pt 7pt; border-radius:999pt; font-weight:700; font-size:9pt; }
-  .badge-high     { background:#fef3c7; color:#b45309; padding:1pt 7pt; border-radius:999pt; font-weight:700; font-size:9pt; }
-  .badge-medium   { background:#dbeafe; color:#1d4ed8; padding:1pt 7pt; border-radius:999pt; font-weight:700; font-size:9pt; }
-  .badge-low      { background:#d1fae5; color:#065f46; padding:1pt 7pt; border-radius:999pt; font-weight:700; font-size:9pt; }
-  .box  { background:#f9fafb; border:1pt solid #e5e7eb; border-radius:4pt; padding:8pt 12pt; margin:8pt 0; }
-  .box-orange { background:#fff7ed; border:1pt solid #fed7aa; border-radius:4pt; padding:8pt 12pt; margin:8pt 0; }
-  .box-blue   { background:#eff6ff; border:1pt solid #bfdbfe; border-radius:4pt; padding:8pt 12pt; margin:8pt 0; }
-  .box-red    { background:#fff1f2; border:1pt solid #fecdd3; border-radius:4pt; padding:8pt 12pt; margin:8pt 0; }
-  table { width:100%; border-collapse:collapse; margin-top:6pt; font-size:9pt; }
-  th,td { border:0.5pt solid #d1d5db; padding:4pt 6pt; text-align:left; vertical-align:top; }
-  th    { background:#f3f4f6; color:#374151; font-weight:700; }
-  tr:nth-child(even) td { background:#f9fafb; }
-  .mono { font-family:"DejaVu Sans Mono",monospace; font-size:8.5pt; }
-  .tag  { display:inline-block; background:#eef2ff; color:#3730a3; padding:1pt 5pt; border-radius:999pt; font-size:8pt; margin:1pt; }
-  .tag-red  { background:#fee2e2; color:#b91c1c; }
-  .tag-gray { background:#f3f4f6; color:#374151; }
-  .narrative { font-size:9.5pt; line-height:1.6; text-align:justify; }
-  .score-bar-bg { background:#e5e7eb; border-radius:999pt; height:10pt; width:100%; }
-  .section-title { color:#ea580c; font-size:9pt; font-weight:700; text-transform:uppercase; letter-spacing:0.5pt; margin-bottom:4pt; }
-  .two-col { display:table; width:100%; }
-  .col     { display:table-cell; width:50%; vertical-align:top; padding-right:8pt; }
-  .col:last-child { padding-right:0; padding-left:8pt; }
-  hr { border:none; border-top:0.5pt solid #e5e7eb; margin:12pt 0; }
+  @page { size: A4; margin: 22mm 18mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font-size: 9pt; color: #6b7280; } }
+  body { font-family: "DejaVu Sans", sans-serif; color:#111827; font-size:10.5pt; }
+  h1 { color:#f97316; font-size:22pt; margin:0 0 6pt; }
+  h2 { color:#1f2937; font-size:14pt; margin-top:18pt; border-bottom:1pt solid #d1d5db; padding-bottom:4pt; }
+  .meta { color:#6b7280; font-size:9pt; margin-bottom:14pt; }
+  .box { background:#f9fafb; border:1pt solid #e5e7eb; border-radius:4pt; padding:8pt 12pt; margin:10pt 0; }
+  table { width:100%; border-collapse:collapse; margin-top:6pt; }
+  th, td { border:1pt solid #e5e7eb; padding:4pt 6pt; text-align:left; vertical-align:top; font-size:9pt; }
+  th { background:#f3f4f6; color:#374151; font-weight:700; }
+  code, .mono { font-family: "DejaVu Sans Mono", monospace; font-size:9pt; }
+  .tag { display:inline-block; background:#eef2ff; color:#3730a3; padding:1pt 6pt; border-radius:999pt; font-size:8.5pt; margin:1pt; }
 </style>
 </head>
 <body>
-
-{# ══════════ HEADER ══════════ #}
-<h1>{{ title }}</h1>
-<div class="meta">
-  <strong>Report ID:</strong> <span class="mono">{{ report_id }}</span> &nbsp;|&nbsp;
-  <strong>Généré:</strong> {{ created_at }} &nbsp;|&nbsp;
-  <strong>Analyste:</strong> {{ analyst }} &nbsp;|&nbsp;
-  <strong>Scope:</strong> {{ scope }}<br/>
-  <strong>Événements analysés:</strong> {{ event_count }}
-</div>
-
-{# ══════════ RÉSUMÉ GLOBAL ══════════ #}
-{% if sessions %}
-  {% set top_session = sessions[0] %}
-  {% set score = top_session.risk_score or 0 %}
-  {% if score >= 80 %}
-    {% set level = "CRITICAL" %}{% set badge = "badge-critical" %}{% set box_cls = "box-red" %}
-  {% elif score >= 60 %}
-    {% set level = "HIGH" %}{% set badge = "badge-high" %}{% set box_cls = "box-orange" %}
-  {% elif score >= 40 %}
-    {% set level = "MEDIUM" %}{% set badge = "badge-medium" %}{% set box_cls = "box-blue" %}
-  {% else %}
-    {% set level = "LOW" %}{% set badge = "badge-low" %}{% set box_cls = "box" %}
-  {% endif %}
-
-<div class="{{ box_cls }}">
-  <div class="two-col">
-    <div class="col">
-      <div class="section-title">Niveau de menace</div>
-      <span class="{{ badge }}">{{ level }}</span>
-      &nbsp; Score de risque : <strong>{{ score }} / 100</strong><br/><br/>
-      <strong>Kill-chain phase :</strong> {{ top_session.kill_chain_phase or "N/A" }}<br/>
-      <strong>Technique principale :</strong>
-        <span class="tag tag-red">{{ top_session.primary_technique or "N/A" }}</span><br/>
-      <strong>Sessions détectées :</strong> {{ sessions|length }}
-    </div>
-    <div class="col">
-      <div class="section-title">Répartition par honeypot</div>
-      {% for hp, n in summary.honeypots %}
-        <span class="tag">{{ hp }} ({{ n }})</span>
-      {% else %}
-        <em>N/A</em>
-      {% endfor %}<br/><br/>
-      <div class="section-title">Top types d'événements</div>
-      {% for ev, n in summary.event_types[:5] %}
-        <span class="tag tag-gray">{{ ev }} ({{ n }})</span>
-      {% endfor %}
-    </div>
+  <h1>{{ title }}</h1>
+  <div class="meta">
+    Report ID: <span class="mono">{{ report_id }}</span><br/>
+    Generated: {{ created_at }} · Analyst: {{ analyst }} · Scope: {{ scope }}<br/>
+    Events analyzed: {{ event_count }}
   </div>
-</div>
-{% else %}
-<div class="box">
-  <strong>Événements capturés :</strong> {{ event_count }} &nbsp;|&nbsp;
-  <strong>Honeypots :</strong>
-  {% for hp, n in summary.honeypots %}<span class="tag">{{ hp }} ({{ n }})</span>{% endfor %}
-</div>
-{% endif %}
 
-{# ══════════ ENRICHISSEMENT IP ══════════ #}
-{% if enrichment %}
-<h2>Enrichissement IP</h2>
-{% set geo  = enrichment.get("geo", {}) or {} %}
-{% set rep  = enrichment.get("reputation", {}) or {} %}
-{% set priv = enrichment.get("privacy", {}) or {} %}
-{% set infra = enrichment.get("infrastructure", {}) or {} %}
-{% set dns  = enrichment.get("dns", {}) or {} %}
-{% set ts   = enrichment.get("threat_summary", {}) or {} %}
-{% set whois = enrichment.get("whois", {}) or {} %}
-
-<div class="two-col">
-  <div class="col">
-    <div class="box">
-      <div class="section-title">Géolocalisation</div>
-      <table>
-        <tr><th>IP</th><td class="mono">{{ enrichment.get("ip","N/A") }}</td></tr>
-        <tr><th>Pays</th><td>{{ geo.get("country_name","N/A") }} ({{ geo.get("country_iso_code","") }})</td></tr>
-        <tr><th>Ville</th><td>{{ geo.get("city_name","N/A") }}</td></tr>
-        <tr><th>ASN</th><td>{{ geo.get("asn","N/A") }}</td></tr>
-        <tr><th>Organisation</th><td>{{ geo.get("org","N/A") }}</td></tr>
-        <tr><th>PTR (DNS)</th><td class="mono">{{ dns.get("ptr","N/A") }}</td></tr>
-      </table>
-    </div>
-  </div>
-  <div class="col">
-    <div class="box">
-      <div class="section-title">Réputation &amp; Menace</div>
-      <table>
-        <tr><th>AbuseIPDB score</th>
-            <td>
-              {% set ab = rep.get("abuse_score", 0)|int %}
-              {% if ab >= 80 %}<span class="badge-critical">{{ ab }}%</span>
-              {% elif ab >= 50 %}<span class="badge-high">{{ ab }}%</span>
-              {% elif ab >= 20 %}<span class="badge-medium">{{ ab }}%</span>
-              {% else %}<span class="badge-low">{{ ab }}%</span>{% endif %}
-            </td></tr>
-        <tr><th>Signalements</th><td>{{ rep.get("total_reports","0") }}</td></tr>
-        <tr><th>Tor exit node</th><td>{{ "✓ OUI" if priv.get("is_tor") else "Non" }}</td></tr>
-        <tr><th>VPN / Proxy</th><td>{{ "✓ OUI" if priv.get("is_vpn") else "Non" }}</td></tr>
-        <tr><th>Ports ouverts</th><td class="mono">{{ infra.get("open_ports",[]) | join(", ") or "N/A" }}</td></tr>
-        <tr><th>Vulnérabilités</th><td class="mono">{{ infra.get("vulns",[]) | join(", ") or "Aucune" }}</td></tr>
-      </table>
-    </div>
-  </div>
-</div>
-
-{% if whois.get("network_name") or whois.get("abuse_contact") %}
-<div class="box">
-  <div class="section-title">WHOIS / RDAP</div>
-  <table>
-    {% if whois.get("network_name") %}<tr><th>Réseau</th><td>{{ whois.get("network_name") }}</td></tr>{% endif %}
-    {% if whois.get("cidr") %}<tr><th>CIDR</th><td class="mono">{{ whois.get("cidr") }}</td></tr>{% endif %}
-    {% if whois.get("abuse_contact") %}<tr><th>Abuse contact</th><td>{{ whois.get("abuse_contact") }}</td></tr>{% endif %}
-    {% if whois.get("country") %}<tr><th>Pays (WHOIS)</th><td>{{ whois.get("country") }}</td></tr>{% endif %}
-  </table>
-</div>
-{% endif %}
-{% endif %}
-
-{# ══════════ SESSIONS FORENSIQUES ══════════ #}
-{% if sessions %}
-<h2>Sessions forensiques ({{ sessions|length }})</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Session ID</th><th>Honeypot</th><th>Risque</th>
-      <th>Kill-chain</th><th>Technique MITRE</th><th>Début</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for s in sessions %}
-    {% set sc = s.risk_score or 0 %}
-    <tr>
-      <td class="mono">{{ s.session_id }}</td>
-      <td>{{ s.honeypot_type }}</td>
-      <td>
-        {% if sc >= 80 %}<span class="badge-critical">{{ sc }}</span>
-        {% elif sc >= 60 %}<span class="badge-high">{{ sc }}</span>
-        {% elif sc >= 40 %}<span class="badge-medium">{{ sc }}</span>
-        {% else %}<span class="badge-low">{{ sc }}</span>{% endif %}
-      </td>
-      <td>{{ s.kill_chain_phase or "N/A" }}</td>
-      <td><span class="tag tag-red">{{ s.primary_technique or "N/A" }}</span></td>
-      <td class="mono">{{ s.started_at.strftime("%Y-%m-%d %H:%M") if s.started_at else "N/A" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-{# ══════ MITRE ATT&CK ══════ #}
-<h2>MITRE ATT&amp;CK</h2>
-{% for s in sessions %}
-  {% if s.mitre_techniques %}
   <div class="box">
-    <strong>{{ s.session_id }}</strong> — Phase : {{ s.kill_chain_phase or "N/A" }} (stage {{ s.kill_chain_stage or "?" }})<br/>
-    {% set techs = s.mitre_techniques %}
-    {% if techs is mapping %}
-      {% for k, v in techs.items() %}
-        <span class="tag tag-red">{{ v }}</span>
-      {% endfor %}
-    {% elif techs is iterable %}
-      {% for t in techs %}
-        <span class="tag tag-red">{{ t }}</span>
-      {% endfor %}
-    {% endif %}
+    <strong>Request parameters</strong>
+    <table>
+      {% for k, v in request.items() %}<tr><th>{{ k }}</th><td class="mono">{{ v }}</td></tr>{% endfor %}
+    </table>
   </div>
-  {% endif %}
-{% endfor %}
 
-{# ══════ NARRATIVE OLLAMA ══════ #}
-{% set narratives = sessions | selectattr("forensic_narrative") | list %}
-{% if narratives %}
-<h2>Analyse IA — Ollama / Mistral 7B</h2>
-{% for s in narratives %}
-  <div class="box-blue">
-    <div class="section-title">Session : {{ s.session_id }} — Score {{ s.risk_score }}/100</div>
-    <p class="narrative">{{ s.forensic_narrative }}</p>
-  </div>
-{% endfor %}
-{% endif %}
-{% endif %}
-
-{# ══════════ IOCs ══════════ #}
-{% if iocs %}
-<h2>Indicateurs de compromission (IOCs)</h2>
-<table>
-  <thead>
-    <tr><th>Type</th><th>Valeur</th><th>Occurrences</th></tr>
-  </thead>
-  <tbody>
-    {% for ioc in iocs %}
-    <tr>
-      <td><span class="tag">{{ ioc.ioc_type }}</span></td>
-      <td class="mono">{{ ioc.ioc_value }}</td>
-      <td>{{ ioc.occurrences }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
-{# ══════════ TIMELINE ÉVÉNEMENTS ══════════ #}
-<h2>Événements capturés (premiers {{ [events|length, 200]|min }})</h2>
-<table>
-  <thead>
-    <tr><th>Timestamp</th><th>Honeypot</th><th>Source IP</th><th>Événement</th><th>Détails</th></tr>
-  </thead>
-  <tbody>
-    {% for e in events %}
-    <tr>
-      <td class="mono">{{ e.get("@timestamp","") }}</td>
-      <td>{{ e.get("honeypot.type") or e.get("honeypot","") }}</td>
-      <td class="mono">{{ e.get("source.ip") or e.get("src_ip","") }}</td>
-      <td>{{ e.get("event.id") or e.get("eventid") or e.get("event.action","") }}</td>
-      <td class="mono">
-        {{ e.get("input") or e.get("command")
-           or e.get("http.request.uri") or e.get("uri")
-           or e.get("auth.username","") }}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-{# ══════════ CHAIN OF CUSTODY ══════════ #}
-<h2>Chaîne de custody (Chain of Custody)</h2>
-<div class="box">
-  <p>
-    Ce rapport a été généré par <strong>ForenHive</strong> à partir des données collectées
-    via le pipeline Filebeat → Logstash → Elasticsearch, enrichies par le Forensic Engine
-    (MaxMind GeoIP, AbuseIPDB, Shodan InternetDB, analyse YARA, scoring MITRE ATT&amp;CK via Ollama/Mistral 7B).
-  </p>
+  <h2>Summary</h2>
   <table>
-    <tr><th>Report ID</th><td class="mono">{{ report_id }}</td></tr>
-    <tr><th>Timestamp de génération</th><td class="mono">{{ created_at }}</td></tr>
-    <tr><th>Analyste</th><td>{{ analyst }}</td></tr>
-    <tr>
-      <th>Intégrité</th>
-      <td>Ce PDF est scellé avec SHA-256 et un horodatage RFC 3161 (freetsa.org).
-          Toute modification invalide la signature.</td>
-    </tr>
+    <tr><th>Top source IPs</th>
+        <td>{% for ip, n in summary.top_ips %}<span class="tag">{{ ip }} ({{ n }})</span>{% endfor %}</td></tr>
+    <tr><th>Top countries</th>
+        <td>{% for c, n in summary.top_countries %}<span class="tag">{{ c }} ({{ n }})</span>{% endfor %}</td></tr>
+    <tr><th>Honeypots</th>
+        <td>{% for hp, n in summary.honeypots %}<span class="tag">{{ hp }} ({{ n }})</span>{% endfor %}</td></tr>
+    <tr><th>Severities</th>
+        <td>{% for s, n in summary.severities %}<span class="tag">{{ s }} ({{ n }})</span>{% endfor %}</td></tr>
   </table>
-</div>
 
+  <h2>Events (first 200)</h2>
+  <table>
+    <thead>
+      <tr><th>Timestamp</th><th>Honeypot</th><th>Source IP</th><th>Event</th><th>Details</th></tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td class="mono">{{ e.get("@timestamp", "") }}</td>
+        <td>{{ e.get("honeypot", "") }}</td>
+        <td class="mono">{{ (e.source or {}).get("ip", "") if e.source is mapping else (e.src_ip or "") }}</td>
+        <td>{{ e.get("eventid") or (e.event or {}).get("type", "") if e.event is mapping else "" }}</td>
+        <td class="mono">{{ e.get("input") or e.get("command") or e.get("message") or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Chain of custody</h2>
+  <p>Every event above was collected through the ForenHive pipeline (Filebeat → Logstash → Elasticsearch).
+  This PDF is sealed with SHA-256 and an RFC 3161 timestamp; any modification invalidates both.</p>
 </body>
 </html>
