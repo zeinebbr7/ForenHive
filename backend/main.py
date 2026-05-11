@@ -210,6 +210,8 @@ async def health() -> Dict[str, Any]:
     from sqlalchemy import text as _text
     from db import get_sessionmaker as _gsm
 
+    import httpx as _httpx
+
     es_ok = await get_es().ping()
 
     pg_ok = False
@@ -220,10 +222,19 @@ async def health() -> Dict[str, Any]:
     except Exception:
         pass
 
+    ollama_ok = False
+    try:
+        async with _httpx.AsyncClient(timeout=3) as _c:
+            r = await _c.get(f"{settings.ollama_host}/api/tags")
+            ollama_ok = r.status_code == 200
+    except Exception:
+        pass
+
     return {
         "status": "ok" if (es_ok and pg_ok) else "degraded",
         "elasticsearch": es_ok,
         "postgresql": pg_ok,
+        "ollama": ollama_ok,
         "version": app.version,
         "auth_enabled": not settings.disable_auth,
     }
