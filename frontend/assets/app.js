@@ -169,7 +169,7 @@ const Router = {
     try {
       if (typeof window.__pageCleanup === 'function') { try { window.__pageCleanup(); } catch(e){} }
       window.__pageCleanup = null;
-      const res = await fetch('pages/' + page + '.html?v=3', {cache: 'no-cache'});
+      const res = await fetch('pages/' + page + '.html?v=4', {cache: 'no-store'});
       const html = await res.text();
       content.innerHTML = html;
       content.querySelectorAll('script').forEach(old => {

@@ -47,12 +47,12 @@
   ];
 
   const me = api.user() || {};
-  const isAdmin = (me.role || '').toLowerCase() === 'admin';
+  const isAdmin = (me.role || '').toString().toLowerCase() === 'admin';
+  console.log('[honeypots] user role:', me.role, 'isAdmin:', isAdmin);
   let containerStatus = {};
   async function fetchContainerStatus() {
-    if (!isAdmin) return;
     try { containerStatus = await api._call('/api/honeypots/status'); }
-    catch (e) { containerStatus = {}; }
+    catch (e) { console.warn('[honeypots] status fetch failed:', e.message); containerStatus = {}; }
   }
   async function ctlHoneypot(hp, action) {
     const btn = document.querySelector(`[data-hp-action="${hp}:${action}"]`);
@@ -133,12 +133,12 @@
       const isUp = ctState
         ? ctState === 'running'
         : (String(upDown).toLowerCase() === 'up' || s.count > 0);
-      const adminCtrls = isAdmin ? `
+      const adminCtrls = `
         <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:start" ${isUp?'disabled':''}>▶ Turn On</button>
           <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:stop"  ${!isUp?'disabled':''} style="color:var(--red2)">■ Shutdown</button>
           ${ctState ? `<span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);align-self:center">docker: ${esc(ctState)}</span>` : ''}
-        </div>` : '';
+        </div>`;
       return `<div class="hp-card hp-${h.id}">
         <div class="hp-card-h">
           <div>
