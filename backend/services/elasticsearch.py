@@ -121,21 +121,21 @@ class ESClient:
         )
         if isinstance(level, int):
             if level >= 4:
-                return Severity.CRITICAL
+                return Severity.critical
             if level == 3:
-                return Severity.HIGH
+                return Severity.high
             if level == 2:
-                return Severity.MEDIUM
-            return Severity.LOW
+                return Severity.medium
+            return Severity.low
         if isinstance(level, str):
             level = level.lower()
             if level in ("critical", "emerg", "alert"):
-                return Severity.CRITICAL
+                return Severity.critical
             if level in ("high", "error", "err"):
-                return Severity.HIGH
+                return Severity.high
             if level in ("medium", "warn", "warning"):
-                return Severity.MEDIUM
-        return Severity.LOW
+                return Severity.medium
+        return Severity.low
 
     @staticmethod
     def _f(src: Dict[str, Any], *keys: str):
@@ -279,13 +279,14 @@ class ESClient:
             filt.append(
                 {"term": {"honeypot.type.keyword": f.honeypot.value}}
             )
-        if f.date_from or f.date_to:
-            rng: Dict[str, str] = {}
-            if f.date_from:
-                rng["gte"] = f.date_from.isoformat()
-            if f.date_to:
-                rng["lte"] = f.date_to.isoformat()
-            filt.append({"range": {"@timestamp": rng}})
+        # Always cap at now to prevent future-timestamped injections from
+        # dominating the sort (test data injected with tomorrow's date).
+        rng: Dict[str, str] = {"lte": "now"}
+        if f.date_from:
+            rng["gte"] = f.date_from.isoformat()
+        if f.date_to:
+            rng["lte"] = f.date_to.isoformat()
+        filt.append({"range": {"@timestamp": rng}})
         if not must and not filt:
             return {"match_all": {}}
         return {"bool": {"must": must or [{"match_all": {}}], "filter": filt}}

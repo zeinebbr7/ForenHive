@@ -175,6 +175,10 @@ services:
       - ABUSEIPDB_KEY=${ABUSEIPDB_API_KEY}
       - VIRUSTOTAL_KEY=${VIRUSTOTAL_API_KEY}
       - ENGINE_INTERVAL_MINUTES=1440
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WA_NUMBER=${TWILIO_WA_NUMBER}
+      - DEST_WA=${DEST_WA}
     depends_on:
       - elasticsearch
       - postgresql
@@ -206,6 +210,7 @@ services:
       - "8000:8000"
     volumes:
       - reports-data:/reports
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - backend-net
     depends_on:

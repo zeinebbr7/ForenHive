@@ -37,7 +37,7 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score import calculate_risk_score, risk_level
+from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -53,6 +53,33 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 log = logging.getLogger("engine")
+
+# ── WhatsApp alert via Twilio ─────────────────────────────────────────────────
+def _send_whatsapp_alert(ip: str, score: int) -> None:
+    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    from_ = os.environ.get("TWILIO_WA_NUMBER", "")
+    to    = os.environ.get("DEST_WA", "")
+
+    if not all([sid, token, from_, to]):
+        log.warning("Twilio env vars missing — WhatsApp alert skipped")
+        return
+
+    level = "CRITICAL" if score >= 80 else "HIGH"
+    body = (
+        f"⚠️ ForenHive ALERTE\n"
+        f"IP : {ip}\n"
+        f"Risk Score : {score}/100\n"
+        f"Niveau : {level} — Vérification requise."
+    )
+    from twilio.rest import Client
+    client = Client(sid, token)
+    msg = client.messages.create(
+        from_=f"whatsapp:{from_}",
+        to=to,
+        body=body,
+    )
+    log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
 
 
 def _now_utc():
@@ -456,8 +483,9 @@ def _save_session(session: dict):
                          risk_score, mitre_techniques, enrichment_data,
                          kill_chain_phase, kill_chain_stage,
                          primary_technique, forensic_narrative,
+                         login_attempts, success_count, attack_velocity,
                          created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (session_id) DO UPDATE
                         SET risk_score         = EXCLUDED.risk_score,
                             enrichment_data    = EXCLUDED.enrichment_data,
@@ -466,6 +494,9 @@ def _save_session(session: dict):
                             kill_chain_stage   = EXCLUDED.kill_chain_stage,
                             primary_technique  = EXCLUDED.primary_technique,
                             forensic_narrative = EXCLUDED.forensic_narrative,
+                            login_attempts     = EXCLUDED.login_attempts,
+                            success_count      = EXCLUDED.success_count,
+                            attack_velocity    = EXCLUDED.attack_velocity,
                             updated_at         = NOW()
                     """,
                     (
@@ -481,6 +512,9 @@ def _save_session(session: dict):
                         session.get("kill_chain_stage"),
                         session.get("primary_technique"),
                         session.get("forensic_narrative"),
+                        session.get("login_attempts", 0),
+                        session.get("success_count", 0),
+                        session.get("attack_velocity", 0.0),
                     )
                 )
             conn.commit()
@@ -664,6 +698,12 @@ class ForensicEngine:
                     f"Alert fired for {source_ip} "
                     f"(session {session_id[:12]}..., score={risk_score})"
                 )
+
+                # WhatsApp / voice call via Twilio
+                try:
+                    _send_whatsapp_alert(source_ip, int(risk_score))
+                except Exception as _wa_err:
+                    log.warning(f"WhatsApp alert failed for {source_ip}: {_wa_err}")
 
             except Exception as e:
                 log.warning(f"Alert fire failed for session {session_id}: {e}")
@@ -903,6 +943,7 @@ class ForensicEngine:
                 session.get("started_at"), session.get("ended_at"),
                 int(session.get("login_attempts", 0))
             )
+            session.update(time_metrics)  # persist velocity/duration to PG via _save_session
 
             smb = smb_profiles.get(source_ip, {})
             session_data = {
@@ -1030,6 +1071,10 @@ class ForensicEngine:
                 "primary_technique":   primary_technique,
                 "forensic_narrative":  forensic_narrative,
                 "mapping_source":      mitre_result["mapping_source"],
+                "yara_matches":        yara_matches,
+                "vt_malicious":        vt_malicious,
+                "vt_family":           vt_family,
+                "vt_available":        vt_was_available,
             }
 
             _save_session(session)
@@ -1093,7 +1138,6 @@ class ForensicEngine:
 
         # Phase 9 — Unified risk scoring (one score per IP across all honeypots)
         log.info("=== Phase 9: Unified Risk Scoring (All Honeypots) ===")
-        from risk_score_optimized import RiskScorer
         scorer = RiskScorer()
         unique_ips = list({src_ip for _, src_ip, _, _, _ in scored})
         unified_count = 0

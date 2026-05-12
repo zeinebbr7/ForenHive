@@ -4,10 +4,13 @@
     <h2 class="page-title">Evidence <span>Logs</span></h2>
     <div class="page-sub">Raw honeypot logs · filter by sensor · SHA-256 verification per entry.</div>
   </div>
-  <div class="page-actions" style="gap:10px;align-items:center">
+  <div class="page-actions" style="gap:10px;align-items:center;flex-wrap:wrap">
     <span id="ev-run-status" style="font-size:12px;color:var(--text3)"></span>
     <button class="btn btn-primary btn-sm" id="ev-run-btn"> Run Analysis Now</button>
     <button class="btn btn-gh btn-sm" id="ev-refresh">Refresh</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-cowrie"  title="Export Cowrie logs as STIX 2.1 bundle">⬇ STIX · Cowrie</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-dionaea" title="Export Dionaea logs as STIX 2.1 bundle">⬇ STIX · Dionaea</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-galah"   title="Export Galah logs as STIX 2.1 bundle">⬇ STIX · Galah</button>
   </div>
 </div>
 
@@ -15,27 +18,14 @@
   <div class="card-h">
     <div class="card-t">Filters</div>
   </div>
-  <div class="grid-2">
-    <div class="form-g">
-      <label class="form-l">Source</label>
-      <select class="form-s" id="ev-hp">
-        <option value="">All honeypots (Cowrie + Dionaea + Galah)</option>
-        <option value="cowrie">Cowrie only</option>
-        <option value="dionaea">Dionaea only</option>
-        <option value="galah">Galah only</option>
-        <option value="zeek">Zeek (NDR) — cross-honeypot correlation</option>
-      </select>
-      <div class="card-sub" style="font-size:10px;margin-top:4px">Zeek (passive NDR) logs are large and excluded by default · explicitly select Zeek to view them.</div>
-    </div>
-    <div class="form-g">
-      <label class="form-l">Limit (max)</label>
-      <select class="form-s" id="ev-limit">
-        <option value="50">50</option>
-        <option value="100" selected>100</option>
-        <option value="200">200</option>
-        <option value="500">500</option>
-      </select>
-    </div>
+  <div class="form-g" style="max-width:480px">
+    <label class="form-l">Source</label>
+    <select class="form-s" id="ev-hp">
+      <option value="">All honeypots (Cowrie + Dionaea + Galah)</option>
+      <option value="cowrie">Cowrie only</option>
+      <option value="dionaea">Dionaea only</option>
+      <option value="galah">Galah only</option>
+    </select>
   </div>
 </div>
 
@@ -199,8 +189,7 @@
     $('#ev-rows').innerHTML = `<div class="alert info">Loading…</div>`;
     try {
       const hp = $('#ev-hp').value;
-      const limit = parseInt($('#ev-limit').value, 10) || 100;
-      const params = { page_size: limit };
+      const params = { page_size: 500 };
       let items = [];
       if (hp) {
         params.honeypot = hp;
@@ -215,7 +204,6 @@
         items = results.flatMap(r => r.status === 'fulfilled' ? ((r.value && r.value.items) || []) : []);
         items.sort((a, b) => +new Date(b.timestamp || (b.raw && b.raw['@timestamp']) || 0)
                             - +new Date(a.timestamp || (a.raw && a.raw['@timestamp']) || 0));
-        items = items.slice(0, limit);
       }
       allItems = items;
       $('#ev-count').textContent = items.length;
@@ -223,13 +211,16 @@
       if (!items.length) { $('#ev-rows').innerHTML = `<div class="alert info">No logs matching these filters.</div>`; return; }
       $('#ev-rows').innerHTML = items.map((ev, i) => {
         const n = evNormalize(ev);
-        const hash = ev.sha256 || (n.raw && n.raw.sha256) || '';
+        const raw = n.raw || ev.raw || ev;
+        const hash = ev.sha256 || (raw && raw.sha256) || '';
         const hpColor = n.honeypot==='cowrie'?'gold':n.honeypot==='dionaea'?'red':n.honeypot==='galah'?'purple':'blue';
+        // Render REAL honeypot log line (raw JSON one-liner) instead of just message
+        const realLog = JSON.stringify(raw);
         return `<div class="evlog" data-i="${i}">
           <div class="evlog-h">
             <div class="evlog-time">${fmt.time(n.timestamp)}</div>
             <div><span class="badge ${hpColor}">${esc(n.honeypot)}</span></div>
-            <div class="evlog-msg">${esc(n.message || n.event_action || '—')}</div>
+            <div class="evlog-msg" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text3)">${esc(realLog)}</div>
             <div class="evlog-hash">${hash ? '⬡ '+fmt.shortHash(hash) : '<span style="color:var(--text3)">—</span>'}</div>
           </div>
         </div>`;
@@ -240,9 +231,115 @@
     }
   }
 
+  // ── STIX 2.1 export ──────────────────────────────────────────────────────
+  function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16);
+    });
+  }
+  function toStixBundle(items, honeypot) {
+    const now = new Date().toISOString();
+    const identityId = 'identity--' + uuidv4();
+    const identity = {
+      type: 'identity', spec_version: '2.1', id: identityId,
+      created: now, modified: now,
+      name: 'ForenHive Honeypot Platform · ' + honeypot,
+      identity_class: 'system',
+      description: 'ForenHive deception platform exporting captured ' + honeypot + ' events.',
+    };
+    const objects = [identity];
+    items.forEach(ev => {
+      const n = evNormalize(ev);
+      const raw = n.raw || ev.raw || ev;
+      const t = new Date(n.timestamp || Date.now()).toISOString();
+      const obsId = 'observed-data--' + uuidv4();
+      const sdoObs = {
+        type: 'observed-data', spec_version: '2.1', id: obsId,
+        created_by_ref: identityId, created: t, modified: t,
+        first_observed: t, last_observed: t, number_observed: 1,
+        object_refs: [],
+      };
+      const sros = [];
+      const obj_refs = [];
+      if (n.source_ip) {
+        const ipId = 'ipv4-addr--' + uuidv4();
+        objects.push({ type:'ipv4-addr', spec_version:'2.1', id:ipId, value:n.source_ip });
+        obj_refs.push(ipId);
+      }
+      if (n.username || n.password) {
+        const acctId = 'user-account--' + uuidv4();
+        objects.push({
+          type:'user-account', spec_version:'2.1', id:acctId,
+          user_id: n.username || '', credential: n.password || '',
+        });
+        obj_refs.push(acctId);
+      }
+      if (n.command) {
+        const procId = 'process--' + uuidv4();
+        objects.push({
+          type:'process', spec_version:'2.1', id:procId,
+          command_line: n.command,
+        });
+        obj_refs.push(procId);
+      }
+      if (n.http_path) {
+        const netId = 'network-traffic--' + uuidv4();
+        objects.push({
+          type:'network-traffic', spec_version:'2.1', id:netId,
+          protocols: ['ipv4', 'tcp', 'http'],
+          extensions: { 'http-request-ext': { request_method: n.http_method || 'GET', request_value: n.http_path } }
+        });
+        obj_refs.push(netId);
+      }
+      const hash = ev.sha256 || raw.sha256;
+      const noteId = 'note--' + uuidv4();
+      objects.push({
+        type:'note', spec_version:'2.1', id:noteId,
+        created_by_ref: identityId, created:t, modified:t,
+        abstract: honeypot + ' raw event' + (hash ? ' · SHA-256 '+hash : ''),
+        content: JSON.stringify(raw),
+        object_refs: obj_refs.length ? obj_refs : [identityId],
+        labels: ['honeypot:'+honeypot, 'action:'+(n.event_action||'unknown'), 'severity:'+(n.severity||'low')],
+      });
+      sdoObs.object_refs = obj_refs.length ? obj_refs : [noteId];
+      objects.push(sdoObs);
+    });
+    return {
+      type: 'bundle',
+      id: 'bundle--' + uuidv4(),
+      objects,
+    };
+  }
+
+  async function exportStix(honeypot) {
+    const btnId = '#ev-stix-' + honeypot;
+    const btn = $(btnId); if (!btn) return;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '⏳ Building…';
+    try {
+      const res = await api.attacks({ honeypot, page_size: 1000 });
+      const items = (res && res.items) || [];
+      if (!items.length) { alert('No '+honeypot+' events to export.'); return; }
+      const bundle = toStixBundle(items, honeypot);
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/stix+json' });
+      const url  = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      a.href = url; a.download = `forenhive-${honeypot}-stix2.1-${ts}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (e) {
+      alert('STIX export failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
+    }
+  }
+
   $('#ev-hp').addEventListener('change', load);
-  $('#ev-limit').addEventListener('change', load);
   $('#ev-refresh').addEventListener('click', load);
+  $('#ev-stix-cowrie').addEventListener('click', () => exportStix('cowrie'));
+  $('#ev-stix-dionaea').addEventListener('click', () => exportStix('dionaea'));
+  $('#ev-stix-galah').addEventListener('click', () => exportStix('galah'));
 
   window.__pageCleanup = () => {
     document.removeEventListener('keydown', _keyHandler);

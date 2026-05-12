@@ -47,13 +47,6 @@
   </div>
 </div>
 
-<div class="kpi-grid mb-20">
-  <div class="kpi g"><div class="kpi-label">Zeek Events</div><div class="kpi-val" id="kpi-zeek-total">—</div><div class="kpi-delta">indexed (window)</div></div>
-  <div class="kpi b"><div class="kpi-label">Connections</div><div class="kpi-val" id="kpi-zeek-conn">—</div><div class="kpi-delta">conn.log</div></div>
-  <div class="kpi p"><div class="kpi-label">Source IPs</div><div class="kpi-val" id="kpi-zeek-ips">—</div><div class="kpi-delta">distinct attackers</div></div>
-  <div class="kpi r"><div class="kpi-label">Notice / Weird</div><div class="kpi-val" id="kpi-zeek-weird">—</div><div class="kpi-delta">abnormal events</div></div>
-</div>
-
 <div style="font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.4px;margin-bottom:10px;">Services &amp; Containers</div>
 <div id="svc-chart-root" style="margin-bottom:10px"></div>
 <div class="hc-svc-grid mb-20" id="svc-grid">
@@ -171,21 +164,12 @@
       const res = await api.attacks({ honeypot: 'zeek', page_size: 200 });
       const items = (res && res.items) || [];
       const normalized = items.map(evNormalize);
-      $('#kpi-zeek-total').textContent = fmt.num(items.length);
       const ipCounts = {}, protoCounts = {};
-      let connCount = 0, weirdCount = 0;
       for (const n of normalized) {
         if (n.source_ip) ipCounts[n.source_ip] = (ipCounts[n.source_ip] || 0) + 1;
-        const action = (n.event_action || '').toLowerCase();
-        const cat    = (n.event_category || '').toLowerCase();
-        if (action.includes('conn') || cat.includes('conn')) connCount++;
-        if (action.includes('weird') || action.includes('notice') || cat.includes('weird')) weirdCount++;
         const proto = (n.protocol || (n.dest_port ? 'port:'+n.dest_port : 'other')).toString();
         protoCounts[proto] = (protoCounts[proto] || 0) + 1;
       }
-      $('#kpi-zeek-conn').textContent  = fmt.num(connCount);
-      $('#kpi-zeek-weird').textContent = fmt.num(weirdCount);
-      $('#kpi-zeek-ips').textContent   = fmt.num(Object.keys(ipCounts).length);
       const topProto = Object.entries(protoCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
       const topIp = Object.entries(ipCounts).sort((a,b) => b[1]-a[1]).slice(0, 10);
 
