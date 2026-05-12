@@ -37,11 +37,13 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score import calculate_risk_score, risk_level
+from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
 from chain_of_custody import ChainOfCustody
+from profiler import AttackerProfiler
+import smb_analyzer
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -52,17 +54,42 @@ logging.basicConfig(
 )
 log = logging.getLogger("engine")
 
+# ── WhatsApp alert via Twilio ─────────────────────────────────────────────────
+def _send_whatsapp_alert(ip: str, score: int) -> None:
+    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    from_ = os.environ.get("TWILIO_WA_NUMBER", "")
+    to    = os.environ.get("DEST_WA", "")
+
+    if not all([sid, token, from_, to]):
+        log.warning("Twilio env vars missing — WhatsApp alert skipped")
+        return
+
+    level = "CRITICAL" if score >= 80 else "HIGH"
+    body = (
+        f"⚠️ ForenHive ALERTE\n"
+        f"IP : {ip}\n"
+        f"Risk Score : {score}/100\n"
+        f"Niveau : {level} — Vérification requise."
+    )
+    from twilio.rest import Client
+    client = Client(sid, token)
+    msg = client.messages.create(
+        from_=f"whatsapp:{from_}",
+        to=to,
+        body=body,
+    )
+    log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
+
 
 def _now_utc():
     return datetime.now(timezone.utc)
 
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    )
+    return db_pool.pooled_conn()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -71,8 +98,8 @@ def _pg_conn():
 
 def _build_es_client() -> Elasticsearch:
     return Elasticsearch(
-        [{"host": config.ES_HOST, "port": config.ES_PORT, "scheme": "http"}],
-        request_timeout=30
+        f"http://{config.ES_HOST}:{config.ES_PORT}",
+        request_timeout=30,
     )
 
 
@@ -357,13 +384,25 @@ def _query_ip_honeypot_types(es: Elasticsearch, hours_back: int) -> dict:
     return result
 
 
-def _load_file_analysis_from_pg() -> dict:
-    """Load all file_analysis rows: sha256 → {yara_matches, vt_malicious, vt_family, ...}"""
+def _load_file_analysis_from_pg(hours_back: int = 168) -> dict:
+    """Load file_analysis rows analyzed within the lookback window.
+
+    Defaults to 7 days (168h) so a short engine run still gets a full week of
+    file-analysis context. Filtering by analyzed_at avoids loading the entire
+    historical table into memory once it grows past a few thousand entries.
+    """
     results = {}
     try:
         with _pg_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT sha256, yara_matches, virustotal_result FROM file_analysis")
+                cur.execute(
+                    """
+                    SELECT sha256, yara_matches, virustotal_result
+                    FROM file_analysis
+                    WHERE analyzed_at > NOW() - make_interval(hours => %s)
+                    """,
+                    (int(hours_back),),
+                )
                 for row in cur.fetchall():
                     sha256 = row["sha256"]
                     yara = row["yara_matches"] or []
@@ -393,11 +432,11 @@ def _query_recidivism(hours_back: int = 720) -> dict:
                     SELECT source_ip, COUNT(*) AS prior
                     FROM forensic_sessions
                     WHERE created_at < NOW() - INTERVAL '1 hour'
-                      AND created_at > NOW() - INTERVAL %s
+                      AND created_at > NOW() - make_interval(hours => %s)
                       AND risk_score >= 20
                     GROUP BY source_ip
                     """,
-                    (f"{hours_back} hours",)
+                    (int(hours_back),)
                 )
                 for row in cur.fetchall():
                     results[row[0]] = int(row[1])
@@ -444,8 +483,9 @@ def _save_session(session: dict):
                          risk_score, mitre_techniques, enrichment_data,
                          kill_chain_phase, kill_chain_stage,
                          primary_technique, forensic_narrative,
-                         created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         login_attempts, success_count, attack_velocity,
+                         created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (session_id) DO UPDATE
                         SET risk_score         = EXCLUDED.risk_score,
                             enrichment_data    = EXCLUDED.enrichment_data,
@@ -453,7 +493,11 @@ def _save_session(session: dict):
                             kill_chain_phase   = EXCLUDED.kill_chain_phase,
                             kill_chain_stage   = EXCLUDED.kill_chain_stage,
                             primary_technique  = EXCLUDED.primary_technique,
-                            forensic_narrative = EXCLUDED.forensic_narrative
+                            forensic_narrative = EXCLUDED.forensic_narrative,
+                            login_attempts     = EXCLUDED.login_attempts,
+                            success_count      = EXCLUDED.success_count,
+                            attack_velocity    = EXCLUDED.attack_velocity,
+                            updated_at         = NOW()
                     """,
                     (
                         session["session_id"],
@@ -468,6 +512,9 @@ def _save_session(session: dict):
                         session.get("kill_chain_stage"),
                         session.get("primary_technique"),
                         session.get("forensic_narrative"),
+                        session.get("login_attempts", 0),
+                        session.get("success_count", 0),
+                        session.get("attack_velocity", 0.0),
                     )
                 )
             conn.commit()
@@ -491,6 +538,248 @@ class ForensicEngine:
         self.timeline = TimelineBuilder(self.es, _pg_conn)
         self.ioc      = IOCExtractor(_pg_conn)
         self.coc      = ChainOfCustody(_pg_conn)
+
+    # ── Phase 0: SMB analysis ─────────────────────────────────────────────────
+
+    def run_smb_analysis(self, enrichment_cache: dict = None) -> int:
+        """Extract Dionaea SQLite + Zeek NTLM data, build profiles, index to ES."""
+        log.info("=== Phase 0: SMB Forensic Analysis (Dionaea SQLite + Zeek NTLM) ===")
+        db_path = smb_analyzer.DIONAEA_DB
+        if not os.path.exists(db_path):
+            log.info(f"SMB analysis: Dionaea DB not found at {db_path} — skipping")
+            return 0
+        try:
+            dionaea_data = smb_analyzer.extract_dionaea(db_path)
+        except SystemExit:
+            log.warning("SMB analysis: extract_dionaea exited early — skipping")
+            return 0
+        except Exception as e:
+            log.warning(f"SMB analysis: extraction failed — {e}")
+            return 0
+
+        if not dionaea_data:
+            log.info("SMB analysis: no SMB connections found")
+            return 0
+
+        all_ips   = set(dionaea_data.keys())
+        ntlm_data = smb_analyzer.extract_zeek_ntlm(smb_analyzer.ZEEK_LOGS, all_ips)
+
+        # Re-use enrichment already computed in Phase 1 (avoids double API calls)
+        enrichments = enrichment_cache or {}
+
+        profiles = [
+            smb_analyzer.build_profile(
+                ip,
+                dionaea_data[ip],
+                ntlm_data.get(ip, {}),
+                enrichments.get(ip, {}),
+            )
+            for ip in all_ips
+        ]
+        smb_analyzer.index_profiles(self.es, profiles)
+        log.info(f"SMB analysis complete: {len(profiles)} profiles indexed")
+        return len(profiles)
+
+    # ── Phase 7: LLM attacker profiling ──────────────────────────────────────
+
+    def run_profiling(self, scored: list) -> int:
+        """Profile high-risk IPs via Ollama/Mistral.
+
+        Threshold and max-per-run are configurable via PROFILE_RISK_THRESHOLD and
+        MAX_PROFILES_PER_RUN env vars (defaults: 60 and 5 respectively).
+        """
+        log.info("=== Phase 7: LLM Attacker Profiling ===")
+        threshold = config.PROFILE_RISK_THRESHOLD
+        max_profiles = config.MAX_PROFILES_PER_RUN
+        high_risk_ips = list({
+            ip for _, ip, score, _, _ in scored if score >= threshold
+        })[:max_profiles]
+
+        if not high_risk_ips:
+            log.info("Profiling: no high-risk IPs (score ≥ 60) this run")
+            return 0
+
+        profiler = AttackerProfiler(self.es, _pg_conn)
+        count = 0
+        for ip in high_risk_ips:
+            try:
+                profiler.profile_ip(ip)
+                count += 1
+            except Exception as e:
+                log.warning(f"Profiling failed for {ip}: {e}")
+        log.info(f"Profiling complete: {count}/{len(high_risk_ips)} profiles generated")
+        return count
+
+    # ── Phase 8: Alert evaluation ─────────────────────────────────────────────
+
+    def run_alert_evaluation(self, scored: list) -> dict:
+        """Index alerts for sessions with risk_score >= 60 into forenhive-alerts ES index."""
+        log.info("Evaluating sessions for alerts...")
+        alert_count = 0
+        failed_count = 0
+
+        for session_id, source_ip, risk_score, level, honeypot_type in scored:
+            if risk_score < 60:
+                continue
+
+            try:
+                # Fetch enrichment from PostgreSQL
+                enrich = {}
+                attempts = 0
+                mitre_raw = []
+                try:
+                    with _pg_conn() as conn:
+                        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                            cur.execute(
+                                "SELECT enrichment_data, mitre_techniques FROM forensic_sessions WHERE session_id = %s",
+                                (session_id,),
+                            )
+                            row = cur.fetchone()
+                            if row:
+                                enrich = row["enrichment_data"] or {}
+                                mitre_raw = row["mitre_techniques"] or []
+                                if isinstance(mitre_raw, str):
+                                    mitre_raw = json.loads(mitre_raw)
+                except Exception as pg_err:
+                    log.debug(f"PG lookup failed for {session_id}: {pg_err}")
+
+                # Normalise MITRE tags to plain strings
+                mitre_tags = []
+                for t in (mitre_raw if isinstance(mitre_raw, list) else []):
+                    if isinstance(t, dict):
+                        tid = t.get("id") or t.get("technique_id", "")
+                        if tid:
+                            mitre_tags.append(tid)
+                    elif isinstance(t, str):
+                        mitre_tags.append(t)
+
+                # Geo / reputation fields
+                geo = enrich.get("geo", {}) or {}
+                reputation = enrich.get("reputation", {}) or {}
+                threat = enrich.get("threat_summary", {}) or {}
+
+                country = (
+                    geo.get("country_code")
+                    or reputation.get("country_code")
+                    or enrich.get("attribution", {}).get("country_code")
+                    or None
+                )
+                abuseipdb_score = int(reputation.get("abuse_score") or 0)
+
+                yara_matches = enrich.get("yara_matches") or []
+                yara_match = yara_matches[0] if yara_matches else None
+
+                threat_type = threat.get("tier") or "suspicious_activity"
+
+                alert_doc = {
+                    "id": session_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "severity": level.lower(),
+                    "threat_type": threat_type,
+                    "source_ip": source_ip,
+                    "country": country,
+                    "honeypot": honeypot_type,
+                    "risk_score": int(risk_score),
+                    "attempts": int(attempts),
+                    "mitre_tags": mitre_tags,
+                    "yara_match": yara_match,
+                    "abuseipdb_score": abuseipdb_score,
+                    "ioc_hash": None,
+                    "tsa_timestamp": None,
+                    "mistral_analysis": None,
+                    "recipients": [],
+                    "dispatched": False,
+                    "dispatch_error": None,
+                }
+
+                self.es.index(index="forenhive-alerts", id=session_id, body=alert_doc)
+                alert_count += 1
+                log.info(
+                    f"Alert fired for {source_ip} "
+                    f"(session {session_id[:12]}..., score={risk_score})"
+                )
+
+                # WhatsApp / voice call via Twilio
+                try:
+                    _send_whatsapp_alert(source_ip, int(risk_score))
+                except Exception as _wa_err:
+                    log.warning(f"WhatsApp alert failed for {source_ip}: {_wa_err}")
+
+            except Exception as e:
+                log.warning(f"Alert fire failed for session {session_id}: {e}")
+                failed_count += 1
+
+        log.info(
+            f"Alert evaluation complete: {alert_count} fired, {failed_count} failed"
+        )
+        return {"fired": alert_count, "failed": failed_count}
+
+    # ── Phase 9: Unified risk scoring ────────────────────────────────────────
+
+    def _store_unified_risk_score(self, score_data: dict) -> None:
+        """Upsert unified risk score into ip_risk_scores (keyed by source_ip)."""
+        try:
+            with psycopg2.connect(
+                host=config.PG_HOST,
+                database=config.PG_DB,
+                user=config.PG_USER,
+                password=config.PG_PASSWORD,
+            ) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO ip_risk_scores (
+                            source_ip,
+                            risk_score, risk_level, confidence, active_signals,
+                            signal_breakdown,
+                            honeypots_hit, honeypot_count, honeypot_summary, sessions_count,
+                            key_findings, recommendations,
+                            enrichment_snapshot,
+                            scored_at, updated_at
+                        ) VALUES (
+                            %s::inet,
+                            %s, %s, %s, %s,
+                            %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s,
+                            NOW(), NOW()
+                        )
+                        ON CONFLICT (source_ip) DO UPDATE SET
+                            risk_score          = EXCLUDED.risk_score,
+                            risk_level          = EXCLUDED.risk_level,
+                            confidence          = EXCLUDED.confidence,
+                            active_signals      = EXCLUDED.active_signals,
+                            signal_breakdown    = EXCLUDED.signal_breakdown,
+                            honeypots_hit       = EXCLUDED.honeypots_hit,
+                            honeypot_count      = EXCLUDED.honeypot_count,
+                            honeypot_summary    = EXCLUDED.honeypot_summary,
+                            sessions_count      = EXCLUDED.sessions_count,
+                            key_findings        = EXCLUDED.key_findings,
+                            recommendations     = EXCLUDED.recommendations,
+                            enrichment_snapshot = EXCLUDED.enrichment_snapshot,
+                            updated_at          = NOW()
+                        """,
+                        (
+                            score_data["source_ip"],
+                            score_data["risk_score"],
+                            score_data["risk_level"],
+                            score_data["confidence"],
+                            score_data.get("active_signals", 0),
+                            json.dumps(score_data.get("signal_breakdown", {})),
+                            score_data.get("honeypots_hit", []),
+                            score_data.get("honeypot_count", 0),
+                            json.dumps(score_data.get("honeypot_summary", {})),
+                            score_data.get("sessions_count", 0),
+                            score_data.get("key_findings", []),
+                            json.dumps(score_data.get("recommendations", [])),
+                            json.dumps(score_data.get("enrichment_snapshot", {})),
+                        ),
+                    )
+                conn.commit()
+            log.info(f"Stored unified risk score for {score_data['source_ip']}")
+        except Exception as e:
+            log.error(f"Failed to store unified risk score: {e}", exc_info=True)
 
     # ── Timeline build ────────────────────────────────────────────────────────
 
@@ -583,7 +872,7 @@ class ForensicEngine:
         enrichment_cache = enrichment_cache or {}
 
         # Load YARA/VT from PG and map to IPs via ES
-        file_analysis   = _load_file_analysis_from_pg()
+        file_analysis   = _load_file_analysis_from_pg(hours_back=max(hours_back, 168))
         ip_to_sha256    = _query_ip_to_sha256(self.es, hours_back)
         log.info(f"File analysis: {len(file_analysis)} entries, "
                  f"{len(ip_to_sha256)} IPs with file hashes")
@@ -606,6 +895,10 @@ class ForensicEngine:
             privacy    = enrich.get("privacy", {})
             geo        = enrich.get("geo", {})
             infra      = enrich.get("infrastructure", {})
+            whois      = enrich.get("whois", {})
+            dns        = enrich.get("dns", {})
+            threat     = enrich.get("threat_summary", {})
+            shodan_host = (infra.get("host_detail") or {})
 
             # Classify private IPs
             is_private    = enrich.get("private", False)
@@ -650,6 +943,7 @@ class ForensicEngine:
                 session.get("started_at"), session.get("ended_at"),
                 int(session.get("login_attempts", 0))
             )
+            session.update(time_metrics)  # persist velocity/duration to PG via _save_session
 
             smb = smb_profiles.get(source_ip, {})
             session_data = {
@@ -657,22 +951,56 @@ class ForensicEngine:
                 # Reputation
                 "abuse_score":         reputation.get("abuse_score", 0),
                 "abuse_total_reports": reputation.get("total_reports", 0),
-                "geo_isp":             reputation.get("isp", "") or "",
+                "abuse_distinct_users": reputation.get("distinct_users", 0),
+                "abuse_last_reported": reputation.get("last_reported_at", ""),
+                "abuse_categories":    threat.get("attack_categories", []),
+                "abuse_recent_comments": reputation.get("recent_comments", []),
+                "abuse_usage_type":    reputation.get("usage_type", ""),
+                "geo_isp":             reputation.get("isp", "") or privacy.get("company_name", "") or "",
                 # Privacy / anonymization
-                "is_tor":              privacy.get("is_tor", False) or reputation.get("is_tor", False),
-                "is_vpn":              privacy.get("is_vpn", False),
-                "is_proxy":            privacy.get("is_proxy", False),
+                "is_tor":              threat.get("is_tor", False),
+                "is_vpn":              threat.get("is_vpn", False),
+                "is_proxy":            threat.get("is_proxy", False),
                 "is_hosting":          privacy.get("is_hosting", False),
+                "is_datacenter":       threat.get("is_datacenter", False),
+                "is_anonymized":       threat.get("is_anonymized", False),
+                "is_abuser_listed":    threat.get("is_abuser_listed", False),
+                "is_bogon":            threat.get("is_bogon", False),
                 # GeoIP / ASN
                 "geo_country":         geo.get("country", "") or "",
                 "geo_country_code":    geo.get("country_code", "") or reputation.get("country_code", "") or "",
-                "geo_asn":             geo.get("asn", 0) or 0,
-                "geo_org":             geo.get("org", "") or "",
+                "geo_region":          geo.get("region", "") or "",
+                "geo_city":            geo.get("city", "") or "",
+                "geo_postal":          geo.get("postal_code", "") or "",
+                "geo_lat":             geo.get("lat"),
+                "geo_lon":             geo.get("lon"),
+                "geo_timezone":        geo.get("timezone", "") or "",
+                "geo_continent":       geo.get("continent", "") or "",
+                "geo_asn":             geo.get("asn", 0) or whois.get("asn") or 0,
+                "geo_org":             geo.get("org", "") or whois.get("asn_description", "") or "",
+                "network_cidr":        threat.get("network_cidr", ""),
+                "asn_route":           privacy.get("asn_route", ""),
+                "asn_type":            privacy.get("asn_type", ""),
+                "company_domain":      privacy.get("company_domain", ""),
+                "abuse_contact":       threat.get("abuse_contact", ""),
+                # DNS
+                "ptr_hostname":        dns.get("ptr", ""),
+                "all_hostnames":       threat.get("hostnames", []),
+                # Whois
+                "whois_network":       whois.get("network_name", ""),
+                "whois_registry":      whois.get("asn_registry", ""),
+                "whois_registration":  whois.get("registration", ""),
                 # Shodan / attacker infrastructure
                 "shodan_vulns":        infra.get("vulns", []) or [],
                 "shodan_tags":         infra.get("tags", []) or [],
                 "shodan_open_ports":   infra.get("open_ports", []) or [],
                 "shodan_hostnames":    infra.get("hostnames", []) or [],
+                "shodan_cpes":         infra.get("cpes", []) or [],
+                "shodan_os":           shodan_host.get("os", ""),
+                "shodan_services":     shodan_host.get("services", []),
+                "shodan_last_update":  shodan_host.get("last_update", ""),
+                # Threat summary (derived)
+                "threat_tier":         threat.get("tier", ""),
                 # Malware
                 "yara_matches":        yara_matches,
                 "vt_malicious":        vt_malicious,
@@ -743,6 +1071,10 @@ class ForensicEngine:
                 "primary_technique":   primary_technique,
                 "forensic_narrative":  forensic_narrative,
                 "mapping_source":      mitre_result["mapping_source"],
+                "yara_matches":        yara_matches,
+                "vt_malicious":        vt_malicious,
+                "vt_family":           vt_family,
+                "vt_available":        vt_was_available,
             }
 
             _save_session(session)
@@ -774,6 +1106,10 @@ class ForensicEngine:
         # Phase 1 — IP enrichment
         enrichment_cache = self.run_enrichment(hours_back)
 
+        # Phase 0 — SMB forensic analysis (uses Phase 1 enrichment; must run
+        #            before Phase 3 so _query_smb_profiles() finds data in ES)
+        smb_count = self.run_smb_analysis(enrichment_cache)
+
         # Phase 2a — YARA scan + VT for Dionaea files
         self.run_yara_scan()
 
@@ -790,8 +1126,36 @@ class ForensicEngine:
         # Phase 5 — Extract structured IoCs from timeline events
         ioc_stats = self.run_ioc_extraction(hours_back)
 
-        # Phase 6 — Seal new forensic_sessions (SHA-256 + hash chain + RFC 3161)
+        # Phase 6 — Seal new / re-scored forensic_sessions
         coc_stats = self.run_chain_of_custody()
+
+        # Phase 7 — LLM behavioral profiling for high-risk IPs
+        profiled = self.run_profiling(scored)
+
+        # Phase 8 — Alert evaluation (fire alerts for high-risk sessions)
+        log.info("=== Phase 8: Alert Evaluation ===")
+        alert_stats = self.run_alert_evaluation(scored)
+
+        # Phase 9 — Unified risk scoring (one score per IP across all honeypots)
+        log.info("=== Phase 9: Unified Risk Scoring (All Honeypots) ===")
+        scorer = RiskScorer()
+        unique_ips = list({src_ip for _, src_ip, _, _, _ in scored})
+        unified_count = 0
+        for src_ip in unique_ips:
+            try:
+                unified_score = scorer.calculate_risk_score(
+                    source_ip=src_ip,
+                    time_window_hours=hours_back,
+                )
+                log.info(
+                    f"Unified score for {src_ip}: "
+                    f"{unified_score['risk_score']}/{unified_score['risk_level']}"
+                )
+                self._store_unified_risk_score(unified_score)
+                unified_count += 1
+            except Exception as e:
+                log.warning(f"Unified scoring failed for {src_ip}: {e}")
+        log.info(f"Unified scoring complete: {unified_count}/{len(unique_ips)} IPs scored")
 
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
@@ -819,9 +1183,13 @@ class ForensicEngine:
                  f"(seen: {timeline_stats['seen']})")
         log.info(f"  IoCs extracted : {ioc_stats['extracted']} "
                  f"(from {ioc_stats['rows_scanned']} timeline rows)")
+        log.info(f"  SMB profiles   : {smb_count}")
         log.info(f"  Custody sealed : {coc_stats['sealed']} session(s), "
                  f"batch=#{coc_stats.get('batch_id')}, "
                  f"TSA={coc_stats.get('tsa_status')}")
+        log.info(f"  LLM profiles   : {profiled}")
+        log.info(f"  Alerts fired   : {alert_stats.get('fired', 0)} (failed: {alert_stats.get('failed', 0)})")
+        log.info(f"  Unified scores : {unified_count}/{len(unique_ips)} IPs")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
@@ -836,6 +1204,8 @@ def main():
     parser.add_argument("--timeline-only", action="store_true", help="Build per-IP timeline only")
     parser.add_argument("--ioc-only",      action="store_true", help="Extract IoCs from existing timeline only")
     parser.add_argument("--coc-only",      action="store_true", help="Seal unsealed sessions (chain of custody) only")
+    parser.add_argument("--smb-only",      action="store_true", help="SMB forensic analysis only")
+    parser.add_argument("--profile-only",  action="store_true", help="LLM profiling only (high-risk IPs)")
     parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
     parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
     parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
@@ -873,6 +1243,11 @@ def main():
         engine.run_ioc_extraction(args.hours)
     elif args.coc_only:
         engine.run_chain_of_custody()
+    elif args.smb_only:
+        engine.run_smb_analysis()
+    elif args.profile_only:
+        scored = engine.run_session_scoring(args.hours)
+        engine.run_profiling(scored)
     else:
         engine.run_full_analysis(args.hours)
 

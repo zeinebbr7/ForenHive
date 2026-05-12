@@ -6,4 +6,9 @@ geoip2==4.8.0
 yara-python==4.5.0
 shodan==1.31.0
 ipwhois==1.2.0
-rfc3161-client==0.1.2
+rfc3161-client==1.0.6
+pytest==8.3.4
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==2.7.1
+twilio==9.4.3

@@ -41,6 +41,20 @@ ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase   VARCHA
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_stage   INTEGER;
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS primary_technique  VARCHAR(20);
 ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS forensic_narrative TEXT;
+-- updated_at tracks last re-score; used by CoC to detect stale seals
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMP;
+
+-- Unified risk scoring (Option A) — one row per IP aggregating all honeypots
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS risk_level      VARCHAR(20);   -- CRITIQUE|ÉLEVÉ|MOYEN|FAIBLE|INFO
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS confidence      VARCHAR(10);   -- HIGH|MEDIUM|LOW
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS signal_breakdown JSONB;        -- 6-signal breakdown JSON
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS honeypots_hit   TEXT[];        -- ['cowrie','dionaea']
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS honeypot_count  INT DEFAULT 1;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS sessions_count  INT DEFAULT 1;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS scored_at       TIMESTAMP;    -- last unified scoring time
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS login_attempts  INT   DEFAULT 0;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS success_count   INT   DEFAULT 0;
+ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS attack_velocity FLOAT DEFAULT 0.0;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_source_ip    ON forensic_sessions (source_ip);
 CREATE INDEX IF NOT EXISTS idx_sessions_risk_score   ON forensic_sessions (risk_score DESC);
@@ -146,11 +160,55 @@ CREATE INDEX IF NOT EXISTS idx_coc_batch_time ON forensic_coc_batches (tsa_time)
 -- Suspect profiles (aggregated per IP, built by LLM)
 CREATE TABLE IF NOT EXISTS suspect_profiles (
     id          SERIAL      PRIMARY KEY,
-    source_ip   VARCHAR(45) NOT NULL,
+    source_ip   VARCHAR(45) NOT NULL UNIQUE,
     profile     JSONB       NOT NULL,
     risk_score  INTEGER     CHECK (risk_score >= 0 AND risk_score <= 100),
-    created_at  TIMESTAMP   NOT NULL DEFAULT NOW()
+    created_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP   NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_source_ip   ON suspect_profiles (source_ip);
 CREATE INDEX IF NOT EXISTS idx_profiles_risk_score  ON suspect_profiles (risk_score DESC);
+
+-- Migration: ensure UNIQUE constraint exists on existing deployments
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'suspect_profiles_source_ip_key'
+    ) THEN
+        ALTER TABLE suspect_profiles ADD CONSTRAINT suspect_profiles_source_ip_key UNIQUE (source_ip);
+    END IF;
+END $$;
+ALTER TABLE suspect_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+-- Create postgres superuser role so standard DBA tools work
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+        CREATE ROLE postgres SUPERUSER LOGIN;
+    END IF;
+END $$;
+
+-- Aggregated per-IP risk scores (Phase 9 unified scoring)
+-- Created separately from forensic_sessions to avoid PK conflicts.
+-- See docs/schema_risk.sql for the standalone migration script.
+CREATE TABLE IF NOT EXISTS ip_risk_scores (
+    source_ip           INET PRIMARY KEY,
+    risk_score          INT NOT NULL DEFAULT 0,
+    risk_level          VARCHAR(20) NOT NULL,
+    confidence          VARCHAR(10) NOT NULL,
+    active_signals      INT DEFAULT 0,
+    signal_breakdown    JSONB NOT NULL DEFAULT '{}',
+    honeypots_hit       TEXT[] DEFAULT '{}',
+    honeypot_count      INT DEFAULT 1,
+    honeypot_summary    JSONB DEFAULT '{}',
+    sessions_count      INT DEFAULT 1,
+    key_findings        TEXT[] DEFAULT '{}',
+    recommendations     JSONB DEFAULT '[]'::jsonb,
+    enrichment_snapshot JSONB DEFAULT '{}',
+    scored_at           TIMESTAMP DEFAULT NOW(),
+    updated_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ip_risk_score  ON ip_risk_scores(risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_ip_risk_level  ON ip_risk_scores(risk_level);
+CREATE INDEX IF NOT EXISTS idx_ip_risk_scored ON ip_risk_scores(scored_at DESC);

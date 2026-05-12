@@ -65,6 +65,17 @@ ENRICHMENT_CACHE_TTL_HOURS = int(os.environ.get("ENRICHMENT_CACHE_TTL_HOURS", "2
 PRIVATE_VPN_RANGES = os.environ.get("PRIVATE_VPN_RANGES", "10.212.0.0/16")
 
 # ── Rate limiting ──────────────────────────────────────────────────────────────
-SHODAN_RATE_LIMIT_SEC    = 1.0   # 1 req/sec
-ABUSEIPDB_DAILY_LIMIT    = 1000  # free tier
-VIRUSTOTAL_RATE_LIMIT_SEC = 0.25  # 4 req/sec (free tier)
+SHODAN_RATE_LIMIT_SEC     = 1.0   # 1 req/sec
+ABUSEIPDB_DAILY_LIMIT     = 1000  # free tier
+VIRUSTOTAL_RATE_LIMIT_SEC = 15.0  # free tier: 4 req/min = 1 req every 15s
+
+# ── Enrichment parallelism ─────────────────────────────────────────────────────
+# Rate limits on AbuseIPDB/IPLocate/Shodan are per-day, not per-concurrent-req,
+# so 5 parallel workers is safe and reduces batch time from ~5 min to ~1 min.
+ENRICH_PARALLEL_WORKERS = int(os.environ.get("ENRICH_PARALLEL_WORKERS", "5"))
+# gethostbyaddr has no built-in timeout; this caps PTR lookups per IP.
+DNS_LOOKUP_TIMEOUT_SEC  = float(os.environ.get("DNS_LOOKUP_TIMEOUT_SEC", "5"))
+
+# ── Profiling ──────────────────────────────────────────────────────────────────
+MAX_PROFILES_PER_RUN = int(os.environ.get("MAX_PROFILES_PER_RUN", "5"))
+PROFILE_RISK_THRESHOLD = int(os.environ.get("PROFILE_RISK_THRESHOLD", "60"))

@@ -1,0 +1,186 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">📋 Audit</div>
+    <h2 class="page-title">Journal <span>d'audit</span></h2>
+    <div class="page-sub">Traçabilité des actions PostgreSQL · <span id="audit-total">—</span> entrées.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="audit-refresh">🔄 Actualiser</button>
+  </div>
+</div>
+
+<div class="grid-2 mb-20">
+
+  <!-- Utilisateurs -->
+  <div class="card">
+    <div class="card-h"><div class="card-t">👥 Utilisateurs</div><div class="card-sub">comptes enregistrés</div></div>
+    <div id="users-body"><div class="alert info">Chargement…</div></div>
+  </div>
+
+  <!-- Stats actions -->
+  <div class="card">
+    <div class="card-h"><div class="card-t">📊 Actions par type</div><div class="card-sub">résumé des 50 derniers logs</div></div>
+    <div id="audit-stats"><div class="alert info">Chargement…</div></div>
+  </div>
+
+</div>
+
+<!-- Journal complet -->
+<div class="card">
+  <div class="card-h">
+    <div class="card-t">Journal d'audit</div>
+    <div class="card-sub">actions traçées depuis la base PostgreSQL</div>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr><th>Horodatage</th><th>Acteur</th><th>Action</th><th>Méthode</th><th>Chemin</th><th>IP</th></tr></thead>
+      <tbody id="audit-rows"><tr><td colspan="6"><div class="alert info">Chargement…</div></td></tr></tbody>
+    </table>
+  </div>
+  <div class="flex gap-8" style="justify-content:center;padding:14px" id="audit-pagination"></div>
+</div>
+
+<style>
+.user-row {
+  display:grid;
+  grid-template-columns:40px 1fr auto;
+  align-items:center;
+  gap:12px;
+  padding:12px 0;
+  border-bottom:1px solid rgba(255,255,255,.04);
+}
+.user-row:last-child { border-bottom:none; }
+.user-av {
+  width:36px;height:36px;border-radius:50%;
+  background:rgba(255,185,5,.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+}
+.user-email { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--text1); }
+.user-name  { font-size:11px; color:var(--text3); margin-top:2px; }
+.user-login { font-size:10px; color:var(--text3); font-family:'Share Tech Mono',monospace; }
+.action-bar { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+.action-bar:last-child { border-bottom:none; }
+.action-bar-label { font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--text2); min-width:160px; }
+.action-bar-track { flex:1; height:6px; background:rgba(255,255,255,.06); border-radius:3px; overflow:hidden; }
+.action-bar-fill  { height:100%; border-radius:3px; background:var(--blue2); }
+.action-bar-count { font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--text3); min-width:30px; text-align:right; }
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $, $$ } = FH;
+  const PAGE_SIZE = 25;
+  let currentPage = 1;
+  let totalItems = 0;
+
+  const ACTION_ICON = {
+    'auth.login':   '🔑',
+    'auth.logout':  '🚪',
+    'user.create':  '➕',
+    'user.update':  '✏️',
+    'user.delete':  '🗑️',
+    'report.generate': '📄',
+    'report.download': '⬇️',
+    'config.update':   '⚙️',
+  };
+  const ROLE_COLORS = { admin:'gold', analyst:'blue', viewer:'purple', user:'purple' };
+
+  async function loadUsers() {
+    try {
+      const users = await api._call('/api/auth/users');
+      if (!users || !users.length) {
+        $('#users-body').innerHTML = '<div class="alert info">Aucun utilisateur.</div>';
+        return;
+      }
+      $('#users-body').innerHTML = `<div style="padding:0 4px">${users.map(u => {
+        const roleColor = ROLE_COLORS[u.role] || 'purple';
+        return `<div class="user-row">
+          <div class="user-av">${u.role==='admin'?'👑':'🔎'}</div>
+          <div>
+            <div class="user-email">${esc(u.email)}</div>
+            <div class="user-name">${esc(u.full_name||'—')}</div>
+            <div class="user-login">Dernière connexion: ${u.last_login_at ? fmt.ago(u.last_login_at)+' ago' : 'jamais'}</div>
+          </div>
+          <div class="flex flex-col gap-4" style="align-items:flex-end">
+            <span class="badge ${roleColor}">${esc(u.role)}</span>
+            <span class="badge ${u.is_active?'teal':'red'}" style="font-size:9px">${u.is_active?'actif':'inactif'}</span>
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+    } catch(e) {
+      $('#users-body').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function loadAuditStats() {
+    try {
+      const data = await api._call('/api/audit?limit=50');
+      const items = data.items || [];
+      const agg = {};
+      items.forEach(it => { agg[it.action] = (agg[it.action]||0) + 1; });
+      const sorted = Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+      const max = sorted[0]?.[1] || 1;
+      if (!sorted.length) { $('#audit-stats').innerHTML = '<div class="alert info">Aucune action.</div>'; return; }
+      $('#audit-stats').innerHTML = `<div style="padding:4px 0">${sorted.map(([action,count])=>`
+        <div class="action-bar">
+          <div class="action-bar-label">${ACTION_ICON[action]||'📌'} ${esc(action)}</div>
+          <div class="action-bar-track"><div class="action-bar-fill" style="width:${(count/max*100).toFixed(1)}%"></div></div>
+          <div class="action-bar-count">${count}</div>
+        </div>`).join('')}</div>`;
+    } catch(e) {
+      $('#audit-stats').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function loadAuditPage(page) {
+    currentPage = page;
+    const offset = (page-1)*PAGE_SIZE;
+    try {
+      const data = await api._call(`/api/audit?limit=${PAGE_SIZE}&offset=${offset}`);
+      const items = data.items || [];
+      totalItems = data.total || 0;
+      $('#audit-total').textContent = totalItems;
+
+      if (!items.length) {
+        $('#audit-rows').innerHTML = '<tr><td colspan="6"><div class="alert info">Aucun log.</div></td></tr>';
+        return;
+      }
+
+      $('#audit-rows').innerHTML = items.map(it => {
+        const icon = ACTION_ICON[it.action] || '📌';
+        const isAuth = it.action.startsWith('auth.');
+        return `<tr>
+          <td class="mono" style="font-size:11px">${fmt.date(it.timestamp)}</td>
+          <td class="mono" style="font-size:11px">${esc(it.actor_email||'—')}</td>
+          <td><span class="badge ${isAuth?'blue':'gold'}">${icon} ${esc(it.action)}</span></td>
+          <td class="mono" style="font-size:11px">${esc(it.method||'—')}</td>
+          <td class="mono" style="font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.path||'—')}</td>
+          <td class="mono" style="font-size:11px">${esc(it.ip||'—')}</td>
+        </tr>`;
+      }).join('');
+
+      /* pagination */
+      const pages = Math.ceil(totalItems/PAGE_SIZE);
+      if (pages <= 1) { $('#audit-pagination').innerHTML=''; return; }
+      const btns = [];
+      for (let p=1; p<=pages; p++) {
+        btns.push(`<button class="btn btn-sm ${p===page?'btn-gold':'btn-out'}" data-p="${p}">${p}</button>`);
+      }
+      $('#audit-pagination').innerHTML = btns.join('');
+      $$('#audit-pagination button').forEach(b => {
+        b.addEventListener('click', () => loadAuditPage(+b.dataset.p));
+      });
+    } catch(e) {
+      $('#audit-rows').innerHTML = `<tr><td colspan="6"><div class="alert err">${esc(e.message)}</div></td></tr>`;
+    }
+  }
+
+  async function loadAll() {
+    await Promise.all([loadUsers(), loadAuditStats(), loadAuditPage(1)]);
+  }
+
+  $('#audit-refresh').addEventListener('click', loadAll);
+  await loadAll();
+})();
+</script>

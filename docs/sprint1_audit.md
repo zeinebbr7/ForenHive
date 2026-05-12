@@ -176,10 +176,15 @@ zeekctl deploy
 ### 3.5 Ollama — LLM Backend
 
 **Image:** `ollama/ollama:latest`
-**Port:** 11434 (internal only, backend-net)
+**Port:** 11434 (exposed on host + backend-net)
 **Model:** Mistral 7B Q4_K_M (4.4 GB, stored in `ollama-models` volume)
 
-Serves Galah's LLM requests via the OpenAI-compatible API. Also planned for Sprint 3 MITRE ATT&CK classification (offline, no API key required).
+Serves multiple consumers across the stack:
+- **Galah** — HTTP response generation (Sprint 1)
+- **Forensic engine** — MITRE ATT&CK forensic narrative (Sprint 3, 80-token output)
+- **Backend HIVE assistant** — attacker profiling + AI chat fallback when Groq is unavailable (Sprint 4)
+
+Port 11434 is exposed to the host so the forensic engine and backend can reach Ollama by container name across Docker networks.
 
 ---
 

@@ -121,28 +121,47 @@ class ESClient:
         )
         if isinstance(level, int):
             if level >= 4:
-                return Severity.CRITICAL
+                return Severity.critical
             if level == 3:
-                return Severity.HIGH
+                return Severity.high
             if level == 2:
-                return Severity.MEDIUM
-            return Severity.LOW
+                return Severity.medium
+            return Severity.low
         if isinstance(level, str):
             level = level.lower()
             if level in ("critical", "emerg", "alert"):
-                return Severity.CRITICAL
+                return Severity.critical
             if level in ("high", "error", "err"):
-                return Severity.HIGH
+                return Severity.high
             if level in ("medium", "warn", "warning"):
-                return Severity.MEDIUM
-        return Severity.LOW
+                return Severity.medium
+        return Severity.low
+
+    @staticmethod
+    def _f(src: Dict[str, Any], *keys: str):
+        """Get a value from src, trying nested object access first then dot-notation fallback.
+        Handles both Logstash dot-notation keys ("source.ip") and nested dicts ({"source": {"ip": ...}}).
+        """
+        result = src
+        for k in keys:
+            if isinstance(result, dict):
+                result = result.get(k)
+            else:
+                result = None
+                break
+        if result is not None:
+            return result
+        return src.get(".".join(keys))
 
     @staticmethod
     def _honeypot_from_doc(src: Dict[str, Any], index: str) -> HoneypotType:
         fileset = src.get("fileset") if isinstance(src.get("fileset"), dict) else {}
         service = src.get("service") if isinstance(src.get("service"), dict) else {}
+        # handle both {"honeypot": {"type": "cowrie"}} and {"honeypot.type": "cowrie"}
+        hp_raw = src.get("honeypot")
         hp = (
-            src.get("honeypot")
+            (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw)
+            or src.get("honeypot.type")
             or fileset.get("module")
             or service.get("type")
         )
@@ -158,9 +177,22 @@ class ESClient:
 
     def _doc_to_event(self, doc: Dict[str, Any]) -> AttackEvent:
         src = doc.get("_source", {})
+<<<<<<< HEAD
         # ES stores flat dotted keys — access them directly, not as nested dicts
         geo_container = src.get("source.geo") or {}
         geo_src = geo_container.get("geo") or geo_container or src.get("geoip") or {}
+=======
+        f = self._f
+
+        # Geo: handle {"source": {"geo": {...}}} and {"source.geo": {...}}
+        geo_src = f(src, "source", "geo") or src.get("source.geo") or src.get("geoip") or {}
+        asn_src = f(src, "source", "as") or src.get("source.as") or {}
+        if not isinstance(geo_src, dict):
+            geo_src = {}
+        if not isinstance(asn_src, dict):
+            asn_src = {}
+
+>>>>>>> zinoba
         geo = None
         if geo_src:
             loc = geo_src.get("location")
@@ -168,11 +200,18 @@ class ESClient:
                 location = {"lat": float(loc["lat"]), "lon": float(loc["lon"])}
             else:
                 location = None
+            org_raw = asn_src.get("organization")
+            as_org = (org_raw.get("name") if isinstance(org_raw, dict) else org_raw)
             geo = GeoInfo(
                 country_name=geo_src.get("country_name"),
                 country_iso=geo_src.get("country_iso_code") or geo_src.get("country_code2"),
                 city=geo_src.get("city_name"),
                 location=location,
+<<<<<<< HEAD
+=======
+                asn=asn_src.get("number"),
+                as_org=as_org,
+>>>>>>> zinoba
             )
 
         ts_raw = src.get("@timestamp") or src.get("timestamp")
@@ -181,10 +220,42 @@ class ESClient:
         except Exception:
             ts = datetime.now(timezone.utc)
 
+        # session_id: handle {"session": {"id": "..."}} and {"session": "..."} and {"session.id": "..."}
+        sess_raw = src.get("session")
+        session_id = (
+            (sess_raw.get("id") if isinstance(sess_raw, dict) else sess_raw)
+            or src.get("session.id")
+            or src.get("session_id")
+        )
+
+        # event_type: handle {"event": {"id": "cowrie.login.failed"}} and {"eventid": "..."} and {"event.id": "..."}
+        ev_raw = src.get("event")
+        event_type = (
+            src.get("eventid")
+            or src.get("event.id")
+            or (ev_raw.get("id") if isinstance(ev_raw, dict) else None)
+            or (ev_raw.get("type") if isinstance(ev_raw, dict) else None)
+            or src.get("event.type")
+        )
+
+        # username/password: handle nested and dot-notation
+        user_raw = src.get("user")
+        username = (
+            (user_raw.get("name") if isinstance(user_raw, dict) else None)
+            or src.get("user.name")
+            or src.get("username")
+        )
+        password = (
+            (user_raw.get("password") if isinstance(user_raw, dict) else None)
+            or src.get("user.password")
+            or src.get("password")
+        )
+
         return AttackEvent(
             id=doc.get("_id", ""),
             timestamp=ts,
             honeypot=self._honeypot_from_doc(src, doc.get("_index", "")),
+<<<<<<< HEAD
             source_ip=src.get("source.ip") or src.get("src_ip"),
             source_port=src.get("source.port") or src.get("src_port"),
             dest_port=src.get("destination.port") or src.get("dst_port"),
@@ -199,6 +270,24 @@ class ESClient:
             http_method=src.get("method"),
             http_path=src.get("uri") or src.get("http.request.uri"),
             user_agent=src.get("user_agent.original") or src.get("user_agent"),
+=======
+            source_ip=f(src, "source", "ip") or src.get("source.ip") or src.get("src_ip"),
+            source_port=f(src, "source", "port") or src.get("source.port") or src.get("src_port"),
+            dest_port=f(src, "destination", "port") or src.get("destination.port") or src.get("dst_port"),
+            protocol=f(src, "network", "protocol") or src.get("network.protocol") or src.get("protocol"),
+            severity=self._severity_from_doc(src),
+            risk_score=src.get("risk_score"),
+            event_type=event_type,
+            session_id=session_id,
+            username=username,
+            password=password,
+            command=src.get("input") or src.get("cowrie.input") or src.get("command"),
+            http_method=f(src, "http", "request", "method") or src.get("http.request.method"),
+            http_path=(f(src, "url", "path") or src.get("url.path")
+                       or f(src, "http", "request", "uri") or src.get("http.request.uri")),
+            user_agent=(f(src, "user_agent", "original") or src.get("user_agent.original")
+                        or f(src, "http", "request", "user_agent") or src.get("http.request.user_agent")),
+>>>>>>> zinoba
             geo=geo,
             raw=src,
         )
@@ -216,13 +305,14 @@ class ESClient:
             filt.append(
                 {"term": {"honeypot.type.keyword": f.honeypot.value}}
             )
-        if f.date_from or f.date_to:
-            rng: Dict[str, str] = {}
-            if f.date_from:
-                rng["gte"] = f.date_from.isoformat()
-            if f.date_to:
-                rng["lte"] = f.date_to.isoformat()
-            filt.append({"range": {"@timestamp": rng}})
+        # Always cap at now to prevent future-timestamped injections from
+        # dominating the sort (test data injected with tomorrow's date).
+        rng: Dict[str, str] = {"lte": "now"}
+        if f.date_from:
+            rng["gte"] = f.date_from.isoformat()
+        if f.date_to:
+            rng["lte"] = f.date_to.isoformat()
+        filt.append({"range": {"@timestamp": rng}})
         if not must and not filt:
             return {"match_all": {}}
         return {"bool": {"must": must or [{"match_all": {}}], "filter": filt}}
@@ -348,6 +438,59 @@ class ESClient:
             )
         return out
 
+    async def top_attackers(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Aggregate the top attacker IPs with summary stats.
+
+        One row per source.ip with event_count, distinct honeypots, country,
+        and average risk_score. Used by /api/profiling listing.
+        """
+        body = {
+            "size": 0,
+            "query": {"bool": {"must": [{"exists": {"field": "source.ip"}}]}},
+            "aggs": {
+                "ips": {
+                    "terms": {"field": "source.ip.keyword", "size": limit},
+                    "aggs": {
+                        "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 5}},
+                        "country": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},
+                        "avg_risk": {"avg": {"field": "risk_score"}},
+                        "max_risk": {"max": {"field": "risk_score"}},
+                        "first_seen": {"min": {"field": "@timestamp"}},
+                        "last_seen": {"max": {"field": "@timestamp"}},
+                    },
+                }
+            },
+        }
+        resp = await self.client.search(
+            index=self.settings.honeypot_indices,
+            body=body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
+        )
+        out: List[Dict[str, Any]] = []
+        for b in resp["aggregations"]["ips"]["buckets"]:
+            avg = float(b["avg_risk"]["value"] or 0)
+            mx = float(b["max_risk"]["value"] or 0)
+            score = round(max(avg, mx), 1)
+            severity = (
+                "CRITICAL" if score >= 80
+                else "HIGH" if score >= 60
+                else "MEDIUM" if score >= 40
+                else "LOW"
+            )
+            country_buckets = b["country"]["buckets"]
+            out.append({
+                "source_ip": b["key"],
+                "event_count": b["doc_count"],
+                "honeypots": [hp["key"] for hp in b["honeypots"]["buckets"]],
+                "country": country_buckets[0]["key"] if country_buckets else None,
+                "risk_score": score,
+                "severity": severity,
+                "first_seen": b["first_seen"].get("value_as_string"),
+                "last_seen": b["last_seen"].get("value_as_string"),
+            })
+        return out
+
     async def honeypot_split(self) -> List[Dict[str, Any]]:
         body = {
             "size": 0,
@@ -392,14 +535,28 @@ class ESClient:
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
                         "username": {"terms": {"field": "user.name.keyword", "size": 1}},
                         "cmd_count": {
+<<<<<<< HEAD
                             "filter": {"term": {"event.id.keyword": "cowrie.command.input"}}
+=======
+                            "filter": {"bool": {"should": [
+                                {"term": {"eventid": "cowrie.command.input"}},
+                                {"term": {"event.id": "cowrie.command.input"}},
+                            ]}}
+>>>>>>> zinoba
                         },
                         "auth_count": {
                             "filter": {
                                 "bool": {
                                     "should": [
+<<<<<<< HEAD
                                         {"term": {"event.id.keyword": "cowrie.login.success"}},
                                         {"term": {"event.id.keyword": "cowrie.login.failed"}},
+=======
+                                        {"term": {"eventid": "cowrie.login.success"}},
+                                        {"term": {"eventid": "cowrie.login.failed"}},
+                                        {"term": {"event.id": "cowrie.login.success"}},
+                                        {"term": {"event.id": "cowrie.login.failed"}},
+>>>>>>> zinoba
                                     ]
                                 }
                             }
@@ -444,7 +601,15 @@ class ESClient:
     async def session_detail(self, session_id: str) -> Optional[Dict[str, Any]]:
         body = {
             "size": 500,
+<<<<<<< HEAD
             "query": {"term": {"session.id.keyword": session_id}},
+=======
+            "query": {"bool": {"should": [
+                {"term": {"session.id.keyword": session_id}},
+                {"term": {"session": session_id}},
+                {"term": {"session_id": session_id}},
+            ], "minimum_should_match": 1}},
+>>>>>>> zinoba
             "sort": [{"@timestamp": {"order": "asc"}}],
         }
         resp = await self.client.search(
@@ -461,20 +626,34 @@ class ESClient:
         last = events[-1]
         commands, downloads, logins = [], [], []
         for e in events:
+<<<<<<< HEAD
             evid = e.get("event.id") or (e.get("event") or {}).get("id", "")
+=======
+            evid = (e.get("eventid") or e.get("event.id")
+                    or (e.get("event") or {}).get("id", ""))
+>>>>>>> zinoba
             ts = e.get("@timestamp")
             if evid == "cowrie.command.input":
-                commands.append({"timestamp": ts, "input": e.get("input"), "success": True})
+                cmd = e.get("input") or e.get("cowrie.input") or (e.get("process") or {}).get("command_line")
+                commands.append({"timestamp": ts, "input": cmd, "success": True})
             elif evid in ("cowrie.session.file_download", "cowrie.session.file_upload"):
                 url = e.get("url") or e.get("outfile")
                 if url:
                     downloads.append(str(url))
             elif evid.startswith("cowrie.login"):
+                user_raw = e.get("user")
                 logins.append(
                     {
                         "success": evid == "cowrie.login.success",
+<<<<<<< HEAD
                         "username": e.get("user.name") or (e.get("user") or {}).get("name"),
                         "password": e.get("user.password") or (e.get("user") or {}).get("password"),
+=======
+                        "username": (user_raw.get("name") if isinstance(user_raw, dict) else None)
+                                    or e.get("user.name") or e.get("username"),
+                        "password": (user_raw.get("password") if isinstance(user_raw, dict) else None)
+                                    or e.get("user.password") or e.get("password"),
+>>>>>>> zinoba
                         "timestamp": ts,
                     }
                 )
@@ -483,12 +662,26 @@ class ESClient:
             ended = datetime.fromisoformat(str(last["@timestamp"]).replace("Z", "+00:00"))
         except Exception:
             started = ended = datetime.now(tz=timezone.utc)
+        hp_raw = first.get("honeypot")
+        hp_str = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or first.get("honeypot.type", "unknown")
+        src_raw = first.get("source")
+        src_ip = (src_raw.get("ip") if isinstance(src_raw, dict) else None) or first.get("source.ip") or first.get("src_ip")
+        src_port = (src_raw.get("port") if isinstance(src_raw, dict) else None) or first.get("source.port")
+        user_raw = first.get("user")
+        uname = (user_raw.get("name") if isinstance(user_raw, dict) else None) or first.get("user.name") or first.get("username")
         return {
             "session_id": session_id,
+<<<<<<< HEAD
             "honeypot": first.get("honeypot.type") or first.get("honeypot", "unknown"),
             "source_ip": first.get("source.ip") or first.get("src_ip"),
             "source_port": first.get("source.port"),
             "username": first.get("user.name") or first.get("username"),
+=======
+            "honeypot": hp_str,
+            "source_ip": src_ip,
+            "source_port": src_port,
+            "username": uname,
+>>>>>>> zinoba
             "started_at": started,
             "ended_at": ended,
             "duration_seconds": (ended - started).total_seconds(),
@@ -503,7 +696,14 @@ class ESClient:
     async def mark_session_closed(self, session_id: str) -> bool:
         body = {
             "script": {"source": "ctx._source.session_closed_by_admin = true"},
+<<<<<<< HEAD
             "query": {"term": {"session.id.keyword": session_id}},
+=======
+            "query": {"bool": {"should": [
+                {"term": {"session.id.keyword": session_id}},
+                {"term": {"session": session_id}},
+            ], "minimum_should_match": 1}},
+>>>>>>> zinoba
         }
         try:
             resp = await self.client.update_by_query(

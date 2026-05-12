@@ -1,0 +1,249 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px"> Honeypot Management</div>
+<<<<<<< HEAD:webapp/pages/honeypots.html
+    <h2 class="page-title">Honeypots <span>actifs</span></h2>
+    <div class="page-sub">Statut des conteneurs  volume capté  dernier événement.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="hp-refresh">Actualiser</button>
+  </div>
+</div>
+
+<div class="grid-2" id="hp-grid">
+  <div class="alert info">Chargement…</div>
+=======
+    <h2 class="page-title">Active <span>Honeypots</span></h2>
+    <div class="page-sub">Container status · captured volume · last event.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="hp-refresh">Refresh</button>
+  </div>
+</div>
+
+<div id="hp-chart-root" style="margin-bottom:14px"></div>
+
+<div class="grid-2" id="hp-grid">
+  <div class="alert info">Loading…</div>
+>>>>>>> zinoba:frontend/pages/honeypots.html
+</div>
+
+<style>
+.hp-card { border:1px solid var(--border); border-radius:10px; background: var(--bg2); padding: 18px; }
+.hp-card-h { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+.hp-name { font-family:'Rajdhani',sans-serif; font-size:18px; font-weight:700; letter-spacing:.5px; }
+.hp-cowrie  .hp-name { color: var(--gold); }
+.hp-dionaea .hp-name { color: var(--red2); }
+.hp-galah   .hp-name { color: var(--purple2, #9F6AE0); }
+.hp-zeek    .hp-name { color: var(--blue2); }
+.hp-sub { font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); margin-top:2px; }
+.hp-stat { display:flex; gap:18px; margin-top:8px; }
+.hp-stat-k { font-family:'Share Tech Mono',monospace; font-size:10px; color: var(--text3); letter-spacing:1px; text-transform:uppercase; }
+.hp-stat-v { font-family:'Rajdhani',sans-serif; font-size:22px; font-weight:700; color: var(--text); }
+.hp-status { font-family:'Share Tech Mono',monospace; font-size:10px; padding: 3px 8px; border-radius: 3px; letter-spacing:1px; }
+<<<<<<< HEAD:webapp/pages/honeypots.html
+.hp-status.up   { background: rgba(249,168,37,.12); color: var(--gold); border:1px solid var(--border2); }
+=======
+.hp-status.up   { background: rgba(140,26,43,.12); color: var(--gold); border:1px solid var(--border2); }
+>>>>>>> zinoba:frontend/pages/honeypots.html
+.hp-status.down { background: rgba(198,40,40,.12); color: var(--red2); border:1px solid rgba(198,40,40,.30); }
+.hp-row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.hp-row:last-child { border-bottom:none; }
+.hp-row b { color: var(--text2); }
+.hp-row .mono { color: var(--gold); }
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $ } = FH;
+
+  const HONEYPOTS = [
+<<<<<<< HEAD:webapp/pages/honeypots.html
+    { id:'cowrie',  name:'Cowrie',  ports:'SSH:2222 · Telnet:2323',                    desc:'Honeypot SSH/Telnet — capture brute force et commandes shell',     container:'forenhive-cowrie'  },
+    { id:'dionaea', name:'Dionaea', ports:'SMB:445 · MySQL:3306 · MongoDB:27017 · …',  desc:'Honeypot multi-protocole — capture binaires malware (Mirai, etc.)', container:'forenhive-dionaea' },
+    { id:'galah',   name:'Galah',   ports:'HTTP:8080 · HTTPS:8888',                    desc:'Honeypot HTTP LLM-driven (Ollama Mistral 7B) — réponses dynamiques',  container:'forenhive-galah'   },
+  ];
+  /* Zeek est un capteur NDR passif, pas un honeypot — visible dans la page Health Check. */
+
+  async function load() {
+    $('#hp-grid').innerHTML = `<div class="alert info">Chargement…</div>`;
+    let attacks = { items: [] }, health = {};
+    try { attacks = await api.attacks({ page_size: 500 }); } catch(e){}
+    try { health  = await api.health(); } catch(e){}
+
+    const items = (attacks && attacks.items) || [];
+    const stats = {};
+    HONEYPOTS.forEach(h => stats[h.id] = { count: 0, last: 0 });
+    items.forEach(ev => {
+      const hp = ev.honeypot || (ev.raw && ev.raw['honeypot.type']);
+      if (!hp || !stats[hp]) return;
+      stats[hp].count++;
+      const t = +new Date(ev.timestamp || (ev.raw && ev.raw['@timestamp']) || 0);
+      if (t > stats[hp].last) stats[hp].last = t;
+    });
+
+    const services = (health && health.services) || {};
+
+    $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
+      const s = stats[h.id];
+      const upDown = services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
+      const isUp = String(upDown).toLowerCase() === 'up' || s.count > 0;
+=======
+    { id:'cowrie',  name:'Cowrie',  ports:'SSH:2222 · Telnet:2323',                    desc:'SSH/Telnet Honeypot — captures brute force and shell commands',     container:'forenhive-cowrie'  },
+    { id:'dionaea', name:'Dionaea', ports:'SMB:445 · MySQL:3306 · MongoDB:27017 · …',  desc:'Multi-protocol Honeypot — captures malware binaries (Mirai, etc.)', container:'forenhive-dionaea' },
+    { id:'galah',   name:'Galah',   ports:'HTTP:8080 · HTTPS:8888',                    desc:'LLM-driven HTTP Honeypot (Ollama Mistral 7B) — dynamic responses',  container:'forenhive-galah'   },
+  ];
+
+  const me = api.user() || {};
+  const isAdmin = (me.role || '').toString().toLowerCase() === 'admin';
+  console.log('[honeypots] user role:', me.role, 'isAdmin:', isAdmin);
+  let containerStatus = {};
+  async function fetchContainerStatus() {
+    try { containerStatus = await api._call('/api/honeypots/status'); }
+    catch (e) { console.warn('[honeypots] status fetch failed:', e.message); containerStatus = {}; }
+  }
+  async function ctlHoneypot(hp, action) {
+    const btn = document.querySelector(`[data-hp-action="${hp}:${action}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = action === 'start' ? '⏳ Starting…' : '⏳ Stopping…'; }
+    try {
+      await api._call(`/api/honeypots/${hp}/${action}`, { method: 'POST' });
+      await new Promise(r => setTimeout(r, 800));
+      await load();
+    } catch (e) {
+      alert(`${action} ${hp} failed: ${e.message}`);
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function load() {
+    $('#hp-grid').innerHTML = `<div class="alert info">Loading…</div>`;
+    let split = { split: [] }, health = {};
+    try { split  = await api.geoSplit(); } catch(e){}
+    try { health = await api.health(); } catch(e){}
+    await fetchContainerStatus();
+
+    const splitMap = {};
+    (split.split || []).forEach(s => { splitMap[s.honeypot] = s.count; });
+
+    const stats = {};
+    HONEYPOTS.forEach(h => stats[h.id] = { count: splitMap[h.id] || 0, last: 0 });
+
+    await Promise.all(HONEYPOTS.map(async h => {
+      try {
+        const r = await api.attacks({ page_size: 1, honeypot: h.id });
+        const ev = r && r.items && r.items[0];
+        if (ev) stats[h.id].last = +new Date(ev.timestamp || 0);
+      } catch(e) {}
+    }));
+
+    const chartEl = document.getElementById('hp-chart-root');
+    if (chartEl && window.React && window.ReactDOM && window.Recharts) {
+      const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+      const hh = R.createElement;
+      const barData = HONEYPOTS.map(hp => ({
+        name: hp.name,
+        id: hp.id,
+        events: stats[hp.id].count,
+      })).sort((a,b) => b.events - a.events);
+      const maxEv = Math.max(...barData.map(d=>d.events), 1);
+      const HP_COLORS = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff' };
+      const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+      const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+
+      function HpChart() {
+        return hh('div',{style:{background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 20px'}},
+          hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:'var(--text1)',marginBottom:2}},'Event Volume Comparison'),
+          hh('div',{style:{fontSize:11,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:12}},'Total captured events per honeypot sensor'),
+          hh(RC.ResponsiveContainer,{width:'100%',height:100},
+            hh(RC.BarChart,{data:barData,layout:'vertical',margin:{top:0,right:60,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:80,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v.toLocaleString('en-US')+' events','Count']}),
+              hh(RC.Bar,{dataKey:'events',name:'Events',radius:[0,3,3,0],barSize:20,label:{position:'right',style:{fill:'#8892a4',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},formatter:v=>v.toLocaleString('en-US')}},
+                ...barData.map((e,i)=>hh(RC.Cell,{key:i,fill:(HP_COLORS[e.id]||'#888')+'cc'}))
+              )
+            )
+          )
+        );
+      }
+
+      if (!window.__hpChartRoot) window.__hpChartRoot = RD.createRoot(chartEl);
+      window.__hpChartRoot.render(hh(HpChart,null));
+      window.__pageCleanup = () => { if(window.__hpChartRoot){window.__hpChartRoot.unmount();window.__hpChartRoot=null;} };
+    }
+
+    const services = (health && health.services) || {};
+    $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
+      const s = stats[h.id];
+      const ctState = (containerStatus[h.id] || '').toLowerCase();
+      const upDown = ctState || services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
+      const isUp = ctState
+        ? ctState === 'running'
+        : (String(upDown).toLowerCase() === 'up' || s.count > 0);
+      const adminCtrls = `
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:start" ${isUp?'disabled':''}>▶ Turn On</button>
+          <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:stop"  ${!isUp?'disabled':''} style="color:var(--red2)">■ Shutdown</button>
+          ${ctState ? `<span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);align-self:center">docker: ${esc(ctState)}</span>` : ''}
+        </div>`;
+>>>>>>> zinoba:frontend/pages/honeypots.html
+      return `<div class="hp-card hp-${h.id}">
+        <div class="hp-card-h">
+          <div>
+            <div class="hp-name">${esc(h.name)}</div>
+            <div class="hp-sub">${esc(h.container)}</div>
+          </div>
+          <span class="hp-status ${isUp?'up':'down'}">${isUp?'● RUNNING':'○ STOPPED'}</span>
+        </div>
+        <div class="hp-stat">
+          <div>
+<<<<<<< HEAD:webapp/pages/honeypots.html
+            <div class="hp-stat-k">Événements</div>
+            <div class="hp-stat-v">${fmt.num(s.count)}</div>
+          </div>
+          <div>
+            <div class="hp-stat-k">Dernier</div>
+=======
+            <div class="hp-stat-k">Events</div>
+            <div class="hp-stat-v">${fmt.num(s.count)}</div>
+          </div>
+          <div>
+            <div class="hp-stat-k">Last</div>
+>>>>>>> zinoba:frontend/pages/honeypots.html
+            <div class="hp-stat-v" style="font-size:14px">${s.last ? fmt.ago(s.last) : '—'}</div>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <div class="hp-row"><b>Ports</b><span class="mono">${esc(h.ports)}</span></div>
+          <div class="hp-row"><b>Description</b><span style="text-align:right;color:var(--text3);font-size:11px;max-width:60%">${esc(h.desc)}</span></div>
+        </div>
+<<<<<<< HEAD:webapp/pages/honeypots.html
+        <div style="margin-top:14px">
+          <a class="btn btn-gh btn-sm" href="#evidence">Voir logs</a>
+=======
+        ${adminCtrls}
+        <div style="margin-top:14px">
+          <a class="btn btn-gh btn-sm" href="#evidence">View logs</a>
+>>>>>>> zinoba:frontend/pages/honeypots.html
+          <a class="btn btn-gh btn-sm" href="#sessions" style="margin-left:6px">Sessions</a>
+        </div>
+      </div>`;
+    }).join('');
+<<<<<<< HEAD:webapp/pages/honeypots.html
+=======
+
+    document.querySelectorAll('[data-hp-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [hp, action] = btn.dataset.hpAction.split(':');
+        if (action === 'stop' && !confirm(`Shutdown the ${hp} honeypot?`)) return;
+        ctlHoneypot(hp, action);
+      });
+    });
+>>>>>>> zinoba:frontend/pages/honeypots.html
+  }
+
+  $('#hp-refresh').addEventListener('click', load);
+  await load();
+})();
+</script>

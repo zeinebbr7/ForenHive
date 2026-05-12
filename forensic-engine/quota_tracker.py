@@ -32,12 +32,10 @@ import config
 log = logging.getLogger("quota_tracker")
 
 
+import db_pool
+
 def _pg_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
-    )
+    return db_pool.pooled_conn()
 
 
 def _next_utc_midnight() -> datetime:
@@ -50,7 +48,8 @@ _RESET_POLICY = {
     "virustotal": _next_utc_midnight,
     "abuseipdb":  _next_utc_midnight,
     "iplocate":   _next_utc_midnight,
-    "shodan":     lambda: datetime.now(timezone.utc) + timedelta(hours=1),
+    "shodan":      lambda: datetime.now(timezone.utc) + timedelta(hours=1),
+    "shodan_host": lambda: datetime.now(timezone.utc) + timedelta(hours=1),
 }
 
 

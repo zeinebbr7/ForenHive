@@ -16,6 +16,7 @@ Zeek     ──┘
 ```
 
 **Stack versions:** Filebeat 8.13.0 · Logstash 8.13.0 · Elasticsearch 8.13.0
+**GeoIP databases:** `./geoip/GeoLite2-City.mmdb` + `./geoip/GeoLite2-ASN.mmdb` (host path, bind-mounted into Logstash and forensic-engine)
 
 ---
 
@@ -96,7 +97,7 @@ Zeek     ──┘
 
 **Config:**
 - Single-node, no security (dev mode: `xpack.security.enabled=false`)
-- JVM heap: 1 GB (`ES_JAVA_OPTS=-Xms1g -Xmx1g`)
+- JVM heap: 1 GB (`ES_JAVA_OPTS=-Xms1g -Xmx1g`) — Logstash heap reduced to 512 MB (`LS_JAVA_OPTS=-Xms512m -Xmx512m`)
 - Persistent data volume: `elasticsearch-data`
 - Internal only: port 9200 not exposed to host
 
@@ -302,3 +303,23 @@ Guard with `if [dionaea.date]` because only grok pattern 2 produces this field �
 ## 7. Sprint 2 Status: COMPLETE 
 
 All 4 honeypot pipelines are operational. Events are normalized to ECS, timestamped in Africa/Tunis (GMT+1), and indexed in daily Elasticsearch indices. The pipeline is ready to serve the forensic engine (Sprint 3).
+
+---
+
+## 8. Post-Sprint Updates
+
+### GeoIP database path change *(applied Sprint 3)*
+
+GeoIP `.mmdb` files were originally stored at `/etc/logstash/` on the host and bind-mounted only into Logstash. During Sprint 3 setup the forensic engine also needed them. Files were moved to `./geoip/` in the project root:
+- `./geoip/GeoLite2-City.mmdb`
+- `./geoip/GeoLite2-ASN.mmdb`
+
+Both are now bind-mounted into Logstash and forensic-engine containers. Logstash pipeline references unchanged (`/usr/share/logstash/GeoLite2-*.mmdb` inside the container).
+
+### PostgreSQL schema populated *(Sprint 3, 2026-04-04)*
+
+`forenhive-postgresql` was empty at the end of Sprint 2. Sprint 3 created 4 tables (`ip_enrichment_cache`, `file_analysis`, `forensic_sessions`, `suspect_profiles`) and Sprint 4 added `users` and `audit_logs` via SQLAlchemy `create_all`. The database is now fully schema'd and operational.
+
+### Logstash JVM heap reduction
+
+Lowered from `-Xms1g -Xmx1g` to `-Xms512m -Xmx512m` to free RAM for the forensic-engine and backend containers running on the same server (Dell R750, shared memory).

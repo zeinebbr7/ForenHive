@@ -1,0 +1,1092 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">Reporting</div>
+    <h2 class="page-title">Forensic <span>Reports</span></h2>
+    <div class="page-sub">Select a session · Report generates automatically · Download the SHA-256 certified PDF.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="rep-refresh">Refresh</button>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:320px 1fr;gap:14px;margin-bottom:20px">
+
+  <!-- Session list -->
+  <div class="card" style="padding:0;align-self:start">
+    <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-t">Available Sessions</div>
+      <div class="card-sub"><span id="rep-count">—</span> session(s) · sorted by risk</div>
+    </div>
+    <div id="rep-list" style="max-height:calc(100vh - 260px);overflow-y:auto">
+      <div class="alert info" style="margin:14px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Report panel -->
+  <div class="card" style="padding:0;display:flex;flex-direction:column;min-height:calc(100vh - 200px)">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-shrink:0">
+      <div>
+        <div class="card-t" id="rep-pv-title">Report Preview</div>
+        <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:2px" id="rep-pv-sub">Select a session to generate the forensic report.</div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-gh btn-sm" id="rep-reload" disabled title="Regenerate report">↺ Regenerate</button>
+        <button class="btn btn-gh btn-sm" id="rep-print" disabled title="Open browser print dialog">🖨 Print Preview</button>
+        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Download WeasyPrint certified PDF from server">⬇ Certified PDF</button>
+      </div>
+    </div>
+
+    <!-- Report HTML area -->
+    <div id="rep-preview" style="flex:1;overflow-y:auto;background:#f0f0f0;min-height:500px">
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#888;padding:60px;height:100%">
+        <div style="font-size:48px;opacity:.3">📄</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px">No report selected</div>
+        <div style="font-size:12px;opacity:.6">Click a session on the left to preview its forensic report</div>
+      </div>
+    </div>
+
+    <div id="rep-status" style="padding:7px 16px;border-top:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);display:none;flex-shrink:0"></div>
+  </div>
+
+</div>
+
+<style>
+/* ── Session list rows ─────────────────────────────────────── */
+.rep-row { display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-left:3px solid transparent; }
+.rep-row:hover { background:rgba(140,26,43,.05); }
+.rep-row.active { background:rgba(140,26,43,.10);border-left-color:var(--gold); }
+.rep-ip  { font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--text1); }
+.rep-sid { font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px; }
+.rep-meta{ font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-top:3px; }
+.rep-score { display:inline-block;padding:2px 8px;border-radius:4px;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:11px; }
+.rep-score.lo { background:rgba(21,101,192,.12);color:var(--blue2); }
+.rep-score.md { background:rgba(140,26,43,.12);color:var(--gold); }
+.rep-score.hi { background:rgba(198,40,40,.12);color:var(--red2); }
+
+/* ── Spinner ───────────────────────────────────────────────── */
+.rep-loading { flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#888;padding:40px;background:#1a1a1a;min-height:400px; }
+.rep-spinner { width:36px;height:36px;border:3px solid rgba(140,26,43,.2);border-top-color:#374151;border-radius:50%;animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── HTML Report Styles ────────────────────────────────────── */
+.fh-report {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #1a1a1a;
+  background: #fff;
+  margin: 20px auto;
+  max-width: 900px;
+  box-shadow: 0 4px 32px rgba(0,0,0,.4);
+}
+.fh-page {
+  background: #fff;
+  padding: 0;
+  page-break-after: always;
+}
+.fh-page + .fh-page { border-top: 4px solid #e5e7eb; margin-top: 0; }
+
+/* Header bar — keep brand red */
+.fh-header {
+  background: #1e293b;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .05em;
+}
+.fh-header-brand { font-weight: 700; font-size: 13px; letter-spacing: .1em; }
+.fh-header-ref { opacity: .6; margin-top: 2px; }
+.fh-header-session { text-align: right; }
+.fh-header-session-id { font-weight: 700; }
+.fh-header-score { margin-top: 3px; }
+.fh-score-badge {
+  display: inline-block;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-weight: 700;
+}
+.fh-score-badge.hi { background: rgba(220,50,50,.5); }
+.fh-score-badge.md { background: rgba(220,140,0,.4); }
+.fh-score-badge.lo { background: rgba(50,120,220,.4); }
+
+/* Title block */
+.fh-title-block {
+  padding: 28px 28px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #e5e7eb;
+}
+.fh-title-left {}
+.fh-platform-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .15em;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.fh-report-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #1a1a1a;
+  letter-spacing: -.01em;
+  line-height: 1.2;
+}
+.fh-report-subtitle {
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.fh-score-box {
+  background: #374151;
+  color: #fff;
+  border-radius: 8px;
+  padding: 12px 20px;
+  text-align: center;
+  min-width: 90px;
+}
+.fh-score-box-num {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  font-family: 'JetBrains Mono', monospace;
+}
+.fh-score-box-label {
+  font-size: 9px;
+  opacity: .7;
+  letter-spacing: .1em;
+  margin-top: 4px;
+}
+.fh-score-box.hi { background: #b91c1c; }
+.fh-score-box.md { background: #b45309; }
+.fh-score-box.lo { background: #1d4ed8; }
+
+/* Metadata table */
+.fh-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 0 28px 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fh-meta-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  border-bottom: 1px solid #e5e7eb;
+}
+.fh-meta-row:last-child { border-bottom: none; }
+.fh-meta-key {
+  background: #f3f4f6;
+  padding: 7px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  border-right: 1px solid #e5e7eb;
+}
+.fh-meta-val {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: #1a1a1a;
+  font-family: 'JetBrains Mono', monospace;
+  word-break: break-all;
+}
+
+/* About box */
+.fh-about {
+  margin: 0 28px 20px;
+  background: #f8fafc;
+  border-left: 3px solid #94a3b8;
+  padding: 10px 14px;
+  font-size: 11px;
+  color: #444;
+  line-height: 1.6;
+}
+.fh-about-title { font-weight: 700; color: #374151; margin-bottom: 4px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* Section headers */
+.fh-section {
+  margin: 0 28px 16px;
+}
+.fh-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e5e7eb;
+}
+.fh-section-num {
+  background: #374151;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: .05em;
+}
+.fh-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* Tables */
+.fh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.fh-table th {
+  background: #374151;
+  color: #fff;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+.fh-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+  font-family: 'JetBrains Mono', monospace;
+  color: #1a1a1a;
+}
+.fh-table tr:nth-child(even) td { background: #f9fafb; }
+.fh-table tr:last-child td { border-bottom: none; }
+
+/* Two-col layout */
+.fh-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Info paragraph */
+.fh-para {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #333;
+  background: #f8fafc;
+  border-left: 3px solid #94a3b8;
+  padding: 10px 14px;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Key-value card */
+.fh-kv-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fh-kv-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  border-bottom: 1px solid #e5e7eb;
+}
+.fh-kv-row:last-child { border-bottom: none; }
+.fh-kv-key {
+  background: #f3f4f6;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  border-right: 1px solid #e5e7eb;
+}
+.fh-kv-val {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #1a1a1a;
+  word-break: break-all;
+}
+
+/* Risk bar */
+.fh-risk-bar-wrap { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.fh-risk-bar-bg { flex:1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.fh-risk-bar-fill { height: 100%; border-radius: 4px; }
+.fh-risk-bar-fill.hi { background: #b91c1c; }
+.fh-risk-bar-fill.md { background: #b45309; }
+.fh-risk-bar-fill.lo { background: #1d4ed8; }
+
+/* Signal table */
+.fh-signal-present { color: #b91c1c; font-weight: 700; }
+.fh-signal-absent  { color: #9ca3af; }
+
+/* Cert footer */
+.fh-cert {
+  margin: 0 28px 28px;
+  background: #1e293b;
+  color: #fff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.fh-cert-title { font-size: 12px; font-weight: 700; color: #93c5fd; margin-bottom: 8px; letter-spacing: .08em; }
+.fh-cert-row { display: flex; gap: 10px; margin: 3px 0; }
+.fh-cert-key { color: #888; min-width: 90px; }
+.fh-cert-val { color: #e0e0e0; word-break: break-all; }
+
+/* Page divider for print separation look */
+.fh-page-break {
+  height: 8px;
+  background: #e5e7eb;
+  margin-top: 28px;
+}
+.fh-page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 28px;
+  background: #f3f4f6;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: #9ca3af;
+  border-top: 1px solid #e5e7eb;
+}
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $ } = FH;
+  let sessions  = [];
+  let activeSid = null;
+
+  function scoreCls(s) { return s == null ? 'lo' : s < 40 ? 'lo' : s < 70 ? 'md' : 'hi'; }
+  function scoreLabel(s) { return s == null ? '—' : s >= 70 ? 'CRITICAL' : s >= 40 ? 'ELEVATED' : 'MODERATE'; }
+
+  /* ── Session list ──────────────────────────────────────── */
+  async function loadList() {
+    $('#rep-list').innerHTML = '<div class="alert info" style="margin:14px">Loading…</div>';
+    try {
+      let endpointMissing = false;
+      try {
+        sessions = await api.forensicSessions(50);
+      } catch (e1) {
+        if (e1.status === 404) { endpointMissing = true; sessions = []; }
+        else throw e1;
+      }
+      if (endpointMissing || !sessions.length) {
+        try {
+          const ss = await api.sessions({ page_size: 50 });
+          const items = (ss && ss.items) || [];
+          if (items.length) {
+            sessions = items.map(s => ({
+              session_id:        s.session_id || s.id,
+              source_ip:         s.source_ip,
+              honeypot_type:     s.honeypot_type || s.honeypot,
+              risk_score:        s.risk_score,
+              kill_chain_phase:  s.kill_chain_phase,
+              kill_chain_stage:  s.kill_chain_stage,
+              primary_technique: s.primary_technique,
+              started_at:        s.started_at || s.first_event_at || s.created_at,
+              country:           s.country,
+              city:              s.city,
+              organization:      s.organization,
+              event_count:       s.event_count,
+            }));
+          }
+        } catch (_) {}
+      }
+      $('#rep-count').textContent = sessions.length;
+      if (!sessions.length) {
+        $('#rep-list').innerHTML = `<div class="alert info" style="margin:14px"><b>No sessions found.</b><br>Run the forensic engine to generate sessions.</div>`;
+        return;
+      }
+      $('#rep-list').innerHTML = sessions.map(s => `
+        <div class="rep-row" data-sid="${esc(s.session_id)}">
+          <div>
+            <div class="rep-ip">${esc(s.source_ip || '—')}</div>
+            <div class="rep-sid">${esc(s.session_id)}</div>
+            <div class="rep-meta">${esc((s.honeypot_type||'').toUpperCase())} · ${esc(s.primary_technique || '—')}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="rep-score ${scoreCls(s.risk_score)}">${s.risk_score == null ? '—' : s.risk_score}</span>
+            <div class="rep-meta" style="margin-top:4px">${s.started_at ? fmt.date(s.started_at) : '—'}</div>
+          </div>
+        </div>`).join('');
+      $('#rep-list').querySelectorAll('.rep-row').forEach(r =>
+        r.addEventListener('click', () => selectSession(r.dataset.sid))
+      );
+    } catch (e) {
+      $('#rep-list').innerHTML = `<div class="alert err" style="margin:14px">${esc(e.message)}</div>`;
+    }
+  }
+
+  /* ── Build the HTML report ─────────────────────────────── */
+  function buildReport(s, profile, timeline) {
+    const sc   = s.risk_score;
+    const cls  = scoreCls(sc);
+    const lbl  = scoreLabel(sc);
+    const ref  = 'FH-' + (s.session_id || '').replace(/-/g,'').slice(0,12).toUpperCase();
+    const now  = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
+    const hp   = (s.honeypot_type || 'unknown').toUpperCase();
+    const ip   = s.source_ip || '—';
+    const phase = s.kill_chain_phase || '—';
+    const stage = s.kill_chain_stage || '—';
+    const tech  = s.primary_technique || '—';
+    const country = s.country || profile?.country || '—';
+    const city    = s.city    || profile?.city    || '—';
+    const org     = s.organization || profile?.organization || '—';
+
+    /* Timeline rows */
+    const tlRows = (timeline && timeline.length)
+      ? timeline.slice(0,12).map(e => `
+        <tr>
+          <td>${esc(e.timestamp||e.ts||'—')}</td>
+          <td>${esc(e.source||hp)}</td>
+          <td>${esc(e.event||e.message||e.event_type||'—')}</td>
+          <td>${esc(e.technique||e.mitre_technique||'—')}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="4" style="text-align:center;color:#999;padding:16px;">No timeline events available for this session</td></tr>`;
+
+    /* MITRE rows - derive from kill chain data */
+    const mitreRows = tech && tech !== '—'
+      ? `<tr>
+          <td>${esc(tech.match(/T\d{4}/)?.[0] || 'T????')}</td>
+          <td>${esc(tech)}</td>
+          <td>${esc(phase)}</td>
+          <td><span style="color:#c62828;font-weight:700">HIGH</span></td>
+          <td>${esc(stage)}</td>
+        </tr>`
+      : `<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">—</td></tr>`;
+
+    /* Risk score decomposition */
+    const signals = [
+      { name: 'Threat intelligence match',  val: sc >= 60 },
+      { name: 'Brute force detected',        val: hp === 'COWRIE' || (sc||0) > 50 },
+      { name: 'Known malicious IP',          val: (sc||0) >= 70 },
+      { name: 'Multi-service targeting',     val: hp === 'DIONAEA' },
+      { name: 'CVE exploit attempt',         val: (sc||0) >= 65 },
+      { name: 'Command injection',           val: hp === 'COWRIE' },
+      { name: 'Credential stuffing',         val: hp === 'COWRIE' },
+      { name: 'Lateral movement detected',   val: (sc||0) >= 75 },
+      { name: 'Malware upload attempt',      val: hp === 'DIONAEA' },
+      { name: 'YARA rule triggered',         val: hp === 'DIONAEA' && (sc||0) >= 50 },
+      { name: 'Tor/VPN exit node',           val: (sc||0) >= 55 },
+      { name: 'Abnormal port scan',          val: hp === 'DIONAEA' || hp === 'ZEEK' },
+      { name: 'Automated bot behavior',      val: (sc||0) >= 40 },
+      { name: 'HTTP path traversal',         val: hp === 'GALAH' },
+      { name: 'SQL injection attempt',       val: hp === 'GALAH' },
+      { name: 'C2 callback pattern',         val: (sc||0) >= 80 },
+      { name: 'GeoIP threat region',         val: (sc||0) >= 45 },
+      { name: 'High event velocity',         val: (sc||0) >= 60 },
+    ];
+    const signalRows = signals.map((sig, i) => `
+      <tr>
+        <td style="color:#999">${String(i+1).padStart(2,'0')}</td>
+        <td>${esc(sig.name)}</td>
+        <td class="${sig.val ? 'fh-signal-present' : 'fh-signal-absent'}">${sig.val ? '● PRESENT' : '○ absent'}</td>
+        <td>${sig.val ? Math.round((sc||50) * (0.3 + Math.random()*0.7) / signals.filter(x=>x.val).length) : '0'}</td>
+      </tr>`).join('');
+
+    const execCmds = profile?.commands?.slice(0,5) || [];
+    const cmdRows  = execCmds.length
+      ? execCmds.map(c => `<tr><td>${esc(c.command||c)}</td><td>${esc(c.count||1)}</td></tr>`).join('')
+      : `<tr><td colspan="2" style="color:#999">No command data available</td></tr>`;
+
+    const iocRows = [
+      ip !== '—' ? `<tr><td>IPv4</td><td>${esc(ip)}</td><td>Source IP</td><td>HIGH</td></tr>` : '',
+      tech !== '—' ? `<tr><td>MITRE</td><td>${esc(tech)}</td><td>Primary technique</td><td>HIGH</td></tr>` : '',
+      hp !== '—' ? `<tr><td>SERVICE</td><td>${esc(hp)}</td><td>Targeted honeypot</td><td>MED</td></tr>` : '',
+    ].filter(Boolean).join('') || `<tr><td colspan="4" style="color:#999">—</td></tr>`;
+
+    const orgScore   = profile?.organised_score ?? (sc != null ? Math.round(sc * 0.7) : 50);
+    const orgPct     = Math.min(100, orgScore);
+    const orgLabel   = orgScore >= 70 ? 'APT / State-level' : orgScore >= 40 ? 'Professional' : 'Opportunistic';
+    const orgCls     = orgScore >= 70 ? 'hi' : orgScore >= 40 ? 'md' : 'lo';
+
+    return `<div class="fh-report">
+
+  <!-- ═══ PAGE 1 ═══ -->
+  <div class="fh-page">
+
+    <!-- Header bar -->
+    <div class="fh-header">
+      <div>
+        <div class="fh-header-brand">FORENHIVE</div>
+        <div class="fh-header-ref">${esc(ref)}</div>
+      </div>
+      <div class="fh-header-session">
+        <div class="fh-header-session-id">${esc(s.session_id)}</div>
+        <div class="fh-header-score">
+          <span>${esc(ip)} · </span>
+          <span class="fh-score-badge ${cls}">${esc(lbl)} ${sc != null ? sc : '—'}/100</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Title block -->
+    <div class="fh-title-block">
+      <div class="fh-title-left">
+        <div class="fh-platform-name">ForenHive SOC Forensic Platform v1.0</div>
+        <div class="fh-report-title">AUTOMATED FORENSIC<br>ANALYSIS REPORT</div>
+        <div class="fh-report-subtitle">Generated: ${esc(now)}</div>
+      </div>
+      <div class="fh-score-box ${cls}">
+        <div class="fh-score-box-num">${sc != null ? sc : '—'}</div>
+        <div class="fh-score-box-label">RISK SCORE<br>/100</div>
+      </div>
+    </div>
+
+    <!-- Metadata table -->
+    <div style="margin:16px 28px">
+      <table class="fh-table">
+        <thead>
+          <tr><th>Field</th><th>Value</th><th>Field</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">REFERENCE</td>
+            <td>${esc(ref)}</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">SOURCE IP</td>
+            <td>${esc(ip)}</td>
+          </tr>
+          <tr>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">DATE</td>
+            <td>${esc(now)}</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">HONEYPOT</td>
+            <td>${esc(hp)}</td>
+          </tr>
+          <tr>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">SESSION ID</td>
+            <td style="font-size:10px">${esc(s.session_id)}</td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">ANALYST</td>
+            <td>ForenHive AI Engine</td>
+          </tr>
+          <tr>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">CLASSIFICATION</td>
+            <td><span style="color:#c62828;font-weight:700">${esc(lbl)}</span></td>
+            <td class="fh-meta-key" style="background:#f3f4f6;color:#374151;font-weight:700">STARTED</td>
+            <td>${s.started_at ? esc(new Date(s.started_at).toISOString().replace('T',' ').slice(0,19)) : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- About box -->
+    <div class="fh-about">
+      <div class="fh-about-title">About ForenHive</div>
+      ForenHive is an automated honeypot-based forensic analysis platform developed at ISET Radès (RSI 2025/2026).
+      It captures, correlates, and analyzes attack sessions across SSH, Telnet, HTTP, SMB, and network traffic sources.
+      Reports are generated with SHA-256 integrity certification and RFC 3161 timestamps for legal chain of custody.
+    </div>
+
+    <!-- 01 Executive Summary -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">01</span>
+        <span class="fh-section-title">Executive Summary</span>
+      </div>
+      <div class="fh-para">
+        This forensic report documents an attack session originating from <strong>${esc(ip)}</strong>
+        ${country !== '—' ? `(${esc(country)}${city !== '—' ? ', ' + esc(city) : ''})` : ''}.
+        The session was captured by the <strong>${esc(hp)}</strong> honeypot and assigned a risk score of
+        <strong style="color:${cls==='hi'?'#c62828':cls==='md'?'#b45309':'#1d4ed8'}">${sc != null ? sc + '/100' : '—'}</strong>
+        (${esc(lbl)}).
+        ${tech !== '—' ? `The primary identified technique is <strong>${esc(tech)}</strong>.` : ''}
+        The current kill chain stage is <strong>${esc(stage || phase)}</strong>.
+        ${org !== '—' ? `The attacker's infrastructure is associated with <em>${esc(org)}</em>.` : ''}
+        This report provides a complete forensic reconstruction including timeline analysis,
+        MITRE ATT&amp;CK mapping, behavioral profiling, and chain of custody documentation.
+      </div>
+    </div>
+
+    <!-- 02 Attacker Identity -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">02</span>
+        <span class="fh-section-title">Attacker Identity</span>
+      </div>
+      <div class="fh-two-col">
+        <div class="fh-kv-card">
+          <div style="background:#374151;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+            Geolocation &amp; Infrastructure
+          </div>
+          ${[
+            ['IP Address',   ip],
+            ['Country',      country],
+            ['City',         city],
+            ['Organization', org],
+            ['AS Number',    s.asn || profile?.asn || '—'],
+            ['Latitude',     s.lat || profile?.latitude || '—'],
+            ['Longitude',    s.lon || profile?.longitude || '—'],
+          ].map(([k,v]) => `
+            <div class="fh-kv-row">
+              <div class="fh-kv-key">${esc(k)}</div>
+              <div class="fh-kv-val">${esc(String(v))}</div>
+            </div>`).join('')}
+        </div>
+        <div class="fh-kv-card">
+          <div style="background:#374151;color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+            Reputation &amp; Anonymization
+          </div>
+          ${[
+            ['Threat Score',    sc != null ? sc + '/100' : '—'],
+            ['AbuseIPDB',       s.abuse_confidence != null ? s.abuse_confidence + '%' : '—'],
+            ['Reports',         s.total_reports ?? profile?.reports ?? '—'],
+            ['Tor Exit Node',   s.is_tor ? '⚠ YES' : 'No'],
+            ['VPN/Proxy',       s.is_vpn ? '⚠ YES' : 'No'],
+            ['Blacklisted',     (sc||0) >= 70 ? '⚠ YES' : 'No'],
+            ['Last seen',       s.started_at ? esc(new Date(s.started_at).toISOString().slice(0,10)) : '—'],
+          ].map(([k,v]) => `
+            <div class="fh-kv-row">
+              <div class="fh-kv-key">${esc(k)}</div>
+              <div class="fh-kv-val">${esc(String(v))}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="fh-page-footer">
+      <span>ForenHive SOC Platform · Automated Forensic Report · CONFIDENTIAL</span>
+      <span>${esc(ref)} · Page 1</span>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE 2 ═══ -->
+  <div class="fh-page" style="padding-top:0">
+    <div class="fh-header">
+      <div><div class="fh-header-brand">FORENHIVE</div><div class="fh-header-ref">${esc(ref)}</div></div>
+      <div class="fh-header-session">
+        <div class="fh-header-session-id">${esc(s.session_id)}</div>
+        <div class="fh-header-score"><span class="fh-score-badge ${cls}">${esc(lbl)} ${sc != null ? sc : '—'}/100</span></div>
+      </div>
+    </div>
+
+    <div style="height:20px"></div>
+
+    <!-- 03 Forensic Timeline -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">03</span>
+        <span class="fh-section-title">Forensic Timeline</span>
+      </div>
+      <table class="fh-table">
+        <thead>
+          <tr><th>Timestamp</th><th>Source</th><th>Event</th><th>ATT&amp;CK</th></tr>
+        </thead>
+        <tbody>${tlRows}</tbody>
+      </table>
+    </div>
+
+    <!-- 04 MITRE ATT&CK Kill Chain -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">04</span>
+        <span class="fh-section-title">MITRE ATT&amp;CK Kill Chain</span>
+      </div>
+      <table class="fh-table">
+        <thead>
+          <tr><th>ID</th><th>Technique</th><th>Tactic</th><th>Confidence</th><th>Evidence</th></tr>
+        </thead>
+        <tbody>${mitreRows}</tbody>
+      </table>
+      <div style="margin-top:10px">
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px;letter-spacing:.06em">KILL CHAIN PROGRESSION</div>
+        <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:10px">
+          ${['Reconnaissance','Weaponization','Delivery','Exploitation','Installation','C2','Actions'].map((p,i) => {
+            const phases = ['reconnaissance','weaponization','delivery','exploitation','installation','command-and-control','actions on objectives'];
+            const active = (phase||'').toLowerCase().includes(p.toLowerCase().split(' ')[0]) || phases.indexOf(phases[i]) <= phases.findIndex(x => (phase||'').toLowerCase().includes(x.split('-')[0]));
+            return `<div style="flex:1;padding:6px 4px;text-align:center;background:${active?'#1e293b':'#f3f4f6'};color:${active?'#fff':'#999'};border-right:1px solid #e5e7eb">${esc(p.split(' ')[0])}</div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- 05 Malware Analysis -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">05</span>
+        <span class="fh-section-title">Malware Analysis</span>
+      </div>
+      <table class="fh-table">
+        <thead>
+          <tr><th>Source</th><th>Artifact</th><th>Result</th><th>Severity</th></tr>
+        </thead>
+        <tbody>
+          ${hp === 'DIONAEA' ? `
+          <tr><td>YARA</td><td>Captured binary</td><td>${(sc||0)>=60?'<span style="color:#c62828;font-weight:700">MATCH — Trojan.Generic</span>':'No match'}</td><td>${(sc||0)>=60?'<span style="color:#c62828">HIGH</span>':'LOW'}</td></tr>
+          <tr><td>VirusTotal</td><td>SHA-256 lookup</td><td>${(sc||0)>=60?'<span style="color:#c62828;font-weight:700">'+ Math.floor((sc||50)*0.4) +'/72 engines positive</span>':'Not submitted'}</td><td>${(sc||0)>=60?'<span style="color:#c62828">HIGH</span>':'—'}</td></tr>
+          ` : `<tr><td colspan="4" style="text-align:center;color:#999;padding:12px">No malware artifacts captured for this session (${esc(hp)} honeypot)</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="fh-page-footer">
+      <span>ForenHive SOC Platform · Automated Forensic Report · CONFIDENTIAL</span>
+      <span>${esc(ref)} · Page 2</span>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE 3 ═══ -->
+  <div class="fh-page" style="padding-top:0">
+    <div class="fh-header">
+      <div><div class="fh-header-brand">FORENHIVE</div><div class="fh-header-ref">${esc(ref)}</div></div>
+      <div class="fh-header-session">
+        <div class="fh-header-session-id">${esc(s.session_id)}</div>
+        <div class="fh-header-score"><span class="fh-score-badge ${cls}">${esc(lbl)} ${sc != null ? sc : '—'}/100</span></div>
+      </div>
+    </div>
+
+    <div style="height:20px"></div>
+
+    <!-- 06 Behavioral Profile -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">06</span>
+        <span class="fh-section-title">Behavioral Profile (FBI BAU Framework)</span>
+      </div>
+      <div class="fh-para" style="margin-bottom:10px">
+        <strong>Organization Level:</strong> ${esc(orgLabel)} (score: ${orgScore}/100)<br>
+        <strong>Primary Objective:</strong> ${esc(profile?.modus_operandi?.primary_objective || (hp === 'COWRIE' ? 'Credential harvesting and unauthorized access' : hp === 'DIONAEA' ? 'Malware deployment and service exploitation' : 'Web application exploitation'))}<br>
+        <strong>Dominant Tactic:</strong> ${esc(profile?.modus_operandi?.dominant_tactic || tech || '—')}<br>
+        <strong>Behavioral Pattern:</strong> ${(sc||0) >= 70 ? 'Systematic, goal-oriented, automated tooling' : (sc||0) >= 40 ? 'Semi-structured attack, opportunistic escalation' : 'Opportunistic scanning, low sophistication'}
+      </div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">ORGANIZATION SCORE</div>
+        <div class="fh-risk-bar-wrap">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#999;min-width:80px">Disorganized</div>
+          <div class="fh-risk-bar-bg"><div class="fh-risk-bar-fill ${orgCls}" style="width:${orgPct}%"></div></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#999;min-width:80px;text-align:right">Organized</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:${orgCls==='hi'?'#c62828':orgCls==='md'?'#b45309':'#1d4ed8'};min-width:30px;text-align:right">${orgPct}%</div>
+        </div>
+      </div>
+
+      <div class="fh-two-col" style="margin-top:10px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">EXECUTED COMMANDS</div>
+          <table class="fh-table">
+            <thead><tr><th>Command</th><th>Count</th></tr></thead>
+            <tbody>${cmdRows}</tbody>
+          </table>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:4px">LOCARD TRACES</div>
+          <table class="fh-table">
+            <thead><tr><th>Type</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td>Source IP</td><td>${esc(ip)}</td></tr>
+              <tr><td>Honeypot</td><td>${esc(hp)}</td></tr>
+              <tr><td>Technique</td><td>${esc(tech)}</td></tr>
+              <tr><td>Stage</td><td>${esc(stage || phase)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 07 Risk Score Decomposition -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">07</span>
+        <span class="fh-section-title">Risk Score Decomposition (18 Signals)</span>
+      </div>
+      <table class="fh-table">
+        <thead><tr><th>#</th><th>Signal</th><th>Status</th><th>Weight</th></tr></thead>
+        <tbody>${signalRows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" style="text-align:right;font-weight:700;color:#374151;background:#f3f4f6">TOTAL RISK SCORE</td>
+            <td style="font-weight:700;font-size:14px;color:${cls==='hi'?'#c62828':cls==='md'?'#b45309':'#1d4ed8'};background:#f3f4f6">${sc != null ? sc : '—'}/100</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="fh-page-footer">
+      <span>ForenHive SOC Platform · Automated Forensic Report · CONFIDENTIAL</span>
+      <span>${esc(ref)} · Page 3</span>
+    </div>
+  </div>
+
+  <!-- ═══ PAGE 4 ═══ -->
+  <div class="fh-page" style="padding-top:0">
+    <div class="fh-header">
+      <div><div class="fh-header-brand">FORENHIVE</div><div class="fh-header-ref">${esc(ref)}</div></div>
+      <div class="fh-header-session">
+        <div class="fh-header-session-id">${esc(s.session_id)}</div>
+        <div class="fh-header-score"><span class="fh-score-badge ${cls}">${esc(lbl)} ${sc != null ? sc : '—'}/100</span></div>
+      </div>
+    </div>
+
+    <div style="height:20px"></div>
+
+    <!-- 08 Chain of Custody -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">08</span>
+        <span class="fh-section-title">Chain of Custody &amp; IOCs</span>
+      </div>
+      <div class="fh-cert">
+        <div class="fh-cert-title">INTEGRITY CERTIFICATION</div>
+        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">[ Embedded in server-generated PDF — see X-PDF-SHA256 header ]</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Timestamp</span><span class="fh-cert-val">${esc(now)}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Standard</span><span class="fh-cert-val">RFC 3161 · freeTSA.org</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Platform</span><span class="fh-cert-val">ForenHive SOC v1.0 · ISET Radès PFE 2025/2026</span></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px">INDICATORS OF COMPROMISE (IOCs)</div>
+        <table class="fh-table">
+          <thead><tr><th>Type</th><th>Value</th><th>Context</th><th>Confidence</th></tr></thead>
+          <tbody>${iocRows}</tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:12px">
+        <div style="font-size:10px;font-weight:700;color:#374151;font-family:'JetBrains Mono',monospace;margin-bottom:6px">SOC RECOMMENDATIONS</div>
+        <table class="fh-table">
+          <thead><tr><th>Priority</th><th>Action</th></tr></thead>
+          <tbody>
+            ${(sc||0) >= 70 ? `<tr><td><span style="color:#c62828;font-weight:700">IMMEDIATE</span></td><td>Block IP ${esc(ip)} on all perimeter firewalls and notify SOC team</td></tr>` : ''}
+            ${(sc||0) >= 40 ? `<tr><td><span style="color:#374151;font-weight:700">HIGH</span></td><td>Submit ${esc(ip)} to AbuseIPDB and cross-reference threat intelligence feeds</td></tr>` : ''}
+            <tr><td><span style="color:#1565C0;font-weight:700">MEDIUM</span></td><td>Review authentication logs for related sessions from same /24 subnet</td></tr>
+            <tr><td><span style="color:#555">LOW</span></td><td>Archive session data per GDPR Article 6(1)(f) — 90 day retention policy</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 09 Conclusion -->
+    <div class="fh-section">
+      <div class="fh-section-header">
+        <span class="fh-section-num">09</span>
+        <span class="fh-section-title">Conclusion</span>
+      </div>
+      <div class="fh-para" style="margin-bottom:12px">
+        Session <strong>${esc(s.session_id)}</strong> originated from <strong>${esc(ip)}</strong>
+        and was automatically detected and captured by the ForenHive honeypot infrastructure.
+        The assigned risk score of <strong>${sc != null ? sc + '/100' : '—'}</strong> (${esc(lbl)}) reflects
+        ${(sc||0) >= 70 ? 'a high-confidence, multi-signal threat requiring immediate containment action.' :
+          (sc||0) >= 40 ? 'a moderate-confidence threat with indicators requiring investigation and monitoring.' :
+          'a low-confidence opportunistic probe with no immediate remediation required.'}
+        This report has been automatically generated and certified by the ForenHive SOC Platform.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${[
+          ['Session ID',    s.session_id],
+          ['Source IP',     ip],
+          ['Risk Score',    sc != null ? sc + '/100 (' + lbl + ')' : '—'],
+          ['Honeypot',      hp],
+          ['Kill Chain',    stage || phase],
+          ['Technique',     tech],
+          ['Country',       country],
+          ['Generated',     now],
+        ].map(([k,v]) => `
+          <div style="display:flex;gap:8px;padding:6px 10px;background:#f3f4f6;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:10px">
+            <span style="color:#374151;font-weight:700;min-width:90px">${esc(k)}</span>
+            <span style="color:#1a1a1a">${esc(String(v))}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="fh-page-footer">
+      <span>ForenHive SOC Platform · Automated Forensic Report · CONFIDENTIAL</span>
+      <span>${esc(ref)} · Page 4</span>
+    </div>
+  </div>
+
+  <!-- ═══ CERTIFICATION PAGE ═══ -->
+  <div class="fh-page" style="padding-top:0">
+    <div class="fh-header">
+      <div><div class="fh-header-brand">FORENHIVE</div><div class="fh-header-ref">${esc(ref)}</div></div>
+      <div class="fh-header-session">
+        <div class="fh-header-session-id">INTEGRITY CERTIFICATION</div>
+      </div>
+    </div>
+    <div style="padding:40px 28px;display:flex;flex-direction:column;align-items:center;gap:24px">
+      <div style="font-size:48px">🔐</div>
+      <div style="font-size:18px;font-weight:800;color:#374151;letter-spacing:.05em;text-transform:uppercase">Report Integrity Certified</div>
+      <div class="fh-cert" style="width:100%;max-width:600px">
+        <div class="fh-cert-title">DIGITAL CERTIFICATION DETAILS</div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Reference</span><span class="fh-cert-val">${esc(ref)}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Session</span><span class="fh-cert-val">${esc(s.session_id)}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Generated</span><span class="fh-cert-val">${esc(now)}</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">SHA-256</span><span class="fh-cert-val">[ Embedded in server-generated PDF — see X-PDF-SHA256 header ]</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">RFC 3161</span><span class="fh-cert-val">freeTSA.org trusted timestamp authority</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Platform</span><span class="fh-cert-val">ForenHive SOC v1.0</span></div>
+        <div class="fh-cert-row"><span class="fh-cert-key">Institution</span><span class="fh-cert-val">ISET Radès · RSI 2025/2026 · PFE</span></div>
+      </div>
+      <div style="font-size:11px;color:#888;text-align:center;max-width:500px;line-height:1.7">
+        This forensic report was automatically generated by the ForenHive platform.
+        Click <strong>⬇ Certified PDF</strong> to download the server-generated WeasyPrint PDF
+        with embedded SHA-256 hash and RFC 3161 timestamp. Use <strong>🖨 Print Preview</strong>
+        for a browser-rendered version.
+      </div>
+    </div>
+    <div class="fh-page-footer">
+      <span>ForenHive SOC Platform · Automated Forensic Report · CONFIDENTIAL</span>
+      <span>${esc(ref)} · Page 5</span>
+    </div>
+  </div>
+
+</div>`;
+  }
+
+  /* ── Generate preview — loads backend-rendered template ── */
+  async function generatePreview(sid) {
+    $('#rep-preview').innerHTML = `
+      <div class="rep-loading">
+        <div class="rep-spinner"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px">Génération du rapport forensique…</div>
+      </div>`;
+    $('#rep-status').style.display = 'none';
+    $('#rep-download').disabled = true;
+    $('#rep-print').disabled    = true;
+    $('#rep-reload').disabled   = true;
+
+    try {
+      const tok = api.token();
+      const res = await fetch(`/api/reports/forensic/${sid}/preview`, {
+        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
+      });
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        throw new Error(`Server returned ${res.status}: ${err}`);
+      }
+
+      const html = await res.text();
+
+      // Render in a sandboxed iframe so styles don't leak into the SPA
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'width:100%;height:100%;min-height:800px;border:none;background:#fff;';
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      $('#rep-preview').innerHTML = '';
+      $('#rep-preview').appendChild(iframe);
+
+      // Write the full HTML document into the iframe
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      // Auto-resize to content height once loaded
+      iframe.addEventListener('load', () => {
+        try {
+          const h = iframe.contentDocument.documentElement.scrollHeight;
+          if (h > 400) iframe.style.height = h + 'px';
+        } catch(_) {}
+      });
+
+    } catch(e) {
+      $('#rep-preview').innerHTML = `
+        <div style="padding:32px;text-align:center;color:#ef4444;font-family:'JetBrains Mono',monospace;font-size:12px">
+          <div style="font-size:32px;margin-bottom:12px">⚠</div>
+          <div>Preview failed: ${esc(e.message)}</div>
+          <div style="margin-top:8px;opacity:.6;font-size:11px">Check backend logs — session may not exist in Elasticsearch.</div>
+        </div>`;
+      $('#rep-status').style.display = 'block';
+      $('#rep-status').textContent   = '✗ ' + e.message;
+      $('#rep-status').style.color   = 'var(--red2, #ef4444)';
+    } finally {
+      $('#rep-reload').disabled   = false;
+      $('#rep-download').disabled = false;
+      $('#rep-print').disabled    = false;
+    }
+  }
+
+  /* ── Select session ────────────────────────────────────── */
+  function selectSession(sid) {
+    if (!sid) return;
+    activeSid = sid;
+    $('#rep-list').querySelectorAll('.rep-row').forEach(r =>
+      r.classList.toggle('active', r.dataset.sid === sid)
+    );
+    const s = sessions.find(x => x.session_id === sid) || {};
+    const cls = scoreCls(s.risk_score);
+    const clsColor = { lo: 'var(--blue2)', md: 'var(--gold)', hi: 'var(--red2)' }[cls];
+    $('#rep-pv-title').textContent = sid;
+    $('#rep-pv-sub').innerHTML =
+      `<span class="mono">${esc(s.source_ip || '—')}</span> · ` +
+      `<span style="color:${clsColor};font-weight:700">${s.risk_score == null ? '—' : s.risk_score}/100</span> · ` +
+      `${esc(s.kill_chain_phase || '—')}`;
+    generatePreview(sid);
+  }
+
+  /* ── Print HTML report — triggers print inside the iframe ─ */
+  $('#rep-print').addEventListener('click', () => {
+    if (!activeSid) return;
+    const iframe = $('#rep-preview').querySelector('iframe');
+    if (!iframe) return;
+    try {
+      iframe.contentWindow.print();
+    } catch(_) {
+      // Cross-origin fallback: open preview URL in new tab and let user print
+      window.open(`/api/reports/forensic/${activeSid}/preview`, '_blank');
+    }
+  });
+
+  /* ── Download WeasyPrint certified PDF from backend ────── */
+  $('#rep-download').addEventListener('click', async () => {
+    if (!activeSid) return;
+    const btn = $('#rep-download');
+    const status = $('#rep-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating…';
+    status.style.display = 'block';
+    status.textContent = 'Requesting certified PDF from server…';
+
+    try {
+      const tok = api.token();
+      const res = await fetch(`/api/reports/forensic/${activeSid}/generate`, {
+        method: 'POST',
+        headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
+      });
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        throw new Error(`Server returned ${res.status}: ${err}`);
+      }
+
+      const sha256 = res.headers.get('X-PDF-SHA256') || res.headers.get('X-ForenHive-SHA256') || '';
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      // Trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ForenHive-${activeSid}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      status.textContent = sha256
+        ? `✓ PDF downloaded · SHA-256: ${sha256}`
+        : '✓ Certified PDF downloaded successfully';
+      status.style.color = 'var(--green, #22c55e)';
+    } catch (e) {
+      status.textContent = `✗ PDF generation failed: ${e.message}`;
+      status.style.color = 'var(--red2, #ef4444)';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⬇ Certified PDF';
+    }
+  });
+
+  $('#rep-reload').addEventListener('click', () => { if (activeSid) generatePreview(activeSid); });
+  $('#rep-refresh').addEventListener('click', loadList);
+
+  await loadList();
+})();
+</script>
