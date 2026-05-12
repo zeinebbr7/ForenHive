@@ -129,8 +129,12 @@ def _query_enrichment_cache(source_ip: str) -> dict:
             )
             row = cur.fetchone()
         if row:
+<<<<<<< HEAD
             data = row["data"]
             return data if isinstance(data, dict) else json.loads(data)
+=======
+            return json.loads(row["data"])
+>>>>>>> origin
         return {}
     except Exception as e:
         log.warning(f"Query enrichment for {source_ip} failed: {e}")
