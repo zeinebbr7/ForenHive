@@ -41,18 +41,51 @@ Full pipeline operational. See `docs/sprint2_audit.md` for full details.
 
 **Live metrics (2026-03-28):** 11.4M total events across 4 daily indices.
 
-### Sprint 3 🔄 — Forensic Engine (Planned, not started)
-- AbuseIPDB enrichment + MaxMind GeoLite2-ASN + IPLocate (Tor/VPN detection)
-- YARA scanning on Dionaea captured malware binaries
-- VirusTotal SHA-256 lookup
-- MITRE ATT&CK mapping via Ollama + Mistral 7B (offline, no API key)
-- Forensic timeline (multi-source ms-precision correlation)
-- SHA-256 + RFC 3161 chain of custody
-- Risk score 0-100 per event/session
-- FastAPI backend (REST API, JWT auth) — files are empty placeholders
-- React frontend (dashboard, attack map, timeline) — files are empty placeholders
-- Nginx (reverse proxy, SSL termination) — config is empty placeholder
-- PostgreSQL schema creation
+### Sprint 3 ✅ — Forensic Engine (Complete, updated 2026-04-12)
+See `docs/sprint3_audit.md` + `docs/updates on sprint 3` for full details.
+
+| Component | File | Status |
+|---|---|---|
+| PostgreSQL schema (4 tables) | `forensic-engine/db/schema.sql` | ✅ |
+| IP enrichment (5 sources + PG cache) | `forensic-engine/enricher.py` | ✅ |
+| YARA scanner (6 rule files) | `forensic-engine/yara_scanner.py` | ✅ |
+| VirusTotal v3 lookup | `forensic-engine/virustotal.py` | ✅ |
+| Risk scorer (18 signals, returns dict) | `forensic-engine/risk_score.py` | ✅ |
+| Hybrid MITRE mapper (deterministic IDs + LLM narrative) | `forensic-engine/mitre_mapper.py` | ✅ |
+| Engine orchestrator (Cowrie + Dionaea + Galah) | `forensic-engine/engine.py` | ✅ |
+| Docker container | `forensic-engine/Dockerfile` | ✅ |
+
+**Key facts:** 18-signal risk scorer returns a 13-key dict. MITRE technique IDs are deterministic (zero hallucination); Mistral 7B generates the narrative only. Kill chain stage 1–8 stored in `forensic_sessions`. Private IP classification distinguishes Docker bridge / loopback (ignore) from corporate / VPN (investigate).
+
+### Sprint 4 ✅ — Backend API (Complete, 2026-05-12)
+See `docs/sprint4_audit.md` for full details.
+
+| Component | File(s) | Status |
+|---|---|---|
+| FastAPI app + RFC 7807 errors | `backend/main.py` | ✅ |
+| JWT auth (access 30 min + refresh 7 d) | `backend/routers/auth.py` | ✅ |
+| Attacks API + SSE live stream | `backend/routers/attacks.py` | ✅ |
+| Sessions API | `backend/routers/sessions.py` | ✅ |
+| Geo API (5 endpoints) | `backend/routers/geo.py` | ✅ |
+| Alert engine (8 triggers) + watcher (15 s poll) | `backend/services/alert_engine.py` | ✅ |
+| Risk score API (18-signal breakdown) | `backend/routers/risk_score.py` | ✅ |
+| Forensics API (timeline, YARA, sessions) | `backend/routers/forensics.py` | ✅ |
+| Reports API (HTML + PDF + RFC 3161 custody) | `backend/routers/reports.py` | ✅ |
+| Attacker profiling (Mistral 7B / Groq) | `backend/routers/profiling.py` | ✅ |
+| AI chat HIVE (Groq SSE + Ollama fallback) | `backend/routers/chat.py` | ✅ |
+| Audit log | `backend/routers/audit.py` | ✅ |
+| Honeypot container admin | `backend/routers/honeypots.py` | ✅ |
+| Unit tests (4 files) | `backend/tests/` | ✅ |
+
+**44 API endpoints total.** APScheduler triggers forensic engine every 6 h. Chain of custody: SHA-256 + FreeTSA RFC 3161 token on every report.
+
+### Sprint 5 🔲 — React Frontend (C5, Not Started)
+- Dashboard (attack map, risk timeline, honeypot stats)
+- Session explorer + forensic timeline view
+- Report viewer (HTML/PDF download)
+- Alert management UI
+- AI chat (HIVE) interface
+- Nginx reverse proxy + SSL termination
 
 ---
 
@@ -75,6 +108,9 @@ Full pipeline operational. See `docs/sprint2_audit.md` for full details.
 | `docs/architecture.md` | Full architecture reference |
 | `docs/sprint1_audit.md` | Sprint 1 bugs, fixes, known issues |
 | `docs/sprint2_audit.md` | Sprint 2 bugs, fixes, field mappings, live metrics |
+| `docs/sprint3_audit.md` | Sprint 3 forensic engine components, schema, design decisions |
+| `docs/updates on sprint 3` | Sprint 3 overhaul: 18-signal scorer, hybrid MITRE mapper, multi-honeypot engine |
+| `docs/sprint4_audit.md` | Sprint 4 FastAPI backend: 44 endpoints, alert engine, reports, chain of custody |
 
 ---
 
