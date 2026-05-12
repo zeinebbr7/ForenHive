@@ -14,12 +14,18 @@ rfc3161-client==1.0.6
 cryptography==44.0.0
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
+<<<<<<< HEAD
 apscheduler==3.10.4
+=======
+>>>>>>> ismail
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 pyjwt==2.10.1
 slowapi==0.1.9
+<<<<<<< HEAD
 twilio==9.4.3
 docker==7.1.0
+=======
+>>>>>>> ismail
 pytest==8.3.4
 pytest-asyncio==0.25.0

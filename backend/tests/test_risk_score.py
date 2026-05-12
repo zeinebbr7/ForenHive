@@ -37,6 +37,7 @@ def test_command_signals_detected():
     assert score > 15
 
 
+<<<<<<< HEAD
 def test_lateral_movement_external_ip_smb_commands():
     """BUG-012: lateral_movement must fire on external IPs via SMB/psexec signals."""
     score, breakdown = RiskScorer.score(
@@ -73,6 +74,8 @@ def test_score_uncapped_present_when_over_100():
     assert score <= 100
 
 
+=======
+>>>>>>> ismail
 def test_score_capped_at_100():
     ctx = {
         "failed_auth_count": 500,

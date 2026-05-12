@@ -42,6 +42,7 @@ async def build_profile(ip: str) -> AttackerProfile:
     dest_ports: set = set()
 
     for e in events:
+<<<<<<< HEAD
         sess_raw = e.get("session") or e.get("session_id")
         sid = (sess_raw.get("id") if isinstance(sess_raw, dict) else sess_raw) or None
         if sid:
@@ -52,6 +53,16 @@ async def build_profile(ip: str) -> AttackerProfile:
             commands_all.append(str(cmd))
         user_raw = e.get("user")
         user = (user_raw.get("name") if isinstance(user_raw, dict) else None) or e.get("username")
+=======
+        sid = e.get("session") or e.get("session_id")
+        if sid:
+            s = sessions.setdefault(sid, {"session_id": sid, "events": 0})
+            s["events"] += 1
+        cmd = e.get("input") or e.get("command")
+        if cmd:
+            commands_all.append(str(cmd))
+        user = (e.get("user") or {}).get("name") or e.get("username")
+>>>>>>> ismail
         if user:
             usernames_all.append(str(user))
         yara = e.get("yara_match")
@@ -90,9 +101,13 @@ async def build_profile(ip: str) -> AttackerProfile:
     risk_score, _breakdown = RiskScorer.score(
         {
             "failed_auth_count": sum(
+<<<<<<< HEAD
                 1 for e in events
                 if e.get("eventid") == "cowrie.login.failed"
                 or (e.get("event") or {}).get("id") == "cowrie.login.failed"
+=======
+                1 for e in events if e.get("eventid") == "cowrie.login.failed"
+>>>>>>> ismail
             ),
             "is_tor": bool(iplocate.get("is_tor") or abuseipdb.get("is_tor")),
             "abuseipdb_score": abuseipdb.get("abuseipdb_score"),
@@ -127,12 +142,17 @@ async def build_profile(ip: str) -> AttackerProfile:
         as_org=as_org,
         is_tor=bool(iplocate.get("is_tor") or abuseipdb.get("is_tor")),
         is_vpn=bool(iplocate.get("is_vpn")),
+<<<<<<< HEAD
         is_proxy=bool(iplocate.get("is_proxy")),
         abuseipdb_score=abuseipdb.get("abuseipdb_score"),
         abuseipdb_reports=abuseipdb.get("abuseipdb_reports"),
         usage_type=abuseipdb.get("usage_type"),
         isp=abuseipdb.get("isp"),
         domain=abuseipdb.get("domain"),
+=======
+        abuseipdb_score=abuseipdb.get("abuseipdb_score"),
+        abuseipdb_reports=abuseipdb.get("abuseipdb_reports"),
+>>>>>>> ismail
         mitre_techniques=sorted(set(mitre)),
         yara_matches=sorted(set(yara_matches)),
         ioc_hashes=sorted(set(ioc_hashes)),

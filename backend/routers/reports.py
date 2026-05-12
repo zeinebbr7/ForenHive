@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import hashlib
 import json
 import logging
@@ -10,10 +11,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+=======
+from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+>>>>>>> ismail
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from config import get_settings
+<<<<<<< HEAD
 from models.report import (
     ReportListResponse,
     ReportMeta,
@@ -891,6 +897,11 @@ async def _build_forensic_context(session_id: str) -> dict:
         "enumerate": enumerate,
     }
 
+=======
+from models.report import ReportListResponse, ReportMeta, ReportRequest
+from services.report_service import get_reports
+
+>>>>>>> ismail
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 limiter = Limiter(key_func=get_remote_address)
 _SENSITIVE = get_settings().ratelimit_sensitive
@@ -944,6 +955,7 @@ async def export_stix(report_id: str):
         bundle,
         headers={"Content-Disposition": f'attachment; filename="{report_id}.stix.json"'},
     )
+<<<<<<< HEAD
 
 
 # ─── Forensic per-session reports (Sprint 4 surface used by the SPA) ────────
@@ -1119,3 +1131,5 @@ async def forensic_preview(session_id: str):
         log.exception("template render failed")
         raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
     return HTMLResponse(html_body)
+=======
+>>>>>>> ismail

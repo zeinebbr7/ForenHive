@@ -9,12 +9,17 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+<<<<<<< HEAD
 from sqlalchemy import select
 
 from config import get_settings
 from db import session_scope
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
 from models_sql.user import User
+=======
+from config import get_settings
+from models.alert import AlertConfig, AlertRecord, AlertTrigger
+>>>>>>> ismail
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
 from services.email_service import get_email
@@ -293,6 +298,7 @@ class AlertEngine:
             )
             return record
 
+<<<<<<< HEAD
     @staticmethod
     async def _all_user_emails() -> List[str]:
         """Return emails of all active admins and analysts from PostgreSQL."""
@@ -306,6 +312,8 @@ class AlertEngine:
             log.warning("could not fetch user emails from DB: %s", exc)
             return []
 
+=======
+>>>>>>> ismail
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
         subject = f"[FORENHIVE ALERT] {record.severity.upper()} — {record.threat_type} Detected"
         ctx = {
@@ -325,6 +333,7 @@ class AlertEngine:
             "mistral_analysis": record.mistral_analysis or "",
             "timestamp": record.timestamp.isoformat(),
         }
+<<<<<<< HEAD
         # Always notify every active user in the platform
         db_emails = await self._all_user_emails()
         recipients = list({*record.recipients, *db_emails})
@@ -336,6 +345,12 @@ class AlertEngine:
                 get_email().send_alert, recipients, subject, ctx
             )
             log.info("alert dispatched to %d recipient(s): %s", len(recipients), recipients)
+=======
+        try:
+            await asyncio.to_thread(
+                get_email().send_alert, record.recipients, subject, ctx
+            )
+>>>>>>> ismail
             return True, None
         except Exception as exc:
             log.error("alert dispatch failed: %s", exc)

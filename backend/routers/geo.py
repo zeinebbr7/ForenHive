@@ -1,11 +1,15 @@
 from fastapi import APIRouter, Query
+<<<<<<< HEAD
 from typing import Any, Dict, List
+=======
+>>>>>>> ismail
 
 from services.elasticsearch import get_es
 
 router = APIRouter(prefix="/api/geo", tags=["geo"])
 
 
+<<<<<<< HEAD
 async def _pg_geo_rows() -> List[Dict[str, Any]]:
     """Return per-country aggregates from PG forensic_sessions + ip_enrichment_cache."""
     try:
@@ -140,6 +144,11 @@ async def forensic_sessions_geo(limit: int = Query(100, ge=1, le=500)):
             return {"sessions": rows}
     except Exception as exc:
         return {"sessions": [], "error": str(exc)}
+=======
+@router.get("/breakdown")
+async def geo_breakdown(top: int = Query(25, ge=1, le=200)):
+    return {"top": top, "countries": await get_es().country_breakdown(top=top)}
+>>>>>>> ismail
 
 
 @router.get("/honeypot-split")

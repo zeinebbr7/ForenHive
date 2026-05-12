@@ -102,6 +102,7 @@ async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_session),
 ) -> Optional[User]:
+<<<<<<< HEAD
     """Resolve the current user from the bearer token.
 
     When `disable_auth=True`, anonymous access is allowed (returns None) but a
@@ -126,6 +127,17 @@ async def get_current_user(
     if not user or not user.is_active:
         if get_settings().disable_auth:
             return None
+=======
+    if get_settings().disable_auth:
+        return None
+    if not token:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    payload = decode_token(token)
+    if payload.get("typ") != "access":
+        raise HTTPException(status_code=401, detail="wrong token type")
+    user = await get_user_by_id(db, payload.get("sub", ""))
+    if not user or not user.is_active:
+>>>>>>> ismail
         raise HTTPException(status_code=401, detail="user disabled or missing")
     request.state.user = user
     return user
