@@ -63,7 +63,7 @@ def send_alert(ip: str, score: int) -> None:
         log.warning("Twilio credentials not configured — alert skipped for %s", ip)
         return
     try:
-        if score >= 90:
+        if score >= 80:
             _call_alert(ip, score)
         elif score > 60:
             _whatsapp_alert(ip, score)
