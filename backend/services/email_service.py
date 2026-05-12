@@ -93,21 +93,18 @@ class EmailService:
 
     @staticmethod
     def _plain_fallback(ctx: Dict[str, Any]) -> str:
+        mitre = ", ".join(ctx.get("mitre_tags") or []) or "—"
         lines = [
             f"ForenHive Alert — {ctx.get('severity', 'N/A')}",
             f"Threat     : {ctx.get('threat_type')}",
             f"Source IP  : {ctx.get('source_ip')} ({ctx.get('country')})",
             f"Honeypot   : {ctx.get('honeypot')}",
-            f"Risk score : {ctx.get('risk_score')}",
+            f"Risk score : {ctx.get('risk_score')}/100",
             f"Attempts   : {ctx.get('attempts')}",
-            f"MITRE      : {', '.join(ctx.get('mitre_tags') or [])}",
-            f"YARA       : {ctx.get('yara_match') or '-'}",
-            f"AbuseIPDB  : {ctx.get('abuseipdb_score')}",
-            f"IOC SHA256 : {ctx.get('ioc_hash')}",
-            f"TSA stamp  : {ctx.get('tsa_timestamp')}",
+            f"MITRE      : {mitre}",
             "",
-            "Analysis:",
-            str(ctx.get("mistral_analysis") or ""),
+            "AI Analysis:",
+            str(ctx.get("mistral_analysis") or "—"),
         ]
         return "\n".join(lines)
 
