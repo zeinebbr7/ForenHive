@@ -1,0 +1,118 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">🖥️ Sessions</div>
+    <h2 class="page-title">Sessions <span>d'attaque</span></h2>
+    <div class="page-sub">Regroupement par <span class="mono">session_id</span> (principalement Cowrie SSH). <span id="sess-count">—</span> sessions.</div>
+  </div>
+</div>
+
+<div class="filters">
+  <input class="form-i" id="sess-q" placeholder="🔍 IP, username…" style="min-width:240px">
+  <select class="form-s" id="sess-src"><option value="">Toutes sources</option></select>
+  <button class="btn btn-gh btn-sm" id="sess-refresh">🔄 Actualiser</button>
+</div>
+
+<div class="card">
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr><th>Session ID</th><th>Source</th><th>IP</th><th>Début</th><th>Durée</th><th>Commandes</th><th>Score</th><th></th></tr></thead>
+      <tbody id="sess-rows"><tr><td colspan="8"><div class="alert info">Chargement…</div></td></tr></tbody>
+    </table>
+  </div>
+  <div class="flex gap-8" style="justify-content:space-between;margin-top:14px" id="sess-pager"></div>
+</div>
+
+<script>
+(async function(){
+  const { SOURCE_META, ALL_SOURCES, fmt, esc, $ } = FH;
+
+  $('#sess-src').innerHTML = '<option value="">Toutes sources</option>' + ALL_SOURCES.map(s => {
+    const m = SOURCE_META[s] || { label: s, icon: '❓' };
+    return `<option value="${s}">${m.icon} ${m.label}</option>`;
+  }).join('');
+
+  let page = 1, total = 0;
+
+  async function load() {
+    $('#sess-rows').innerHTML = '<tr><td colspan="8"><div class="alert info">Chargement…</div></td></tr>';
+    try {
+      const params = { page, page_size: 25 };
+      const q = $('#sess-q').value.trim();
+      const src = $('#sess-src').value;
+      if (q) params.q = q;
+      if (src) params.honeypot = src;
+      const res = await api.sessions(params);
+      total = (res && res.total) || 0;
+      $('#sess-count').textContent = total.toLocaleString('fr-FR');
+      const items = (res && res.items) || [];
+      if (!items.length) {
+        $('#sess-rows').innerHTML = `<tr><td colspan="8"><div class="alert info">
+          <b>Aucune session enregistrée.</b><br>
+          Les sessions sont principalement issues de Cowrie (SSH/Telnet). Très peu de trafic Cowrie détecté (0,06% des événements).
+        </div></td></tr>`;
+        $('#sess-pager').innerHTML = '';
+        return;
+      }
+      $('#sess-rows').innerHTML = items.map(s => {
+        const meta = SOURCE_META[s.honeypot] || { label: s.honeypot || '—', icon: '❓' };
+        const score = s.risk_score ?? s.score ?? 0;
+        return `<tr data-id="${esc(s.session_id || s.id)}" style="cursor:pointer">
+          <td><span class="mono" style="font-size:11px">${esc((s.session_id || s.id || '').toString().slice(0,16))}…</span></td>
+          <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.icon} ${meta.label}</span></td>
+          <td class="mono">${esc(s.source_ip || '—')}</td>
+          <td class="mono" style="font-size:11px">${fmt.date(s.start_time || s.timestamp)}</td>
+          <td class="mono">${s.duration_seconds ? fmt.dur(s.duration_seconds) : '—'}</td>
+          <td class="mono">${s.command_count ?? '—'}</td>
+          <td><span class="score ${fmt.scoreClass(score)}">${score || '—'}</span></td>
+          <td><button class="btn btn-out btn-sm">Voir</button></td>
+        </tr>`;
+      }).join('');
+
+      const pages = Math.max(1, Math.ceil(total / 25));
+      $('#sess-pager').innerHTML = `
+        <div class="text-3 mono" style="font-size:11px">Page ${page} / ${pages} · ${total} sessions</div>
+        <div class="flex gap-8">
+          <button class="btn btn-gh btn-sm" ${page<=1?'disabled':''} id="sess-prev">← Préc</button>
+          <button class="btn btn-gh btn-sm" ${page>=pages?'disabled':''} id="sess-next">Suiv →</button>
+        </div>`;
+      $('#sess-prev') && $('#sess-prev').addEventListener('click', () => { if (page>1) { page--; load(); }});
+      $('#sess-next') && $('#sess-next').addEventListener('click', () => { page++; load(); });
+
+    } catch (e) {
+      $('#sess-rows').innerHTML = `<tr><td colspan="8"><div class="alert err">${esc(e.message)}</div></td></tr>`;
+    }
+  }
+
+  $('#sess-rows').addEventListener('click', async e => {
+    const tr = e.target.closest('tr'); if (!tr || !tr.dataset.id) return;
+    try {
+      const s = await api.session(tr.dataset.id);
+      const meta = SOURCE_META[s.honeypot] || { label: s.honeypot, icon: '❓' };
+      const score = s.risk_score ?? s.score ?? 0;
+      openDrawer(`
+        <div class="drawer-h">
+          <div><div class="card-t">${esc(s.session_id || s.id)}</div><div class="card-sub">${fmt.date(s.start_time || s.timestamp)}</div></div>
+          <button class="drawer-close" onclick="closeDrawer()">✕</button>
+        </div>
+        <div class="drawer-b">
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <span class="badge gold">${meta.icon} ${meta.label}</span>
+            <span class="score ${fmt.scoreClass(score)}" style="font-size:15px;padding:6px 14px">${score || '—'} / 100</span>
+            ${s.source_ip ? `<span class="mono">${esc(s.source_ip)}</span>` : ''}
+          </div>
+          ${s.username ? `<div class="mb-12">User: <span class="mono">${esc(s.username)}</span>${s.password?' · Pwd: <span class="mono">'+esc(s.password)+'</span>':''}</div>` : ''}
+          ${s.commands && s.commands.length ? `<div class="card-sub mb-12">Commandes (${s.commands.length})</div><pre class="pre" style="max-height:280px;overflow:auto">${esc(s.commands.join('\n'))}</pre>` : ''}
+          <div class="card-sub mb-12" style="margin-top:16px">Session brute</div>
+          <pre class="pre" style="max-height:260px;overflow:auto">${esc(JSON.stringify(s, null, 2))}</pre>
+        </div>`);
+    } catch (ex) {
+      openModal(`<div class="alert err">${esc(ex.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+
+  let deb; $('#sess-q').addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(() => { page=1; load(); }, 350); });
+  $('#sess-src').addEventListener('change', () => { page=1; load(); });
+  $('#sess-refresh').addEventListener('click', load);
+  await load();
+})();
+</script>

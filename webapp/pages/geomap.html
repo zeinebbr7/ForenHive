@@ -1,0 +1,122 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">🌍 Geomap</div>
+    <h2 class="page-title">Carte des <span>attaquants</span></h2>
+    <div class="page-sub">Distribution géographique des IPs observées (données GeoIP enrichies).</div>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi g"><div class="kpi-label">Total IPs</div><div class="kpi-val" id="geo-total">—</div></div>
+  <div class="kpi b"><div class="kpi-label">Pays distincts</div><div class="kpi-val" id="geo-cnt">—</div></div>
+  <div class="kpi r"><div class="kpi-label">Top pays</div><div class="kpi-val" id="geo-top" style="font-size:20px">—</div></div>
+  <div class="kpi p"><div class="kpi-label">Événements analysés</div><div class="kpi-val" id="geo-evt">—</div></div>
+</div>
+
+<div class="grid-2" style="grid-template-columns:2fr 1fr">
+  <div class="map-wrap">
+    <svg class="map-svg" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg" id="map-svg">
+      <path d="M155,120 Q190,90 240,100 Q300,95 360,115 Q400,140 395,170 Q370,200 330,195 Q280,210 240,200 Q190,185 160,160 Q140,140 155,120 Z"/>
+      <path d="M380,190 Q420,180 460,200 Q490,220 495,260 Q500,320 485,370 Q470,410 450,420 Q420,415 410,385 Q395,340 400,290 Q390,230 380,190 Z"/>
+      <path d="M450,100 Q520,85 610,95 Q700,100 780,120 Q830,145 820,175 Q790,195 720,190 Q630,195 550,180 Q480,165 450,140 Q440,115 450,100 Z"/>
+      <path d="M520,195 Q600,190 680,210 Q750,235 770,280 Q760,320 720,340 Q660,350 600,335 Q540,315 515,280 Q505,235 520,195 Z"/>
+      <path d="M740,360 Q790,345 840,360 Q880,380 875,415 Q860,435 820,440 Q770,435 745,410 Q730,385 740,360 Z"/>
+      <path d="M170,230 Q230,215 285,240 Q310,280 295,335 Q265,385 210,395 Q160,380 145,330 Q140,275 170,230 Z"/>
+    </svg>
+    <div id="map-pins"></div>
+    <div class="map-tip" id="map-tip"></div>
+    <div class="map-legend">
+      <div><span class="sw" style="background:var(--red2)"></span>Critique (≥80)</div>
+      <div><span class="sw" style="background:var(--gold)"></span>Élevé (60-79)</div>
+      <div><span class="sw" style="background:var(--blue2)"></span>Moyen (40-59)</div>
+      <div><span class="sw" style="background:var(--teal)"></span>Faible (&lt;40)</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Top pays</div><div class="card-sub">volume d'événements</div></div>
+    <table class="tbl"><thead><tr><th>Pays</th><th>Hits</th><th>IPs</th></tr></thead><tbody id="top-countries"><tr><td colspan="3">Chargement…</td></tr></tbody></table>
+  </div>
+</div>
+
+<script>
+(async function(){
+  const { flag, countryLL, esc, $ } = FH;
+
+  try {
+    // /api/geo/breakdown peut être vide → fallback sur agrégat depuis /api/attacks
+    let countries = [];
+    try {
+      const bd = await api.geoBreakdown();
+      countries = (bd && bd.countries) || [];
+    } catch(e) { /* ignore */ }
+
+    if (!countries.length) {
+      // fallback : échantillon d'événements
+      const res = await api.attacks({ limit: 1000 });
+      const items = (res && res.items) || [];
+      const agg = {};
+      items.forEach(raw => {
+        const n = FH.evNormalize(raw);
+        const iso = n.country;
+        if (!iso) return;
+        agg[iso] = agg[iso] || { country: iso, count: 0, ips: new Set() };
+        agg[iso].count++;
+        if (n.source_ip) agg[iso].ips.add(n.source_ip);
+      });
+      countries = Object.values(agg).map(c => ({ country: c.country, count: c.count, ips_count: c.ips.size, avg_score: 50 }));
+    }
+
+    if (!countries.length) {
+      $('#map-pins').innerHTML = '';
+      $('#top-countries').innerHTML = `<tr><td colspan="3"><div class="alert info"><b>Aucune donnée GeoIP.</b><br>Le trafic actuel provient du réseau local (172.16.x.x). L'enrichissement GeoIP ne s'applique qu'aux IPs publiques — aucune attaque extérieure détectée pour l'instant.</div></td></tr>`;
+      $('#geo-total').textContent = '0';
+      $('#geo-cnt').textContent = '0';
+      $('#geo-top').textContent = '—';
+      $('#geo-evt').textContent = '0';
+      return;
+    }
+
+    const totalHits = countries.reduce((s,c)=>s+(c.count||0),0);
+    const totalIps  = countries.reduce((s,c)=>s+(c.ips_count||c.unique_ips||0),0);
+    const sorted = [...countries].sort((a,b)=>(b.count||0)-(a.count||0));
+    $('#geo-total').textContent = totalIps;
+    $('#geo-cnt').textContent = countries.length;
+    $('#geo-top').textContent = flag(sorted[0].country) + ' ' + sorted[0].country;
+    $('#geo-evt').textContent = totalHits.toLocaleString('fr-FR');
+
+    // Pins sur la carte
+    const container = document.querySelector('.map-wrap');
+    const tip = $('#map-tip');
+    const pinsHtml = countries.map(c => {
+      const [lat, lng] = countryLL(c.country);
+      if (!lat && !lng) return '';
+      const x = (lng + 180) / 360 * 100;
+      const y = (90 - lat) / 180 * 100;
+      const s = c.avg_score || 50;
+      const sev = s >= 80 ? 'crit' : (s >= 60 ? 'hi' : (s >= 40 ? 'md' : 'lo'));
+      return `<div class="map-pin ${sev}" data-iso="${c.country}" data-count="${c.count}" style="left:${x}%;top:${y}%"></div>`;
+    }).join('');
+    $('#map-pins').innerHTML = pinsHtml;
+
+    container.addEventListener('mousemove', e => {
+      const t = e.target.closest('.map-pin');
+      if (!t) { tip.classList.remove('show'); return; }
+      const iso = t.dataset.iso;
+      const rect = container.getBoundingClientRect();
+      tip.style.left = (e.clientX - rect.left + 14) + 'px';
+      tip.style.top = (e.clientY - rect.top + 14) + 'px';
+      tip.innerHTML = `<b>${flag(iso)} ${esc(iso)}</b><div class="text-3 mono" style="font-size:10px">${t.dataset.count} événements</div>`;
+      tip.classList.add('show');
+    });
+    container.addEventListener('mouseleave', () => tip.classList.remove('show'));
+
+    $('#top-countries').innerHTML = sorted.slice(0,10).map(c => `
+      <tr><td>${flag(c.country)} <b>${esc(c.country)}</b></td><td class="mono">${(c.count||0).toLocaleString('fr-FR')}</td><td class="mono">${c.ips_count || c.unique_ips || '—'}</td></tr>
+    `).join('');
+
+  } catch (e) {
+    console.error(e);
+    $('#top-countries').innerHTML = `<tr><td colspan="3"><div class="alert err">${esc(e.message)}</div></td></tr>`;
+  }
+})();
+</script>
