@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 from sqlalchemy import text
 
 from config import get_settings
@@ -21,25 +19,12 @@ from models.report import AttackerProfile, ReportMeta, ReportRequest, ReportScop
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
 from services.report_adapter import adapt_risk_data_for_report
-=======
-=======
->>>>>>> ismail
-from config import get_settings
-from models.report import AttackerProfile, ReportMeta, ReportRequest, ReportScope
-from services.chain_custody import get_custody
-from services.elasticsearch import get_es
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
 
 log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 async def _query_unified_risk_score(source_ip: str) -> dict:
     """Query the unified risk score from ip_risk_scores table for an IP."""
     try:
@@ -67,10 +52,6 @@ async def _query_unified_risk_score(source_ip: str) -> dict:
         return {}
 
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
 class ReportService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -114,8 +95,6 @@ class ReportService:
         title = req.title or self._default_title(req)
         summary = self._summarize(events)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
         # Inject unified risk score for IP-scoped reports
         risk_ctx: dict = {}
         if req.scope == ReportScope.IP and req.ip:
@@ -123,10 +102,6 @@ class ReportService:
             if raw_risk:
                 risk_ctx = adapt_risk_data_for_report(raw_risk)
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
         html_body = self.env.get_template("report.html").render(
             report_id=report_id,
             title=title,
@@ -137,13 +112,7 @@ class ReportService:
             events=events[:200],
             event_count=len(events),
             summary=summary,
-<<<<<<< HEAD
-<<<<<<< HEAD
             **risk_ctx,
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
         )
         out_dir = Path(self.settings.reports_dir)
         out_dir.mkdir(parents=True, exist_ok=True)

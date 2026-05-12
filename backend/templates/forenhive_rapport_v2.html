@@ -265,16 +265,42 @@
     </table>
   </div>
 </div>
-{% if shodan_data is defined and shodan_data %}
-<h2>Shodan InternetDB Data</h2>
+{% if whois_data is defined and whois_data %}
+<h2>3.2 WHOIS — Network Registry</h2>
 <table>
-  <tr><th>Open Ports</th><th>Hostnames</th><th>CVEs</th><th>Tags</th></tr>
-  <tr>
-    <td>{{ shodan_data.ports | default([]) | join(", ") }}</td>
-    <td>{{ shodan_data.hostnames | default([]) | join(", ") or "—" }}</td>
-    <td>{{ shodan_data.vulns | default([]) | join(", ") or "—" }}</td>
-    <td>{{ shodan_data.tags | default([]) | join(", ") or "—" }}</td>
-  </tr>
+  {% if whois_data.get('network_name') %}<tr><th>Network Name</th><td class="text-mono">{{ whois_data.get('network_name') }}</td></tr>{% endif %}
+  {% if whois_data.get('cidr') %}<tr><th>Network CIDR</th><td class="text-mono">{{ whois_data.get('cidr') }}</td></tr>{% endif %}
+  {% if whois_data.get('asn') %}<tr><th>ASN</th><td class="text-mono">AS{{ whois_data.get('asn') }}{% if whois_data.get('asn_description') %} — {{ whois_data.get('asn_description') }}{% endif %}</td></tr>{% endif %}
+  {% if whois_data.get('asn_registry') %}<tr><th>Registry</th><td>{{ whois_data.get('asn_registry') | upper }}</td></tr>{% endif %}
+  {% if whois_data.get('network_type') %}<tr><th>Network Type</th><td>{{ whois_data.get('network_type') }}</td></tr>{% endif %}
+  {% if whois_data.get('registration') %}<tr><th>Registered</th><td class="text-mono">{{ whois_data.get('registration')[:10] }}</td></tr>{% endif %}
+  {% if whois_data.get('last_changed') %}<tr><th>Last Updated</th><td class="text-mono">{{ whois_data.get('last_changed')[:10] }}</td></tr>{% endif %}
+  {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="text-mono" style="color:#8C1A2B;">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
+  {% if ptr_hostname is defined and ptr_hostname %}<tr><th>PTR (rDNS)</th><td class="text-mono">{{ ptr_hostname }}</td></tr>{% endif %}
+</table>
+{% endif %}
+
+{% if iplocate_data is defined and iplocate_data %}
+<h2>3.3 IPLocate — Threat Classification</h2>
+<table>
+  {% if iplocate_data.company_name %}<tr><th>Operator</th><td>{{ iplocate_data.company_name }}</td></tr>{% endif %}
+  {% if iplocate_data.asn_name %}<tr><th>ASN Name</th><td>{{ iplocate_data.asn_name }}{% if iplocate_data.asn_number %} ({{ iplocate_data.asn_number }}){% endif %}</td></tr>{% endif %}
+  {% if iplocate_data.asn_type %}<tr><th>ASN Type</th><td>{{ iplocate_data.asn_type }}</td></tr>{% endif %}
+  <tr><th>Tor Exit Node</th><td>{% if iplocate_data.is_tor %}<strong style="color:#8C1A2B;">YES</strong>{% else %}No{% endif %}</td></tr>
+  <tr><th>VPN / Proxy</th><td>{% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</td></tr>
+  <tr><th>Hosting / Datacenter</th><td>{% if iplocate_data.is_hosting or iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</td></tr>
+  <tr><th>Known Abuser</th><td>{% if iplocate_data.is_abuser %}<strong style="color:#8C1A2B;">YES</strong>{% else %}No{% endif %}</td></tr>
+  {% if iplocate_data.is_bogon %}<tr><th>Bogon / Reserved</th><td><strong style="color:#8C1A2B;">YES — unallocated space (spoofed?)</strong></td></tr>{% endif %}
+</table>
+{% endif %}
+
+{% if shodan_data is defined and shodan_data %}
+<h2>3.4 Shodan InternetDB — Passive Scan</h2>
+<table>
+  <tr><th>Open Ports</th><td class="text-mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "—" }}</td></tr>
+  <tr><th>Hostnames</th><td class="text-mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "—" }}</td></tr>
+  <tr><th>Known CVEs</th><td class="text-mono" style="color:#8C1A2B;">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "—" }}</td></tr>
+  <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "—" }}</td></tr>
 </table>
 {% endif %}
 
@@ -325,25 +351,62 @@
 {% endif %}
 
 <h2>5.2 Malware Analysis — YARA &amp; VirusTotal</h2>
-{% if dropped_files is defined and dropped_files | length > 0 %}
+
+{# ── YARA ── #}
+{% if yara_matches is defined and yara_matches | length > 0 %}
 <table>
-  <tr><th>Filename</th><th>SHA-256</th><th>YARA Hits</th><th>VT Detections</th></tr>
+  <tr><th>YARA Rule</th><th>Severity</th></tr>
+  {% for y in yara_matches %}
+  <tr><td><span class="tag tag-yara">{{ y }}</span></td><td>HIGH</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="info-box">
+  <strong>YARA :</strong> Aucune signature ne correspond au ruleset actuel
+  ({{ yara_rules_used | default("10") }} règles). Cela n'exclut pas un malware connu —
+  le ruleset peut manquer de signatures spécifiques à cette famille.
+  <sup class="ref">2</sup>
+</div>
+{% endif %}
+
+{# ── Dropped files table ── #}
+{% if dropped_files is defined and dropped_files | length > 0 %}
+<h3>Fichiers capturés</h3>
+<table>
+  <tr><th>Fichier</th><th>SHA-256</th><th>YARA</th><th>VT Détections</th></tr>
   {% for f in dropped_files %}
   <tr>
     <td><code>{{ f.filename }}</code></td>
     <td style="font-size:7pt; word-break:break-all"><code>{{ f.sha256 }}</code></td>
-    <td>{% if f.yara_hits %}{% for y in f.yara_hits %}<span class="tag tag-yara">{{ y }}</span>{% endfor %}{% else %}None{% endif %}</td>
+    <td>{% if f.yara_hits %}{% for y in f.yara_hits %}<span class="tag tag-yara">{{ y }}</span>{% endfor %}{% else %}—{% endif %}</td>
     <td>{% if f.vt_detections is defined and f.vt_detections is not none %}{{ f.vt_detections }}/{{ f.vt_total | default("?") }}{% else %}N/A{% endif %}</td>
   </tr>
   {% endfor %}
 </table>
 {% endif %}
-{% if yara_matches is defined and yara_matches | length == 0 %}
+
+{# ── VirusTotal status — always visible ── #}
+<h3>VirusTotal</h3>
+{% if not vt_available %}
+<div class="info-box" style="border-left: 3px solid #e67e22;">
+  <strong>⚠ Quota VirusTotal épuisé</strong> — Le résultat VT est indisponible pour cette session.
+  Relancer l'analyse quand le quota est restauré (4 req/jour — tier gratuit).
+</div>
+{% elif dropped_files is defined and dropped_files | length > 0 %}
+  {% if vt_malicious > 0 %}
+  <div class="info-box" style="border-left: 3px solid #c0392b;">
+    <strong>Malware détecté :</strong> {{ vt_malicious }} moteur(s) AV ont signalé ce fichier.
+    {% if vt_family %} Famille identifiée : <strong>{{ vt_family }}</strong>.{% endif %}
+  </div>
+  {% else %}
+  <div class="info-box">
+    <strong>VirusTotal :</strong> Aucun moteur AV n'a signalé le fichier capturé ({{ dropped_files | length }} fichier(s) analysé(s)).
+  </div>
+  {% endif %}
+{% else %}
 <div class="info-box">
-  <strong>YARA Note:</strong> No signatures matched from the current ruleset
-  ({{ yara_rules_used | default("10") }} rules). This does not rule out known malware —
-  the ruleset may lack family-specific signatures. Behavioral analysis and VT hash lookup
-  should be prioritized when YARA returns no hits.<sup class="ref">2</sup>
+  <strong>VirusTotal :</strong> Aucun fichier capturé durant cette session — l'analyse VT par hash SHA-256 n'est pas applicable.
+  VirusTotal est utilisé pour les binaires déposés par les honeypots Dionaea / Cowrie (wget, curl, tftp).
 </div>
 {% endif %}
 

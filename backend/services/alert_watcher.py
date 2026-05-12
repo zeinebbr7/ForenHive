@@ -63,8 +63,6 @@ class AlertWatcher:
 
     @staticmethod
     def _ctx_from_event(src: Dict[str, Any]) -> Dict[str, Any]:
-<<<<<<< HEAD
-<<<<<<< HEAD
         # Handle both nested {"source": {"ip": ...}} and dot-notation {"source.ip": ...}
         source_raw = src.get("source") or {}
         source = source_raw if isinstance(source_raw, dict) else {}
@@ -95,25 +93,6 @@ class AlertWatcher:
             "honeypot": honeypot,
             "threat_type": eventid or (ev_raw.get("type") if isinstance(ev_raw, dict) else None),
             "failed_auth_count": 1 if eventid == "cowrie.login.failed" else 0,
-=======
-=======
->>>>>>> ismail
-        source = src.get("source") or {}
-        geo = source.get("geo") or {}
-        asn = source.get("as") or {}
-        user_agent = (src.get("user_agent") or {}).get("original")
-        http = src.get("http") or {}
-        url = src.get("url") or {}
-        return {
-            "source_ip": source.get("ip") or src.get("src_ip"),
-            "severity": src.get("severity"),
-            "honeypot": src.get("honeypot"),
-            "threat_type": src.get("eventid") or (src.get("event") or {}).get("type"),
-            "failed_auth_count": 1 if src.get("eventid") == "cowrie.login.failed" else 0,
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             "is_tor": bool(src.get("is_tor")),
             "is_vpn": bool(src.get("is_vpn")),
             "abuseipdb_score": src.get("abuseipdb_score"),
@@ -127,21 +106,9 @@ class AlertWatcher:
             "asn": asn.get("number") if isinstance(asn, dict) else None,
             "as_org": asn.get("organization", {}).get("name") if isinstance(asn, dict) and isinstance(asn.get("organization"), dict) else None,
             "commands": [src["input"]] if src.get("input") else [],
-<<<<<<< HEAD
-<<<<<<< HEAD
             "http_path": url.get("path") or src.get("url.path") or http.get("path"),
             "user_agent": user_agent,
             "download_attempt": eventid.startswith("cowrie.session.file"),
-=======
-            "http_path": url.get("path") or http.get("path"),
-            "user_agent": user_agent,
-            "download_attempt": src.get("eventid", "").startswith("cowrie.session.file"),
->>>>>>> ismail
-=======
-            "http_path": url.get("path") or http.get("path"),
-            "user_agent": user_agent,
-            "download_attempt": src.get("eventid", "").startswith("cowrie.session.file"),
->>>>>>> ismail
             "hour_of_day": datetime.now(timezone.utc).hour,
             "raw": src,
         }

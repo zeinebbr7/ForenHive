@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from risk_score import calculate_risk_score
+from risk_score_optimized import calculate_risk_score
 
 
 def test_lateral_movement_external_ip_smb_share_enum():

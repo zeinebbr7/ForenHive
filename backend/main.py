@@ -6,14 +6,8 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 from apscheduler.schedulers.background import BackgroundScheduler
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,16 +19,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import get_settings
 from db import dispose as dispose_db, init_db
-<<<<<<< HEAD
-<<<<<<< HEAD
 from routers import alerts, attacks, audit, auth, chat, forensics, geo, honeypots, profiling, reports, risk_score, sessions
 from services import forensic_runner
-=======
-from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, sessions
->>>>>>> ismail
-=======
-from routers import alerts, attacks, audit, auth, forensics, geo, profiling, reports, sessions
->>>>>>> ismail
 from services import audit_service
 from services.alert_watcher import get_watcher
 from services.auth_service import bootstrap_admin, get_current_user
@@ -78,8 +64,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("watcher start failed: %s", exc)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     # Forensic engine scheduler (every 6 hours)
     scheduler = BackgroundScheduler()
     scheduler.add_job(forensic_runner.run_forensic_engine, "interval", hours=6)
@@ -90,14 +74,6 @@ async def lifespan(app: FastAPI):
 
     scheduler.shutdown(wait=False)
 
-=======
-    yield
-
->>>>>>> ismail
-=======
-    yield
-
->>>>>>> ismail
     try:
         await get_watcher().stop()
     except Exception:
@@ -231,8 +207,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ---------- health (public) ----------
 @app.get("/health", tags=["meta"])
 async def health() -> Dict[str, Any]:
-<<<<<<< HEAD
-<<<<<<< HEAD
     from sqlalchemy import text as _text
     from db import get_sessionmaker as _gsm
 
@@ -261,17 +235,6 @@ async def health() -> Dict[str, Any]:
         "elasticsearch": es_ok,
         "postgresql": pg_ok,
         "ollama": ollama_ok,
-=======
-=======
->>>>>>> ismail
-    es_ok = await get_es().ping()
-    return {
-        "status": "ok" if es_ok else "degraded",
-        "elasticsearch": es_ok,
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
         "version": app.version,
         "auth_enabled": not settings.disable_auth,
     }
@@ -281,13 +244,7 @@ async def health() -> Dict[str, Any]:
 # /api/auth is public (login + refresh). Everything else requires a bearer token
 # unless DISABLE_AUTH=true is set (useful for local dev).
 app.include_router(auth.router)
-<<<<<<< HEAD
-<<<<<<< HEAD
 app.include_router(chat.router)   # /api/chat — public (auth checked client-side via token)
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
 
 _protected_deps = [] if settings.disable_auth else [Depends(get_current_user)]
 
@@ -297,17 +254,9 @@ app.include_router(geo.router, dependencies=_protected_deps)
 app.include_router(alerts.router, dependencies=_protected_deps)
 app.include_router(profiling.router, dependencies=_protected_deps)
 app.include_router(reports.router, dependencies=_protected_deps)
-<<<<<<< HEAD
-<<<<<<< HEAD
 app.include_router(risk_score.router, dependencies=_protected_deps)
 app.include_router(forensics.router, dependencies=_protected_deps)
 app.include_router(honeypots.router)  # admin-only guard inside the router
-=======
-app.include_router(forensics.router, dependencies=_protected_deps)
->>>>>>> ismail
-=======
-app.include_router(forensics.router, dependencies=_protected_deps)
->>>>>>> ismail
 app.include_router(audit.router)  # audit has its own admin guard
 
 

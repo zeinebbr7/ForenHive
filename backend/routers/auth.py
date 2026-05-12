@@ -34,15 +34,7 @@ class TokenPair(BaseModel):
 
 class UserOut(BaseModel):
     id: str
-<<<<<<< HEAD
-<<<<<<< HEAD
     email: str
-=======
-    email: EmailStr
->>>>>>> ismail
-=======
-    email: EmailStr
->>>>>>> ismail
     full_name: Optional[str] = None
     role: UserRole
     is_active: bool

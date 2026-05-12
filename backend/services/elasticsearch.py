@@ -121,25 +121,23 @@ class ESClient:
         )
         if isinstance(level, int):
             if level >= 4:
-                return Severity.CRITICAL
+                return Severity.critical
             if level == 3:
-                return Severity.HIGH
+                return Severity.high
             if level == 2:
-                return Severity.MEDIUM
-            return Severity.LOW
+                return Severity.medium
+            return Severity.low
         if isinstance(level, str):
             level = level.lower()
             if level in ("critical", "emerg", "alert"):
-                return Severity.CRITICAL
+                return Severity.critical
             if level in ("high", "error", "err"):
-                return Severity.HIGH
+                return Severity.high
             if level in ("medium", "warn", "warning"):
-                return Severity.MEDIUM
-        return Severity.LOW
+                return Severity.medium
+        return Severity.low
 
     @staticmethod
-<<<<<<< HEAD
-<<<<<<< HEAD
     def _f(src: Dict[str, Any], *keys: str):
         """Get a value from src, trying nested object access first then dot-notation fallback.
         Handles both Logstash dot-notation keys ("source.ip") and nested dicts ({"source": {"ip": ...}}).
@@ -164,18 +162,6 @@ class ESClient:
         hp = (
             (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw)
             or src.get("honeypot.type")
-=======
-=======
->>>>>>> ismail
-    def _honeypot_from_doc(src: Dict[str, Any], index: str) -> HoneypotType:
-        fileset = src.get("fileset") if isinstance(src.get("fileset"), dict) else {}
-        service = src.get("service") if isinstance(src.get("service"), dict) else {}
-        hp = (
-            src.get("honeypot")
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             or fileset.get("module")
             or service.get("type")
         )
@@ -191,8 +177,6 @@ class ESClient:
 
     def _doc_to_event(self, doc: Dict[str, Any]) -> AttackEvent:
         src = doc.get("_source", {})
-<<<<<<< HEAD
-<<<<<<< HEAD
         f = self._f
 
         # Geo: handle {"source": {"geo": {...}}} and {"source.geo": {...}}
@@ -203,14 +187,6 @@ class ESClient:
         if not isinstance(asn_src, dict):
             asn_src = {}
 
-=======
-        geo_src = src.get("source", {}).get("geo") or src.get("geoip") or {}
-        asn_src = src.get("source", {}).get("as") or {}
->>>>>>> ismail
-=======
-        geo_src = src.get("source", {}).get("geo") or src.get("geoip") or {}
-        asn_src = src.get("source", {}).get("as") or {}
->>>>>>> ismail
         geo = None
         if geo_src or asn_src:
             loc = geo_src.get("location")
@@ -218,33 +194,15 @@ class ESClient:
                 location = {"lat": float(loc["lat"]), "lon": float(loc["lon"])}
             else:
                 location = None
-<<<<<<< HEAD
-<<<<<<< HEAD
             org_raw = asn_src.get("organization")
             as_org = (org_raw.get("name") if isinstance(org_raw, dict) else org_raw)
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
             geo = GeoInfo(
                 country_name=geo_src.get("country_name"),
                 country_iso=geo_src.get("country_iso_code") or geo_src.get("country_code2"),
                 city=geo_src.get("city_name"),
                 location=location,
                 asn=asn_src.get("number"),
-<<<<<<< HEAD
-<<<<<<< HEAD
                 as_org=as_org,
-=======
-                as_org=asn_src.get("organization", {}).get("name")
-                if isinstance(asn_src.get("organization"), dict)
-                else asn_src.get("organization"),
->>>>>>> ismail
-=======
-                as_org=asn_src.get("organization", {}).get("name")
-                if isinstance(asn_src.get("organization"), dict)
-                else asn_src.get("organization"),
->>>>>>> ismail
             )
 
         ts_raw = src.get("@timestamp") or src.get("timestamp")
@@ -253,8 +211,6 @@ class ESClient:
         except Exception:
             ts = datetime.now(timezone.utc)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
         # session_id: handle {"session": {"id": "..."}} and {"session": "..."} and {"session.id": "..."}
         sess_raw = src.get("session")
         session_id = (
@@ -286,16 +242,10 @@ class ESClient:
             or src.get("password")
         )
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
         return AttackEvent(
             id=doc.get("_id", ""),
             timestamp=ts,
             honeypot=self._honeypot_from_doc(src, doc.get("_index", "")),
-<<<<<<< HEAD
-<<<<<<< HEAD
             source_ip=f(src, "source", "ip") or src.get("source.ip") or src.get("src_ip"),
             source_port=f(src, "source", "port") or src.get("source.port") or src.get("src_port"),
             dest_port=f(src, "destination", "port") or src.get("destination.port") or src.get("dst_port"),
@@ -312,27 +262,6 @@ class ESClient:
                        or f(src, "http", "request", "uri") or src.get("http.request.uri")),
             user_agent=(f(src, "user_agent", "original") or src.get("user_agent.original")
                         or f(src, "http", "request", "user_agent") or src.get("http.request.user_agent")),
-=======
-=======
->>>>>>> ismail
-            source_ip=(src.get("source") or {}).get("ip") or src.get("src_ip"),
-            source_port=(src.get("source") or {}).get("port") or src.get("src_port"),
-            dest_port=(src.get("destination") or {}).get("port") or src.get("dst_port"),
-            protocol=(src.get("network") or {}).get("protocol") or src.get("protocol"),
-            severity=self._severity_from_doc(src),
-            risk_score=src.get("risk_score"),
-            event_type=src.get("eventid") or (src.get("event") or {}).get("type"),
-            session_id=src.get("session") or src.get("session_id"),
-            username=(src.get("user") or {}).get("name") or src.get("username"),
-            password=src.get("password"),
-            command=src.get("input") or src.get("command"),
-            http_method=(src.get("http") or {}).get("request", {}).get("method"),
-            http_path=(src.get("url") or {}).get("path") or (src.get("http") or {}).get("path"),
-            user_agent=(src.get("user_agent") or {}).get("original"),
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             geo=geo,
             raw=src,
         )
@@ -348,32 +277,16 @@ class ESClient:
             filt.append({"term": {"severity": f.severity.value}})
         if f.honeypot:
             filt.append(
-<<<<<<< HEAD
-<<<<<<< HEAD
                 {"term": {"honeypot.type.keyword": f.honeypot.value}}
-=======
-=======
->>>>>>> ismail
-                {
-                    "bool": {
-                        "should": [
-                            {"term": {"honeypot": f.honeypot.value}},
-                            {"wildcard": {"_index": f"*{f.honeypot.value}*"}},
-                        ]
-                    }
-                }
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             )
-        if f.date_from or f.date_to:
-            rng: Dict[str, str] = {}
-            if f.date_from:
-                rng["gte"] = f.date_from.isoformat()
-            if f.date_to:
-                rng["lte"] = f.date_to.isoformat()
-            filt.append({"range": {"@timestamp": rng}})
+        # Always cap at now to prevent future-timestamped injections from
+        # dominating the sort (test data injected with tomorrow's date).
+        rng: Dict[str, str] = {"lte": "now"}
+        if f.date_from:
+            rng["gte"] = f.date_from.isoformat()
+        if f.date_to:
+            rng["lte"] = f.date_to.isoformat()
+        filt.append({"range": {"@timestamp": rng}})
         if not must and not filt:
             return {"match_all": {}}
         return {"bool": {"must": must or [{"match_all": {}}], "filter": filt}}
@@ -499,8 +412,6 @@ class ESClient:
             )
         return out
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     async def top_attackers(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Aggregate the top attacker IPs with summary stats.
 
@@ -554,10 +465,6 @@ class ESClient:
             })
         return out
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
     async def honeypot_split(self) -> List[Dict[str, Any]]:
         body = {
             "size": 0,
@@ -593,39 +500,19 @@ class ESClient:
             "query": {"bool": {"must": must or [{"match_all": {}}]}},
             "aggs": {
                 "sessions": {
-<<<<<<< HEAD
-<<<<<<< HEAD
                     "terms": {"field": "session.id.keyword", "size": limit, "order": {"latest": "desc"}},
-=======
-                    "terms": {"field": "session", "size": limit, "order": {"latest": "desc"}},
->>>>>>> ismail
-=======
-                    "terms": {"field": "session", "size": limit, "order": {"latest": "desc"}},
->>>>>>> ismail
                     "aggs": {
                         "latest": {"max": {"field": "@timestamp"}},
                         "earliest": {"min": {"field": "@timestamp"}},
                         "honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 1}},
                         "src_ip": {"terms": {"field": "source.ip.keyword", "size": 1}},
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
-<<<<<<< HEAD
-<<<<<<< HEAD
                         "username": {"terms": {"field": "user.name.keyword", "size": 1}},
                         "cmd_count": {
                             "filter": {"bool": {"should": [
                                 {"term": {"eventid": "cowrie.command.input"}},
                                 {"term": {"event.id": "cowrie.command.input"}},
                             ]}}
-=======
-                        "username": {"terms": {"field": "user.name", "size": 1}},
-                        "cmd_count": {
-                            "filter": {"term": {"eventid": "cowrie.command.input"}}
->>>>>>> ismail
-=======
-                        "username": {"terms": {"field": "user.name", "size": 1}},
-                        "cmd_count": {
-                            "filter": {"term": {"eventid": "cowrie.command.input"}}
->>>>>>> ismail
                         },
                         "auth_count": {
                             "filter": {
@@ -633,14 +520,8 @@ class ESClient:
                                     "should": [
                                         {"term": {"eventid": "cowrie.login.success"}},
                                         {"term": {"eventid": "cowrie.login.failed"}},
-<<<<<<< HEAD
-<<<<<<< HEAD
                                         {"term": {"event.id": "cowrie.login.success"}},
                                         {"term": {"event.id": "cowrie.login.failed"}},
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
                                     ]
                                 }
                             }
@@ -685,19 +566,11 @@ class ESClient:
     async def session_detail(self, session_id: str) -> Optional[Dict[str, Any]]:
         body = {
             "size": 500,
-<<<<<<< HEAD
-<<<<<<< HEAD
             "query": {"bool": {"should": [
                 {"term": {"session.id.keyword": session_id}},
                 {"term": {"session": session_id}},
                 {"term": {"session_id": session_id}},
             ], "minimum_should_match": 1}},
-=======
-            "query": {"term": {"session": session_id}},
->>>>>>> ismail
-=======
-            "query": {"term": {"session": session_id}},
->>>>>>> ismail
             "sort": [{"@timestamp": {"order": "asc"}}],
         }
         resp = await self.client.search(
@@ -714,32 +587,17 @@ class ESClient:
         last = events[-1]
         commands, downloads, logins = [], [], []
         for e in events:
-<<<<<<< HEAD
-<<<<<<< HEAD
             evid = (e.get("eventid") or e.get("event.id")
                     or (e.get("event") or {}).get("id", ""))
             ts = e.get("@timestamp")
             if evid == "cowrie.command.input":
                 cmd = e.get("input") or e.get("cowrie.input") or (e.get("process") or {}).get("command_line")
                 commands.append({"timestamp": ts, "input": cmd, "success": True})
-=======
-=======
->>>>>>> ismail
-            evid = e.get("eventid", "")
-            ts = e.get("@timestamp")
-            if evid == "cowrie.command.input":
-                commands.append({"timestamp": ts, "input": e.get("input"), "success": True})
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             elif evid in ("cowrie.session.file_download", "cowrie.session.file_upload"):
                 url = e.get("url") or e.get("outfile")
                 if url:
                     downloads.append(str(url))
             elif evid.startswith("cowrie.login"):
-<<<<<<< HEAD
-<<<<<<< HEAD
                 user_raw = e.get("user")
                 logins.append(
                     {
@@ -748,18 +606,6 @@ class ESClient:
                                     or e.get("user.name") or e.get("username"),
                         "password": (user_raw.get("password") if isinstance(user_raw, dict) else None)
                                     or e.get("user.password") or e.get("password"),
-=======
-=======
->>>>>>> ismail
-                logins.append(
-                    {
-                        "success": evid == "cowrie.login.success",
-                        "username": e.get("username") or (e.get("user") or {}).get("name"),
-                        "password": e.get("password"),
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
                         "timestamp": ts,
                     }
                 )
@@ -768,8 +614,6 @@ class ESClient:
             ended = datetime.fromisoformat(str(last["@timestamp"]).replace("Z", "+00:00"))
         except Exception:
             started = ended = datetime.now(tz=timezone.utc)
-<<<<<<< HEAD
-<<<<<<< HEAD
         hp_raw = first.get("honeypot")
         hp_str = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or first.get("honeypot.type", "unknown")
         src_raw = first.get("source")
@@ -783,19 +627,6 @@ class ESClient:
             "source_ip": src_ip,
             "source_port": src_port,
             "username": uname,
-=======
-=======
->>>>>>> ismail
-        return {
-            "session_id": session_id,
-            "honeypot": first.get("honeypot", "unknown"),
-            "source_ip": (first.get("source") or {}).get("ip") or first.get("src_ip"),
-            "source_port": (first.get("source") or {}).get("port"),
-            "username": (first.get("user") or {}).get("name") or first.get("username"),
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
             "started_at": started,
             "ended_at": ended,
             "duration_seconds": (ended - started).total_seconds(),
@@ -810,18 +641,10 @@ class ESClient:
     async def mark_session_closed(self, session_id: str) -> bool:
         body = {
             "script": {"source": "ctx._source.session_closed_by_admin = true"},
-<<<<<<< HEAD
-<<<<<<< HEAD
             "query": {"bool": {"should": [
                 {"term": {"session.id.keyword": session_id}},
                 {"term": {"session": session_id}},
             ], "minimum_should_match": 1}},
-=======
-            "query": {"term": {"session": session_id}},
->>>>>>> ismail
-=======
-            "query": {"term": {"session": session_id}},
->>>>>>> ismail
         }
         try:
             resp = await self.client.update_by_query(
@@ -858,21 +681,9 @@ class ESClient:
                 "first_seen": {"min": {"field": "@timestamp"}},
                 "last_seen": {"max": {"field": "@timestamp"}},
                 "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 10}},
-<<<<<<< HEAD
-<<<<<<< HEAD
                 "sessions": {"cardinality": {"field": "session.id.keyword"}},
                 "usernames": {"terms": {"field": "user.name.keyword", "size": 10}},
                 "passwords": {"terms": {"field": "user.password.keyword", "size": 10}},
-=======
-                "sessions": {"cardinality": {"field": "session"}},
-                "usernames": {"terms": {"field": "user.name", "size": 10}},
-                "passwords": {"terms": {"field": "password", "size": 10}},
->>>>>>> ismail
-=======
-                "sessions": {"cardinality": {"field": "session"}},
-                "usernames": {"terms": {"field": "user.name", "size": 10}},
-                "passwords": {"terms": {"field": "password", "size": 10}},
->>>>>>> ismail
                 "commands": {"terms": {"field": "input.keyword", "size": 10}},
                 "country": {"terms": {"field": "source.geo.country_name", "size": 1}},
                 "country_iso": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},

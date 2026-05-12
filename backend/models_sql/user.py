@@ -14,14 +14,6 @@ from db import Base
 class UserRole(str, enum.Enum):
     ADMIN = "admin"
     ANALYST = "analyst"
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-    VIEWER = "viewer"
->>>>>>> ismail
-=======
-    VIEWER = "viewer"
->>>>>>> ismail
 
 
 class User(Base):

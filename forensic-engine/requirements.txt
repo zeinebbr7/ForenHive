@@ -11,3 +11,4 @@ pytest==8.3.4
 fastapi==0.111.0
 uvicorn==0.29.0
 pydantic==2.7.1
+twilio==9.4.3

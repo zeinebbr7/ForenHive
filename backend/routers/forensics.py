@@ -3,24 +3,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
 from services.elasticsearch import get_es
 from services.forensic_runner import last_forensic_run, run_forensic_engine
-=======
-=======
->>>>>>> ismail
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-
-from services.elasticsearch import get_es
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
 from services.yara_client import get_forensic_engine
 
 router = APIRouter(prefix="/api/forensics", tags=["forensics"])
@@ -94,50 +81,25 @@ async def timeline(
             ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
         except Exception:
             ts = datetime.now(tz=timezone.utc)
-<<<<<<< HEAD
-<<<<<<< HEAD
         honeypot_raw = s.get("honeypot", "unknown")
         honeypot_str = (honeypot_raw.get("type") if isinstance(honeypot_raw, dict) else honeypot_raw) or "unknown"
         session_raw = s.get("session") or s.get("session_id")
         session_str = (session_raw.get("id") if isinstance(session_raw, dict) else session_raw) or None
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
         detail = (
             s.get("input")
             or s.get("command")
             or s.get("message")
             or (s.get("url") or {}).get("path")
             or s.get("eventid")
-<<<<<<< HEAD
-<<<<<<< HEAD
             or (s.get("event") or {}).get("id")
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
         )
         events.append(
             TimelineEvent(
                 timestamp=ts,
-<<<<<<< HEAD
-<<<<<<< HEAD
                 honeypot=honeypot_str,
                 source_ip=(s.get("source") or {}).get("ip") or s.get("src_ip"),
                 event_type=s.get("eventid") or (s.get("event") or {}).get("id"),
                 session_id=session_str,
-=======
-=======
->>>>>>> ismail
-                honeypot=s.get("honeypot", "unknown"),
-                source_ip=(s.get("source") or {}).get("ip") or s.get("src_ip"),
-                event_type=s.get("eventid") or (s.get("event") or {}).get("type"),
-                session_id=s.get("session") or s.get("session_id"),
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
                 detail=str(detail) if detail is not None else None,
                 severity=str(s.get("severity")) if s.get("severity") is not None else None,
             )
@@ -184,8 +146,6 @@ async def yara_scan(sha256: str) -> YaraScanResponse:
 @router.get("/yara")
 async def yara_dionaea_scan(limit: int = Query(50, ge=1, le=500)):
     return {"results": await get_forensic_engine().scan_all_dionaea(limit=limit)}
-<<<<<<< HEAD
-<<<<<<< HEAD
 
 
 @router.post("/run")
@@ -209,7 +169,3 @@ async def forensic_run_status():
         "timestamp": last_forensic_run["timestamp"],
         "error": last_forensic_run.get("error", ""),
     }
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail

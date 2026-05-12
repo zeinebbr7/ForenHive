@@ -9,22 +9,12 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 from sqlalchemy import select
 
 from config import get_settings
 from db import session_scope
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
 from models_sql.user import User
-=======
-from config import get_settings
-from models.alert import AlertConfig, AlertRecord, AlertTrigger
->>>>>>> ismail
-=======
-from config import get_settings
-from models.alert import AlertConfig, AlertRecord, AlertTrigger
->>>>>>> ismail
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
 from services.email_service import get_email
@@ -303,8 +293,6 @@ class AlertEngine:
             )
             return record
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     @staticmethod
     async def _all_user_emails() -> List[str]:
         """Return emails of all active admins and analysts from PostgreSQL."""
@@ -318,56 +306,14 @@ class AlertEngine:
             log.warning("could not fetch user emails from DB: %s", exc)
             return []
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
-        subject = f"[FORENHIVE ALERT] {record.severity.upper()} — {record.threat_type} Detected"
-        ctx = {
-            "is_test": False,
-            "severity": record.severity.upper(),
-            "threat_type": record.threat_type,
-            "source_ip": record.source_ip,
-            "country": record.country or "unknown",
-            "risk_score": record.risk_score,
-            "attempts": record.attempts,
-            "mitre_tags": record.mitre_tags,
-            "honeypot": record.honeypot or "unknown",
-            "yara_match": record.yara_match,
-            "abuseipdb_score": record.abuseipdb_score,
-            "ioc_hash": record.ioc_hash,
-            "tsa_timestamp": (record.tsa_timestamp or "")[:48] + ("…" if record.tsa_timestamp and len(record.tsa_timestamp) > 48 else ""),
-            "mistral_analysis": record.mistral_analysis or "",
-            "timestamp": record.timestamp.isoformat(),
-        }
-<<<<<<< HEAD
-<<<<<<< HEAD
-        # Always notify every active user in the platform
-        db_emails = await self._all_user_emails()
-        recipients = list({*record.recipients, *db_emails})
-        if not recipients:
-            log.warning("alert dispatch skipped — no recipients configured")
-            return False, "no recipients"
         try:
-            await asyncio.to_thread(
-                get_email().send_alert, recipients, subject, ctx
-            )
-            log.info("alert dispatched to %d recipient(s): %s", len(recipients), recipients)
-=======
-=======
->>>>>>> ismail
-        try:
-            await asyncio.to_thread(
-                get_email().send_alert, record.recipients, subject, ctx
-            )
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
+            from alerts.alert_manager import send_alert
+            await asyncio.to_thread(send_alert, record.source_ip, record.risk_score)
+            log.info("WhatsApp alert dispatched for %s score=%d", record.source_ip, record.risk_score)
             return True, None
         except Exception as exc:
-            log.error("alert dispatch failed: %s", exc)
+            log.error("WhatsApp dispatch failed: %s", exc)
             return False, str(exc)
 
     async def history(self, limit: int = 100) -> Tuple[int, List[AlertRecord]]:

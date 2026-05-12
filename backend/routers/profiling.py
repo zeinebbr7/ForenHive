@@ -1,30 +1,15 @@
 import ipaddress
-<<<<<<< HEAD
-<<<<<<< HEAD
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from models.report import AttackerProfile
 from services.elasticsearch import get_es
-=======
-=======
->>>>>>> ismail
-
-from fastapi import APIRouter, HTTPException
-
-from models.report import AttackerProfile
-<<<<<<< HEAD
->>>>>>> ismail
-=======
->>>>>>> ismail
 from services.profiler import build_profile
 
 router = APIRouter(prefix="/api/profiling", tags=["profiling"])
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_profiles(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
     """List top attacker IPs with summary stats (lightweight per-row profile).
@@ -78,10 +63,6 @@ async def profile_by_id(row_id: int) -> AttackerProfile:
     return await build_profile(ip)
 
 
-=======
->>>>>>> ismail
-=======
->>>>>>> ismail
 @router.get("/{ip}", response_model=AttackerProfile)
 async def profile(ip: str) -> AttackerProfile:
     try:

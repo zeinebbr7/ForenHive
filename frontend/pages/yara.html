@@ -1,0 +1,166 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">🦠 YARA</div>
+    <h2 class="page-title">Détection <span>malware</span></h2>
+    <div class="page-sub">Scan YARA des binaires capturés par Dionaea · <span id="yara-count">—</span> fichier(s) analysé(s).</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="yara-refresh">🔄 Actualiser</button>
+  </div>
+</div>
+
+<div class="grid-3 mb-20" id="yara-kpis">
+  <div class="kpi r"><div class="kpi-label">Fichiers infectés</div><div class="kpi-val" id="k-infected">—</div><div class="kpi-delta" id="k-infected-d">—</div></div>
+  <div class="kpi p"><div class="kpi-label">Règles déclenchées</div><div class="kpi-val" id="k-rules">—</div><div class="kpi-delta" id="k-rules-d">—</div></div>
+  <div class="kpi b"><div class="kpi-label">Critiques</div><div class="kpi-val" id="k-crit">—</div><div class="kpi-delta" id="k-crit-d">détections severity=critical</div></div>
+</div>
+
+<div id="yara-body"><div class="alert info">Chargement…</div></div>
+
+<style>
+.yara-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.yara-head {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.yara-head:hover { background: rgba(255,255,255,.03); }
+.yara-hash { font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--text2); margin-top:4px; word-break:break-all; }
+.yara-file { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--text3); margin-top:2px; }
+.yara-body-inner { border-top:1px solid var(--border); display:none; padding:16px 18px; }
+.yara-body-inner.open { display:block; }
+.rule-row {
+  display:flex; align-items:flex-start; gap:12px;
+  padding:10px 0; border-bottom:1px solid rgba(255,255,255,.04);
+}
+.rule-row:last-child { border-bottom:none; }
+.rule-name { font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--text1); font-weight:700; }
+.rule-ns   { font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--text3); margin-top:2px; }
+.rule-desc { font-size:12px; color:var(--text2); margin-top:4px; }
+.rule-ref  { font-size:11px; color:var(--blue2); margin-top:3px; font-family:'Share Tech Mono',monospace; }
+.rule-strings { margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; }
+.sev-critical { color:var(--red2); }
+.sev-high     { color:var(--red2); }
+.sev-medium   { color:var(--gold); }
+.sev-low      { color:var(--blue2); }
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $ } = FH;
+
+  const SEV_ICON = { critical:'🔴', high:'🟠', medium:'🟡', low:'🔵' };
+  const SEV_BADGE = { critical:'red', high:'red', medium:'gold', low:'blue' };
+
+  function sevClass(s){ return 'sev-'+(s||'low').toLowerCase(); }
+
+  async function load() {
+    $('#yara-body').innerHTML = '<div class="alert info">⟳ Scan en cours…</div>';
+    try {
+      const data = await api.yaraHits({ limit: 200 });
+      const results = data.results || [];
+
+      const infected = results.filter(r => r.matched && r.matches && r.matches.length);
+      const allRules = new Set();
+      let critCount = 0;
+      infected.forEach(r => {
+        (r.matches || []).forEach(m => {
+          allRules.add(m.rule);
+          if ((m.meta && m.meta.severity || '').toLowerCase() === 'critical') critCount++;
+        });
+      });
+
+      $('#yara-count').textContent = results.length;
+      $('#k-infected').textContent = infected.length;
+      $('#k-infected-d').textContent = `sur ${results.length} fichier(s) scanné(s)`;
+      $('#k-rules').textContent = allRules.size;
+      $('#k-rules-d').textContent = [...allRules].slice(0,3).join(', ') || '—';
+      $('#k-crit').textContent = critCount;
+
+      if (!infected.length) {
+        $('#yara-body').innerHTML = '<div class="alert info">✅ Aucun fichier infecté détecté dans les binaires Dionaea.</div>';
+        return;
+      }
+
+      $('#yara-body').innerHTML = infected.map((r, i) => {
+        const fname = (r.filepath || '').split('/').pop() || r.sha256;
+        const topSev = (r.matches || []).reduce((acc, m) => {
+          const s = (m.meta && m.meta.severity || 'low').toLowerCase();
+          const order = {critical:4,high:3,medium:2,low:1};
+          return (order[s]||1) > (order[acc]||1) ? s : acc;
+        }, 'low');
+
+        return `<div class="yara-card">
+          <div class="yara-head" data-idx="${i}">
+            <div>
+              <div class="flex gap-8 items-c" style="flex-wrap:wrap">
+                <span class="badge ${SEV_BADGE[topSev]||'blue'}">${SEV_ICON[topSev]||'🔵'} ${topSev.toUpperCase()}</span>
+                <span class="badge gold">🦠 ${(r.matches||[]).length} règle(s)</span>
+              </div>
+              <div class="yara-hash">${esc(r.sha256 || '—')}</div>
+              <div class="yara-file">📁 ${esc(r.filepath || '—')}</div>
+            </div>
+            <div></div>
+            <span style="font-size:18px;color:var(--text3);padding-left:8px" class="yara-toggle">▶</span>
+          </div>
+          <div class="yara-body-inner" id="yara-ev-${i}">
+            ${(r.matches||[]).map(m => {
+              const sev = (m.meta && m.meta.severity || 'low').toLowerCase();
+              const desc = m.meta && m.meta.description || '';
+              const ref  = m.meta && m.meta.reference  || '';
+              const author = m.meta && m.meta.author   || '';
+              return `<div class="rule-row">
+                <div style="font-size:22px;padding-top:2px">${SEV_ICON[sev]||'🔵'}</div>
+                <div style="flex:1;min-width:0">
+                  <div class="rule-name ${sevClass(sev)}">${esc(m.rule)}</div>
+                  <div class="rule-ns">namespace: ${esc(m.namespace||'—')}${author?' · '+esc(author):''}</div>
+                  ${desc ? `<div class="rule-desc">${esc(desc)}</div>` : ''}
+                  ${ref  ? `<div class="rule-ref">📎 ${esc(ref)}</div>` : ''}
+                  ${(m.strings||[]).length ? `
+                    <div class="rule-strings">
+                      ${(m.strings||[]).map(s => `<span class="tag mono" style="font-size:10px">offset:${s.offset} <b>${esc(s.identifier)}</b></span>`).join('')}
+                    </div>` : ''}
+                </div>
+                <span class="badge ${SEV_BADGE[sev]||'blue'}" style="white-space:nowrap">${sev}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('');
+
+      document.querySelectorAll('.yara-head').forEach(h => {
+        h.addEventListener('click', () => {
+          const body = document.getElementById('yara-ev-' + h.dataset.idx);
+          const arrow = h.querySelector('.yara-toggle');
+          const open = body.classList.toggle('open');
+          arrow.textContent = open ? '▼' : '▶';
+        });
+      });
+
+      /* auto-expand first */
+      const first = document.getElementById('yara-ev-0');
+      if (first) {
+        first.classList.add('open');
+        const arrow = document.querySelector('[data-idx="0"] .yara-toggle');
+        if (arrow) arrow.textContent = '▼';
+      }
+
+    } catch(e) {
+      $('#yara-body').innerHTML = `<div class="alert err">Erreur : ${esc(e.message)}</div>`;
+    }
+  }
+
+  $('#yara-refresh').addEventListener('click', load);
+  await load();
+})();
+</script>
