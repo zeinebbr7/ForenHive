@@ -46,11 +46,33 @@
     { id:'galah',   name:'Galah',   ports:'HTTP:8080 · HTTPS:8888',                    desc:'LLM-driven HTTP Honeypot (Ollama Mistral 7B) — dynamic responses',  container:'forenhive-galah'   },
   ];
 
+  const me = api.user() || {};
+  const isAdmin = (me.role || '').toString().toLowerCase() === 'admin';
+  console.log('[honeypots] user role:', me.role, 'isAdmin:', isAdmin);
+  let containerStatus = {};
+  async function fetchContainerStatus() {
+    try { containerStatus = await api._call('/api/honeypots/status'); }
+    catch (e) { console.warn('[honeypots] status fetch failed:', e.message); containerStatus = {}; }
+  }
+  async function ctlHoneypot(hp, action) {
+    const btn = document.querySelector(`[data-hp-action="${hp}:${action}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = action === 'start' ? '⏳ Starting…' : '⏳ Stopping…'; }
+    try {
+      await api._call(`/api/honeypots/${hp}/${action}`, { method: 'POST' });
+      await new Promise(r => setTimeout(r, 800));
+      await load();
+    } catch (e) {
+      alert(`${action} ${hp} failed: ${e.message}`);
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function load() {
     $('#hp-grid').innerHTML = `<div class="alert info">Loading…</div>`;
     let split = { split: [] }, health = {};
     try { split  = await api.geoSplit(); } catch(e){}
     try { health = await api.health(); } catch(e){}
+    await fetchContainerStatus();
 
     const splitMap = {};
     (split.split || []).forEach(s => { splitMap[s.honeypot] = s.count; });
@@ -106,8 +128,17 @@
     const services = (health && health.services) || {};
     $('#hp-grid').innerHTML = HONEYPOTS.map(h => {
       const s = stats[h.id];
-      const upDown = services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
-      const isUp = String(upDown).toLowerCase() === 'up' || s.count > 0;
+      const ctState = (containerStatus[h.id] || '').toLowerCase();
+      const upDown = ctState || services[h.id] || services[h.container] || (s.count > 0 ? 'up' : 'unknown');
+      const isUp = ctState
+        ? ctState === 'running'
+        : (String(upDown).toLowerCase() === 'up' || s.count > 0);
+      const adminCtrls = `
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:start" ${isUp?'disabled':''}>▶ Turn On</button>
+          <button class="btn btn-gh btn-sm" data-hp-action="${h.id}:stop"  ${!isUp?'disabled':''} style="color:var(--red2)">■ Shutdown</button>
+          ${ctState ? `<span style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);align-self:center">docker: ${esc(ctState)}</span>` : ''}
+        </div>`;
       return `<div class="hp-card hp-${h.id}">
         <div class="hp-card-h">
           <div>
@@ -130,12 +161,21 @@
           <div class="hp-row"><b>Ports</b><span class="mono">${esc(h.ports)}</span></div>
           <div class="hp-row"><b>Description</b><span style="text-align:right;color:var(--text3);font-size:11px;max-width:60%">${esc(h.desc)}</span></div>
         </div>
+        ${adminCtrls}
         <div style="margin-top:14px">
           <a class="btn btn-gh btn-sm" href="#evidence">View logs</a>
           <a class="btn btn-gh btn-sm" href="#sessions" style="margin-left:6px">Sessions</a>
         </div>
       </div>`;
     }).join('');
+
+    document.querySelectorAll('[data-hp-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [hp, action] = btn.dataset.hpAction.split(':');
+        if (action === 'stop' && !confirm(`Shutdown the ${hp} honeypot?`)) return;
+        ctlHoneypot(hp, action);
+      });
+    });
   }
 
   $('#hp-refresh').addEventListener('click', load);

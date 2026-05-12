@@ -17,21 +17,7 @@
   <div class="kpi b"><div class="kpi-label">Avg Score</div><div class="kpi-val" id="p-k-avg">—</div><div class="kpi-delta">out of 100</div></div>
 </div>
 
-<div id="p-charts-root" style="margin-bottom:14px"></div>
-
 <div class="filters" id="p-filters" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
-  <button class="btn btn-gh btn-sm p-filter active" data-sev="ALL">All</button>
-  <button class="btn btn-gh btn-sm p-filter" data-sev="CRITICAL">Critical</button>
-  <button class="btn btn-gh btn-sm p-filter" data-sev="HIGH">High</button>
-  <button class="btn btn-gh btn-sm p-filter" data-sev="MEDIUM">Medium</button>
-  <button class="btn btn-gh btn-sm p-filter" data-sev="LOW">Low</button>
-  <select class="form-s" id="p-soph-filter" style="min-width:140px;height:32px;padding:0 28px 0 10px;font-size:11px">
-    <option value="ALL">All Levels</option>
-    <option value="apt">APT / State</option>
-    <option value="high">Professional</option>
-    <option value="intermediate">Intermediate</option>
-    <option value="low">Script Kiddie</option>
-  </select>
   <select class="form-s" id="p-sort" style="min-width:130px;height:32px;padding:0 28px 0 10px;font-size:11px">
     <option value="risk_score">Risk Score ↓</option>
     <option value="last_seen">Last Seen ↓</option>
@@ -865,10 +851,15 @@
   ────────────────────────────────────────────────── */
 
   function renderList() {
+    // Suspect Registry: only IPs that actually attacked a honeypot
+    const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
     let filtered = STATE.profiles.filter(p => {
-      if (STATE.activeSev  !== 'ALL' && p.severity       !== STATE.activeSev)  return false;
-      if (STATE.activeSoph !== 'ALL' && p.sophistication !== STATE.activeSoph) return false;
-      if (STATE.search && !(p.source_ip||'').toLowerCase().includes(STATE.search.toLowerCase())) return false;
+      const ip = p.source_ip || p.ip;
+      if (!ip || !IPV4.test(ip)) return false;
+      const sc = Number(p.session_count || p.sessions_count) || 0;
+      const hp = p.honeypot || p.honeypots || p.honeypot_list;
+      if (sc <= 0 && !hp) return false;
+      if (STATE.search && !ip.toLowerCase().includes(STATE.search.toLowerCase())) return false;
       return true;
     });
 
@@ -977,7 +968,6 @@
     $('#p-k-high').textContent    = high;
     $('#p-k-avg').textContent     = avg;
     renderList();
-    renderProfileCharts();
     // Show first profile automatically
     if (STATE.profiles.length && STATE.activeId == null) loadDetail(STATE.profiles[0].id);
   }
@@ -1085,7 +1075,7 @@
   $('#p-refresh').addEventListener('click', () => {
     STATE.useMock = false;
     loadStats();
-    loadList().then(() => renderProfileCharts());
+    loadList();
   });
 
   $('#p-load-mock').addEventListener('click', () => {
@@ -1096,18 +1086,10 @@
 
   $('#p-search').addEventListener('input', e => { STATE.search = e.target.value.trim(); renderList(); });
   $('#p-sort').addEventListener('change', e => { STATE.sortBy = e.target.value; renderList(); });
-  $('#p-soph-filter').addEventListener('change', e => { STATE.activeSoph = e.target.value; renderList(); });
   $('#p-lookup-go').addEventListener('click', () => lookupIp($('#p-lookup').value));
   $('#p-lookup').addEventListener('keydown', e => { if (e.key === 'Enter') lookupIp(e.target.value); });
-  $$('.p-filter').forEach(btn => btn.addEventListener('click', () => {
-    $$('.p-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    STATE.activeSev = btn.dataset.sev;
-    renderList();
-  }));
 
   /* ── Init ── */
   await Promise.all([loadStats(), loadList()]);
-  renderProfileCharts();
 })();
 </script>
