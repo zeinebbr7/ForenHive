@@ -3,9 +3,10 @@ from __future__ import annotations
 import ipaddress
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from sqlalchemy import text
 
+from alerts.alert_manager import send_alert
 from db import session_scope
 
 router = APIRouter(prefix="/api/risk-scores", tags=["Risk Scores"])
@@ -49,7 +50,7 @@ async def get_signal_breakdown(source_ip: str):
 
 
 @router.get("/{source_ip}", response_model=Dict[str, Any])
-async def get_unified_risk_score(source_ip: str):
+async def get_unified_risk_score(source_ip: str, background_tasks: BackgroundTasks):
     """Unified risk score for a source IP (aggregates all honeypots)."""
     _validate_ip(source_ip)
     async with session_scope() as session:
@@ -75,6 +76,7 @@ async def get_unified_risk_score(source_ip: str):
             )
         d = dict(row)
         d["source_ip"] = str(d["source_ip"])
+        background_tasks.add_task(send_alert, d["source_ip"], int(d.get("risk_score", 0)))
         return d
 
 

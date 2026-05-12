@@ -45,8 +45,10 @@ _MITRE_DB: Dict[str, tuple] = {
     "T1552.001": ("Credentials In Files",               "Credential Access"),
     "T1105":     ("Ingress Tool Transfer",              "Command & Control"),
     "T1046":     ("Network Service Discovery",          "Discovery"),
-    "T1021":     ("Remote Services",                    "Lateral Movement"),
-    "T1021.004": ("SSH",                                "Lateral Movement"),
+    "T1021":     ("Remote Services",                          "Lateral Movement"),
+    "T1021.002": ("Remote Services: SMB/Windows Admin Shares", "Lateral Movement"),
+    "T1021.004": ("Remote Services: SSH",                      "Lateral Movement"),
+    "T1210":     ("Exploitation of Remote Services",           "Lateral Movement"),
     "T1547":     ("Boot or Logon Autostart Execution",  "Persistence"),
     "T1071":     ("Application Layer Protocol",         "Command & Control"),
     "T1027":     ("Obfuscated Files or Information",    "Defense Evasion"),
@@ -408,7 +410,28 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
     })
 
     enrichment = ctx.get("enrichment_cache") or {}
-    rep = enrichment.get("reputation") or {}
+    rep     = enrichment.get("reputation")     or {}
+    whois   = enrichment.get("whois")          or {}
+    privacy = enrichment.get("privacy")        or {}
+    threat  = enrichment.get("threat_summary") or {}
+    dns     = enrichment.get("dns")            or {}
+    geo     = enrichment.get("geo")            or {}
+
+    # Shodan: threat_summary aggregates open_ports / vulns / tags from Shodan InternetDB
+    _shodan_ports = threat.get("open_ports") or []
+    _shodan_vulns = threat.get("known_vulns") or []
+    _shodan_tags  = threat.get("shodan_tags")  or []
+    _shodan_hosts = list(dict.fromkeys(
+        ([dns.get("ptr")] if dns.get("ptr") else []) +
+        (threat.get("hostnames") or []) +
+        (rep.get("hostnames") or [])
+    ))
+    shodan_data = {
+        "ports":     _shodan_ports,
+        "hostnames": _shodan_hosts,
+        "vulns":     _shodan_vulns,
+        "tags":      _shodan_tags,
+    } if (_shodan_ports or _shodan_vulns or _shodan_tags or _shodan_hosts) else None
 
     return {
         # Cover
@@ -460,8 +483,24 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         # Chain of custody
         "chain_of_custody":        chain_of_custody,
         "coc_timestamp_authority": "freetsa.org",
-        # Shodan
-        "shodan_data":       enrichment.get("shodan"),
+        # Shodan / WHOIS / IPLocate enrichment
+        "shodan_data":  shodan_data,
+        "whois_data":   whois,
+        "iplocate_data": {
+            "is_tor":       privacy.get("is_tor") or threat.get("is_tor", False),
+            "is_vpn":       privacy.get("is_vpn") or threat.get("is_vpn", False),
+            "is_proxy":     privacy.get("is_proxy", False),
+            "is_hosting":   privacy.get("is_hosting", False),
+            "is_datacenter":privacy.get("is_datacenter", False),
+            "is_bogon":     privacy.get("is_bogon", False),
+            "is_abuser":    privacy.get("is_abuser", False),
+            "company_name": privacy.get("company_name", ""),
+            "asn_name":     privacy.get("asn_name") or geo.get("org", ""),
+            "asn_type":     privacy.get("asn_type", ""),
+            "asn_number":   privacy.get("asn_number") or (f"AS{geo.get('asn')}" if geo.get("asn") else ""),
+            "asn_domain":   privacy.get("asn_domain", ""),
+        },
+        "ptr_hostname": dns.get("ptr", ""),
         # Recommendations
         "recommendations":   recommendations,
         "extra_references":  [],
@@ -708,7 +747,11 @@ async def _build_forensic_context(session_id: str) -> dict:
         name, tactic = _mitre_lookup(t_id)
         evidence = "Logs honeypot"
         if "T1110" in t_id:
-            evidence = f"{len(logins)} tentatives SSH loggées"
+            attempt_count = pg_row.get("login_attempts") or len(logins)
+            if attempt_count:
+                evidence = f"{attempt_count} tentatives SSH loggées"
+            else:
+                evidence = "Credential probing détecté (honeypot logs)"
         elif t_id == "T1078":
             evidence = "Login réussi confirmé"
         elif "T1059" in t_id:
@@ -731,7 +774,7 @@ async def _build_forensic_context(session_id: str) -> dict:
 
     if logins and "T1110.001" not in mitre_seen and "T1110" not in mitre_seen:
         mitre_seen.add("T1110.001")
-        mitre_rows.insert(0, {"id": "T1110.001", "technique": "Brute Force: Password Guessing", "tactic": "Credential Access", "confidence": "100%", "evidence": f"{len(logins)} tentatives SSH loggées"})
+        mitre_rows.insert(0, {"id": "T1110.001", "technique": "Brute Force: Password Guessing", "tactic": "Credential Access", "confidence": "100%", "evidence": f"{len(logins)} tentatives SSH loggées" if len(logins) else "Credential probing détecté (honeypot logs)"})
     if auth_success and "T1078" not in mitre_seen:
         mitre_seen.add("T1078")
         mitre_rows.insert(1, {"id": "T1078", "technique": "Valid Accounts", "tactic": "Initial Access", "confidence": "100%", "evidence": "Login confirmé"})
@@ -760,7 +803,24 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    sb = pg_row.get("signal_breakdown") or {}
+    # For unified sessions, ip_risk_scores is always authoritative (forensic_sessions
+    # may hold a stale breakdown from a prior engine run before re-enrichment).
+    # For per-session reports, fall back to forensic_sessions.signal_breakdown.
+    sb = {}
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                irs = await db.execute(
+                    text("SELECT signal_breakdown FROM ip_risk_scores WHERE source_ip = CAST(:ip AS INET) LIMIT 1"),
+                    {"ip": source_ip},
+                )
+                irs_row = irs.mappings().fetchone()
+                if irs_row and irs_row["signal_breakdown"]:
+                    sb = irs_row["signal_breakdown"]
+        except Exception:
+            pass
+    if not sb:
+        sb = pg_row.get("signal_breakdown") or {}
     if sb:
         score_signals = _build_score_signals_from_breakdown(sb)
     else:
@@ -887,6 +947,9 @@ async def _build_forensic_context(session_id: str) -> dict:
         "enrichment_cache": enrichment_cache,
         "is_unified": is_unified,
         "vt_result": vt_result,
+        "vt_malicious": int(profile_dict.get("vt_malicious") or 0),
+        "vt_available": bool(profile_dict.get("vt_available", True)),
+        "vt_family": profile_dict.get("vt_family") or "",
         # Jinja2 helper
         "enumerate": enumerate,
     }

@@ -307,38 +307,13 @@ class AlertEngine:
             return []
 
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
-        subject = f"[FORENHIVE ALERT] {record.severity.upper()} — {record.threat_type} Detected"
-        ctx = {
-            "is_test": False,
-            "severity": record.severity.upper(),
-            "threat_type": record.threat_type,
-            "source_ip": record.source_ip,
-            "country": record.country or "unknown",
-            "risk_score": record.risk_score,
-            "attempts": record.attempts,
-            "mitre_tags": record.mitre_tags,
-            "honeypot": record.honeypot or "unknown",
-            "yara_match": record.yara_match,
-            "abuseipdb_score": record.abuseipdb_score,
-            "ioc_hash": record.ioc_hash,
-            "tsa_timestamp": (record.tsa_timestamp or "")[:48] + ("…" if record.tsa_timestamp and len(record.tsa_timestamp) > 48 else ""),
-            "mistral_analysis": record.mistral_analysis or "",
-            "timestamp": record.timestamp.isoformat(),
-        }
-        # Always notify every active user in the platform
-        db_emails = await self._all_user_emails()
-        recipients = list({*record.recipients, *db_emails})
-        if not recipients:
-            log.warning("alert dispatch skipped — no recipients configured")
-            return False, "no recipients"
         try:
-            await asyncio.to_thread(
-                get_email().send_alert, recipients, subject, ctx
-            )
-            log.info("alert dispatched to %d recipient(s): %s", len(recipients), recipients)
+            from alerts.alert_manager import send_alert
+            await asyncio.to_thread(send_alert, record.source_ip, record.risk_score)
+            log.info("WhatsApp alert dispatched for %s score=%d", record.source_ip, record.risk_score)
             return True, None
         except Exception as exc:
-            log.error("alert dispatch failed: %s", exc)
+            log.error("WhatsApp dispatch failed: %s", exc)
             return False, str(exc)
 
     async def history(self, limit: int = 100) -> Tuple[int, List[AlertRecord]]:
