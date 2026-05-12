@@ -10,12 +10,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 from sqlalchemy import select
 
 from config import get_settings
 from db import session_scope
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
 from models_sql.user import User
+=======
+from config import get_settings
+from models.alert import AlertConfig, AlertRecord, AlertTrigger
+>>>>>>> ismail
 =======
 from config import get_settings
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
@@ -299,6 +304,7 @@ class AlertEngine:
             return record
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     @staticmethod
     async def _all_user_emails() -> List[str]:
         """Return emails of all active admins and analysts from PostgreSQL."""
@@ -312,6 +318,8 @@ class AlertEngine:
             log.warning("could not fetch user emails from DB: %s", exc)
             return []
 
+=======
+>>>>>>> ismail
 =======
 >>>>>>> ismail
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
@@ -334,6 +342,7 @@ class AlertEngine:
             "timestamp": record.timestamp.isoformat(),
         }
 <<<<<<< HEAD
+<<<<<<< HEAD
         # Always notify every active user in the platform
         db_emails = await self._all_user_emails()
         recipients = list({*record.recipients, *db_emails})
@@ -346,10 +355,15 @@ class AlertEngine:
             )
             log.info("alert dispatched to %d recipient(s): %s", len(recipients), recipients)
 =======
+=======
+>>>>>>> ismail
         try:
             await asyncio.to_thread(
                 get_email().send_alert, record.recipients, subject, ctx
             )
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             return True, None
         except Exception as exc:

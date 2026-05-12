@@ -184,8 +184,13 @@ services:
       - postgresql
 
 <<<<<<< HEAD
+<<<<<<< HEAD
   # ── BACKEND API (FastAPI, async SQLAlchemy + ES) ─────
   forenhive-backend:
+=======
+  # ── BACKEND API ──────────────────────────────────────
+  backend:
+>>>>>>> ismail
 =======
   # ── BACKEND API ──────────────────────────────────────
   backend:
@@ -197,10 +202,16 @@ services:
       - .env
     environment:
 <<<<<<< HEAD
+<<<<<<< HEAD
       - ES_HOST=http://forenhive-elasticsearch:9200
       - OLLAMA_HOST=http://forenhive-ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:latest}
       - OLLAMA_TIMEOUT=300
+=======
+      - ES_HOST=http://elasticsearch:9200
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:7b}
+>>>>>>> ismail
 =======
       - ES_HOST=http://elasticsearch:9200
       - OLLAMA_HOST=http://ollama:11434
@@ -215,9 +226,15 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@forenhive.local}
 <<<<<<< HEAD
+<<<<<<< HEAD
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2026}
       - FORENSIC_ENGINE_URL=http://forensic-engine:8001
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100,http://172.16.1.100:9000,http://172.16.1.100:3000}
+=======
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!}
+      - FORENSIC_ENGINE_URL=http://forensic-engine:8001
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100:9000
+>>>>>>> ismail
 =======
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!}
       - FORENSIC_ENGINE_URL=http://forensic-engine:8001
@@ -228,6 +245,7 @@ services:
     volumes:
       - reports-data:/reports
 <<<<<<< HEAD
+<<<<<<< HEAD
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - backend-net
@@ -235,11 +253,16 @@ services:
       - postgresql
       - elasticsearch
 =======
+=======
+>>>>>>> ismail
     networks:
       - backend-net
     depends_on:
       - elasticsearch
       - postgresql
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
       - ollama
     healthcheck:

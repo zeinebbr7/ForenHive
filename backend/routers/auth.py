@@ -35,7 +35,11 @@ class TokenPair(BaseModel):
 class UserOut(BaseModel):
     id: str
 <<<<<<< HEAD
+<<<<<<< HEAD
     email: str
+=======
+    email: EmailStr
+>>>>>>> ismail
 =======
     email: EmailStr
 >>>>>>> ismail

@@ -139,6 +139,7 @@ class ESClient:
 
     @staticmethod
 <<<<<<< HEAD
+<<<<<<< HEAD
     def _f(src: Dict[str, Any], *keys: str):
         """Get a value from src, trying nested object access first then dot-notation fallback.
         Handles both Logstash dot-notation keys ("source.ip") and nested dicts ({"source": {"ip": ...}}).
@@ -164,11 +165,16 @@ class ESClient:
             (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw)
             or src.get("honeypot.type")
 =======
+=======
+>>>>>>> ismail
     def _honeypot_from_doc(src: Dict[str, Any], index: str) -> HoneypotType:
         fileset = src.get("fileset") if isinstance(src.get("fileset"), dict) else {}
         service = src.get("service") if isinstance(src.get("service"), dict) else {}
         hp = (
             src.get("honeypot")
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             or fileset.get("module")
             or service.get("type")
@@ -186,6 +192,7 @@ class ESClient:
     def _doc_to_event(self, doc: Dict[str, Any]) -> AttackEvent:
         src = doc.get("_source", {})
 <<<<<<< HEAD
+<<<<<<< HEAD
         f = self._f
 
         # Geo: handle {"source": {"geo": {...}}} and {"source.geo": {...}}
@@ -200,6 +207,10 @@ class ESClient:
         geo_src = src.get("source", {}).get("geo") or src.get("geoip") or {}
         asn_src = src.get("source", {}).get("as") or {}
 >>>>>>> ismail
+=======
+        geo_src = src.get("source", {}).get("geo") or src.get("geoip") or {}
+        asn_src = src.get("source", {}).get("as") or {}
+>>>>>>> ismail
         geo = None
         if geo_src or asn_src:
             loc = geo_src.get("location")
@@ -208,8 +219,11 @@ class ESClient:
             else:
                 location = None
 <<<<<<< HEAD
+<<<<<<< HEAD
             org_raw = asn_src.get("organization")
             as_org = (org_raw.get("name") if isinstance(org_raw, dict) else org_raw)
+=======
+>>>>>>> ismail
 =======
 >>>>>>> ismail
             geo = GeoInfo(
@@ -219,7 +233,13 @@ class ESClient:
                 location=location,
                 asn=asn_src.get("number"),
 <<<<<<< HEAD
+<<<<<<< HEAD
                 as_org=as_org,
+=======
+                as_org=asn_src.get("organization", {}).get("name")
+                if isinstance(asn_src.get("organization"), dict)
+                else asn_src.get("organization"),
+>>>>>>> ismail
 =======
                 as_org=asn_src.get("organization", {}).get("name")
                 if isinstance(asn_src.get("organization"), dict)
@@ -233,6 +253,7 @@ class ESClient:
         except Exception:
             ts = datetime.now(timezone.utc)
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         # session_id: handle {"session": {"id": "..."}} and {"session": "..."} and {"session.id": "..."}
         sess_raw = src.get("session")
@@ -267,10 +288,13 @@ class ESClient:
 
 =======
 >>>>>>> ismail
+=======
+>>>>>>> ismail
         return AttackEvent(
             id=doc.get("_id", ""),
             timestamp=ts,
             honeypot=self._honeypot_from_doc(src, doc.get("_index", "")),
+<<<<<<< HEAD
 <<<<<<< HEAD
             source_ip=f(src, "source", "ip") or src.get("source.ip") or src.get("src_ip"),
             source_port=f(src, "source", "port") or src.get("source.port") or src.get("src_port"),
@@ -289,6 +313,8 @@ class ESClient:
             user_agent=(f(src, "user_agent", "original") or src.get("user_agent.original")
                         or f(src, "http", "request", "user_agent") or src.get("http.request.user_agent")),
 =======
+=======
+>>>>>>> ismail
             source_ip=(src.get("source") or {}).get("ip") or src.get("src_ip"),
             source_port=(src.get("source") or {}).get("port") or src.get("src_port"),
             dest_port=(src.get("destination") or {}).get("port") or src.get("dst_port"),
@@ -303,6 +329,9 @@ class ESClient:
             http_method=(src.get("http") or {}).get("request", {}).get("method"),
             http_path=(src.get("url") or {}).get("path") or (src.get("http") or {}).get("path"),
             user_agent=(src.get("user_agent") or {}).get("original"),
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             geo=geo,
             raw=src,
@@ -320,8 +349,11 @@ class ESClient:
         if f.honeypot:
             filt.append(
 <<<<<<< HEAD
+<<<<<<< HEAD
                 {"term": {"honeypot.type.keyword": f.honeypot.value}}
 =======
+=======
+>>>>>>> ismail
                 {
                     "bool": {
                         "should": [
@@ -330,6 +362,9 @@ class ESClient:
                         ]
                     }
                 }
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             )
         if f.date_from or f.date_to:
@@ -465,6 +500,7 @@ class ESClient:
         return out
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     async def top_attackers(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Aggregate the top attacker IPs with summary stats.
 
@@ -520,6 +556,8 @@ class ESClient:
 
 =======
 >>>>>>> ismail
+=======
+>>>>>>> ismail
     async def honeypot_split(self) -> List[Dict[str, Any]]:
         body = {
             "size": 0,
@@ -556,7 +594,11 @@ class ESClient:
             "aggs": {
                 "sessions": {
 <<<<<<< HEAD
+<<<<<<< HEAD
                     "terms": {"field": "session.id.keyword", "size": limit, "order": {"latest": "desc"}},
+=======
+                    "terms": {"field": "session", "size": limit, "order": {"latest": "desc"}},
+>>>>>>> ismail
 =======
                     "terms": {"field": "session", "size": limit, "order": {"latest": "desc"}},
 >>>>>>> ismail
@@ -567,12 +609,18 @@ class ESClient:
                         "src_ip": {"terms": {"field": "source.ip.keyword", "size": 1}},
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
 <<<<<<< HEAD
+<<<<<<< HEAD
                         "username": {"terms": {"field": "user.name.keyword", "size": 1}},
                         "cmd_count": {
                             "filter": {"bool": {"should": [
                                 {"term": {"eventid": "cowrie.command.input"}},
                                 {"term": {"event.id": "cowrie.command.input"}},
                             ]}}
+=======
+                        "username": {"terms": {"field": "user.name", "size": 1}},
+                        "cmd_count": {
+                            "filter": {"term": {"eventid": "cowrie.command.input"}}
+>>>>>>> ismail
 =======
                         "username": {"terms": {"field": "user.name", "size": 1}},
                         "cmd_count": {
@@ -586,8 +634,11 @@ class ESClient:
                                         {"term": {"eventid": "cowrie.login.success"}},
                                         {"term": {"eventid": "cowrie.login.failed"}},
 <<<<<<< HEAD
+<<<<<<< HEAD
                                         {"term": {"event.id": "cowrie.login.success"}},
                                         {"term": {"event.id": "cowrie.login.failed"}},
+=======
+>>>>>>> ismail
 =======
 >>>>>>> ismail
                                     ]
@@ -635,11 +686,15 @@ class ESClient:
         body = {
             "size": 500,
 <<<<<<< HEAD
+<<<<<<< HEAD
             "query": {"bool": {"should": [
                 {"term": {"session.id.keyword": session_id}},
                 {"term": {"session": session_id}},
                 {"term": {"session_id": session_id}},
             ], "minimum_should_match": 1}},
+=======
+            "query": {"term": {"session": session_id}},
+>>>>>>> ismail
 =======
             "query": {"term": {"session": session_id}},
 >>>>>>> ismail
@@ -660,6 +715,7 @@ class ESClient:
         commands, downloads, logins = [], [], []
         for e in events:
 <<<<<<< HEAD
+<<<<<<< HEAD
             evid = (e.get("eventid") or e.get("event.id")
                     or (e.get("event") or {}).get("id", ""))
             ts = e.get("@timestamp")
@@ -667,16 +723,22 @@ class ESClient:
                 cmd = e.get("input") or e.get("cowrie.input") or (e.get("process") or {}).get("command_line")
                 commands.append({"timestamp": ts, "input": cmd, "success": True})
 =======
+=======
+>>>>>>> ismail
             evid = e.get("eventid", "")
             ts = e.get("@timestamp")
             if evid == "cowrie.command.input":
                 commands.append({"timestamp": ts, "input": e.get("input"), "success": True})
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             elif evid in ("cowrie.session.file_download", "cowrie.session.file_upload"):
                 url = e.get("url") or e.get("outfile")
                 if url:
                     downloads.append(str(url))
             elif evid.startswith("cowrie.login"):
+<<<<<<< HEAD
 <<<<<<< HEAD
                 user_raw = e.get("user")
                 logins.append(
@@ -687,11 +749,16 @@ class ESClient:
                         "password": (user_raw.get("password") if isinstance(user_raw, dict) else None)
                                     or e.get("user.password") or e.get("password"),
 =======
+=======
+>>>>>>> ismail
                 logins.append(
                     {
                         "success": evid == "cowrie.login.success",
                         "username": e.get("username") or (e.get("user") or {}).get("name"),
                         "password": e.get("password"),
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
                         "timestamp": ts,
                     }
@@ -701,6 +768,7 @@ class ESClient:
             ended = datetime.fromisoformat(str(last["@timestamp"]).replace("Z", "+00:00"))
         except Exception:
             started = ended = datetime.now(tz=timezone.utc)
+<<<<<<< HEAD
 <<<<<<< HEAD
         hp_raw = first.get("honeypot")
         hp_str = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or first.get("honeypot.type", "unknown")
@@ -716,12 +784,17 @@ class ESClient:
             "source_port": src_port,
             "username": uname,
 =======
+=======
+>>>>>>> ismail
         return {
             "session_id": session_id,
             "honeypot": first.get("honeypot", "unknown"),
             "source_ip": (first.get("source") or {}).get("ip") or first.get("src_ip"),
             "source_port": (first.get("source") or {}).get("port"),
             "username": (first.get("user") or {}).get("name") or first.get("username"),
+<<<<<<< HEAD
+>>>>>>> ismail
+=======
 >>>>>>> ismail
             "started_at": started,
             "ended_at": ended,
@@ -738,10 +811,14 @@ class ESClient:
         body = {
             "script": {"source": "ctx._source.session_closed_by_admin = true"},
 <<<<<<< HEAD
+<<<<<<< HEAD
             "query": {"bool": {"should": [
                 {"term": {"session.id.keyword": session_id}},
                 {"term": {"session": session_id}},
             ], "minimum_should_match": 1}},
+=======
+            "query": {"term": {"session": session_id}},
+>>>>>>> ismail
 =======
             "query": {"term": {"session": session_id}},
 >>>>>>> ismail
@@ -782,9 +859,15 @@ class ESClient:
                 "last_seen": {"max": {"field": "@timestamp"}},
                 "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 10}},
 <<<<<<< HEAD
+<<<<<<< HEAD
                 "sessions": {"cardinality": {"field": "session.id.keyword"}},
                 "usernames": {"terms": {"field": "user.name.keyword", "size": 10}},
                 "passwords": {"terms": {"field": "user.password.keyword", "size": 10}},
+=======
+                "sessions": {"cardinality": {"field": "session"}},
+                "usernames": {"terms": {"field": "user.name", "size": 10}},
+                "passwords": {"terms": {"field": "password", "size": 10}},
+>>>>>>> ismail
 =======
                 "sessions": {"cardinality": {"field": "session"}},
                 "usernames": {"terms": {"field": "user.name", "size": 10}},
