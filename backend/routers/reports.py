@@ -1156,6 +1156,49 @@ async def forensic_generate(request: Request, session_id: str):
     )
 
 
+@router.get("/forensic/{session_id}/detail")
+async def forensic_session_detail(session_id: str) -> Dict[str, Any]:
+    """Return full session data including enrichment_data as JSON for the reconstruction page."""
+    from sqlalchemy import text
+    from db import session_scope
+
+    row: Dict[str, Any] = {}
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text("""
+                    SELECT session_id, source_ip, honeypot_type, risk_score,
+                           kill_chain_phase, kill_chain_stage, primary_technique,
+                           forensic_narrative, mitre_techniques, enrichment_data,
+                           login_attempts, success_count, attack_velocity,
+                           started_at, ended_at, created_at
+                    FROM forensic_sessions
+                    WHERE session_id = :sid
+                    LIMIT 1
+                """),
+                {"sid": session_id},
+            )
+            r = result.mappings().fetchone()
+            if r:
+                row = dict(r)
+                for field in ("mitre_techniques", "enrichment_data"):
+                    v = row.get(field)
+                    if isinstance(v, str):
+                        try:
+                            row[field] = json.loads(v)
+                        except Exception:
+                            row[field] = [] if field == "mitre_techniques" else {}
+                for field in ("started_at", "ended_at", "created_at"):
+                    if row.get(field) is not None:
+                        row[field] = str(row[field])
+    except Exception as exc:
+        log.warning("forensic_session_detail: PG query failed for %s: %s", session_id, exc)
+
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+    return row
+
+
 @router.get("/forensic/{session_id}/preview")
 async def forensic_preview(session_id: str):
     """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""

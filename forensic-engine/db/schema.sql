@@ -164,16 +164,11 @@ CREATE TABLE IF NOT EXISTS suspect_profiles (
     profile     JSONB       NOT NULL,
     risk_score  INTEGER     CHECK (risk_score >= 0 AND risk_score <= 100),
     created_at  TIMESTAMP   NOT NULL DEFAULT NOW(),
-<<<<<<< HEAD
     updated_at  TIMESTAMP   NOT NULL DEFAULT NOW()
-=======
-    updated_at  TIMESTAMP
->>>>>>> main
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_source_ip   ON suspect_profiles (source_ip);
 CREATE INDEX IF NOT EXISTS idx_profiles_risk_score  ON suspect_profiles (risk_score DESC);
-<<<<<<< HEAD
 
 -- Migration: ensure UNIQUE constraint exists on existing deployments
 DO $$ BEGIN
@@ -217,6 +212,3 @@ CREATE TABLE IF NOT EXISTS ip_risk_scores (
 CREATE INDEX IF NOT EXISTS idx_ip_risk_score  ON ip_risk_scores(risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ip_risk_level  ON ip_risk_scores(risk_level);
 CREATE INDEX IF NOT EXISTS idx_ip_risk_scored ON ip_risk_scores(scored_at DESC);
-=======
-CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_source_ip_unique ON suspect_profiles (source_ip);
->>>>>>> main

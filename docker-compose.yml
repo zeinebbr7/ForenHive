@@ -110,6 +110,7 @@ services:
     volumes:
       - ./pipeline/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
       - ./pipeline/logstash/pipelines:/usr/share/logstash/pipeline
+      - ./geoip/GeoLite2-City.mmdb:/usr/share/logstash/GeoLite2-City.mmdb:ro
     ports:
       - "5044:5044"
     networks:

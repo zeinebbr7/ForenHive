@@ -2,7 +2,7 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">Monitoring · System</div>
     <h2 class="page-title">Health <span>Check</span></h2>
-    <div class="page-sub">ForenHive platform status · pipeline C1→C5 · Zeek NDR sensor on <span class="mono">eno12399</span>.</div>
+    <div class="page-sub">ForenHive platform status · data pipeline · 4 stages · Zeek NDR sensor on <span class="mono">eno12399</span>.</div>
   </div>
   <div class="page-actions">
     <span class="mono" id="last-check" style="font-size:11px;color:var(--text3)">—</span>
@@ -12,38 +12,31 @@
 
 <div class="hc-pipeline mb-20" id="pipeline-strip">
   <div class="hc-pipe-step" id="pipe-c1">
-    <div class="hc-pipe-icon">C1</div>
-    <div class="hc-pipe-label">C1 · Honeypots</div>
+    <div class="hc-pipe-icon">01</div>
+    <div class="hc-pipe-label">Honeypots</div>
     <div class="hc-pipe-sub">Cowrie · Dionaea · Galah · Zeek</div>
     <div class="hc-pipe-dot" id="pdot-c1"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c2">
-    <div class="hc-pipe-icon">C2</div>
-    <div class="hc-pipe-label">C2 · ETL Pipeline</div>
+    <div class="hc-pipe-icon">02</div>
+    <div class="hc-pipe-label">ETL Pipeline</div>
     <div class="hc-pipe-sub">Filebeat → Logstash → ES</div>
     <div class="hc-pipe-dot" id="pdot-c2"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c3">
-    <div class="hc-pipe-icon">C3</div>
-    <div class="hc-pipe-label">C3 · Forensic Engine</div>
+    <div class="hc-pipe-icon">03</div>
+    <div class="hc-pipe-label">Forensic Engine</div>
     <div class="hc-pipe-sub">YARA · Enrichment · Ollama</div>
     <div class="hc-pipe-dot" id="pdot-c3"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c4">
-    <div class="hc-pipe-icon">C4</div>
-    <div class="hc-pipe-label">C4 · Backend</div>
-    <div class="hc-pipe-sub">FastAPI · PostgreSQL</div>
+    <div class="hc-pipe-icon">04</div>
+    <div class="hc-pipe-label">Application</div>
+    <div class="hc-pipe-sub">FastAPI · PostgreSQL · Nginx</div>
     <div class="hc-pipe-dot" id="pdot-c4"></div>
-  </div>
-  <div class="hc-pipe-arrow">→</div>
-  <div class="hc-pipe-step" id="pipe-c5">
-    <div class="hc-pipe-icon">C5</div>
-    <div class="hc-pipe-label">C5 · Interface</div>
-    <div class="hc-pipe-sub">React SPA · Nginx</div>
-    <div class="hc-pipe-dot" id="pdot-c5"></div>
   </div>
 </div>
 
@@ -244,7 +237,7 @@
       $('#svc-grid').innerHTML = entries.map(([name, st]) => {
         const status = (typeof st==='string') ? st : (st.status||'unknown');
         const detail = (typeof st==='object' && (st.version||st.detail||st.message)) || '';
-        const meta   = SVC_META[name] || { name, icon:'⬡', desc:'' };
+        const meta   = SVC_META[name] || { name, icon:'SVC', desc:'' };
         const dotCls = DOTCLS[status] || '';
         const cardCls = dotCls==='up'?'svc-up':dotCls==='down'?'svc-down':'svc-warn';
         return `<div class="hc-svc-card ${cardCls}">
@@ -260,7 +253,7 @@
         const hh = R.createElement;
         const svcData = entries.map(([name, st]) => {
           const status = (typeof st==='string') ? st : (st.status||'unknown');
-          const meta = SVC_META[name] || { name, icon:'⬡' };
+          const meta = SVC_META[name] || { name, icon:'SVC' };
           const col = DOTCLS[status]==='up' ? '#00bfa5cc' : DOTCLS[status]==='down' ? '#c93d55cc' : '#e8b84bcc';
           const val = DOTCLS[status]==='up' ? 3 : DOTCLS[status]==='down' ? 1 : 2;
           return { name: meta.name || name, status, col, val };
@@ -287,8 +280,9 @@
       setPipeDot('#pdot-c2', stOf('elasticsearch')==='up'?'up':stOf('elasticsearch')==='down'?'down':'warn');
       setPipeDot('#pdot-c3', stOf('ollama')==='up'?'up':'warn');
       const c4 = stOf('api');
-      setPipeDot('#pdot-c4', c4==='up'||c4==='ok'?'up':c4==='down'?'down':'warn');
-      setPipeDot('#pdot-c5', 'up');
+      const c4nginx = stOf('nginx');
+      const c4st = (c4==='up'||c4==='ok') && (c4nginx==='up'||c4nginx==='unknown') ? 'up' : (c4==='down'&&c4nginx==='down') ? 'down' : 'warn';
+      setPipeDot('#pdot-c4', c4st);
       $('#api-info').textContent = `v${h.version||'1.0'} · ${h.status||'unknown'}`;
       $('#api-detail').innerHTML = `<pre class="pre">${esc(JSON.stringify(h, null, 2))}</pre>`;
     } catch (e) {

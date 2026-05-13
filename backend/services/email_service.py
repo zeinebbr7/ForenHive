@@ -96,8 +96,16 @@ class EmailService:
         mitre = ", ".join(ctx.get("mitre_tags") or []) or "—"
         lines = [
             f"ForenHive Alert — {ctx.get('severity', 'N/A')}",
+        ]
+        if ctx.get("is_internal"):
+            nc = (ctx.get("network_class") or "").replace("_", " ")
+            lines += [
+                f"*** INSIDER THREAT — ATTACK FROM INSIDE THE NETWORK ({nc}) ***",
+                f"NOTE: Source IP is an internal RFC1918 address. Immediate containment required.",
+            ]
+        lines += [
             f"Threat     : {ctx.get('threat_type')}",
-            f"Source IP  : {ctx.get('source_ip')} ({ctx.get('country')})",
+            f"Source IP  : {ctx.get('source_ip')}" + (f" ({ctx.get('country')})" if ctx.get("country") else ""),
             f"Honeypot   : {ctx.get('honeypot')}",
             f"Risk score : {ctx.get('risk_score')}/100",
             f"Attempts   : {ctx.get('attempts')}",

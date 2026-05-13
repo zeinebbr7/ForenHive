@@ -150,6 +150,49 @@ class QuotaTracker:
         except Exception as e:
             log.warning(f"QuotaTracker reset failed for {api}: {e}")
 
+    def prefetch(self, apis: list = None) -> dict:
+        """Warm the in-memory cache for the given APIs in one DB round-trip.
+
+        Returns a {api: exhausted_bool} snapshot. Auto-clears stale flags.
+        Call this once at the start of a batch to avoid per-IP DB lookups.
+        """
+        if apis is None:
+            apis = list(_RESET_POLICY.keys())
+        snapshot = {}
+        try:
+            with _pg_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT api_name, exhausted, reset_at "
+                        "FROM api_quota_status WHERE api_name = ANY(%s)",
+                        (apis,)
+                    )
+                    rows = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+                    now = datetime.now(timezone.utc)
+                    stale = []
+                    for api in apis:
+                        exhausted, reset_at = rows.get(api, (False, None))
+                        if exhausted and reset_at and reset_at <= now:
+                            stale.append(api)
+                            exhausted = False
+                        self._cache[api] = bool(exhausted)
+                        snapshot[api] = bool(exhausted)
+                    if stale:
+                        cur.execute(
+                            "UPDATE api_quota_status "
+                            "SET exhausted = FALSE, updated_at = NOW() "
+                            "WHERE api_name = ANY(%s)",
+                            (stale,)
+                        )
+                        conn.commit()
+                        log.info(f"Quota prefetch: cleared stale flags for {stale}")
+        except Exception as e:
+            log.warning(f"QuotaTracker prefetch failed: {e}")
+            for api in apis:
+                self._cache.setdefault(api, False)
+                snapshot.setdefault(api, False)
+        return snapshot
+
     def status(self) -> list[dict]:
         """Return current status of all tracked APIs (for CLI --quota-status)."""
         try:

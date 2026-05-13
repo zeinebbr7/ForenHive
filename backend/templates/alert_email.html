@@ -51,6 +51,23 @@
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr><td style="padding:24px;">
 
+          {% if is_internal %}
+          <!-- insider threat banner -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
+            <tr>
+              <td style="background:#7c0a1e;border-radius:6px;padding:12px 16px;">
+                <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#ffd6d6;">INSIDER THREAT — Internal Network</p>
+                <p style="margin:0;font-size:12px;color:#ffe0e0;line-height:1.5;">
+                  This attack originates from <strong style="color:#fff;">inside the network</strong>
+                  ({{ network_class.replace('_', ' ') }}).
+                  The source IP is an RFC1918 private address — no external geolocation available.
+                  Immediate investigation and containment required.
+                </p>
+              </td>
+            </tr>
+          </table>
+          {% endif %}
+
           <!-- threat title + risk pill -->
           <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
             <tr>

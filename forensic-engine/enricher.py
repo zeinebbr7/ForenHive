@@ -30,6 +30,7 @@ from typing import Optional
 import psycopg2
 import psycopg2.extras
 import requests
+from requests.adapters import HTTPAdapter
 
 import config
 from quota_tracker import get_tracker
@@ -38,6 +39,11 @@ log = logging.getLogger("enricher")
 _tracker = get_tracker()
 
 HTTP_TIMEOUT = 10
+
+# Module-level pooled session — reuses TCP/TLS across all enrichment lookups.
+_http = requests.Session()
+_http.mount("https://", HTTPAdapter(pool_connections=10, pool_maxsize=10))
+_http.mount("http://",  HTTPAdapter(pool_connections=10, pool_maxsize=10))
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -75,11 +81,11 @@ def _classify_private_ip(ip: str) -> dict:
         return {"network_class": "vpn_tunnel", "is_docker": False, "private_risk_level": "investigate"}
 
     if addr in ipaddress.ip_network("10.0.0.0/8"):
-        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "high"}
     if addr in ipaddress.ip_network("172.16.0.0/12"):
-        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "investigate"}
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "high"}
     if addr in ipaddress.ip_network("192.168.0.0/16"):
-        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "monitor"}
+        return {"network_class": "corporate_internal", "is_docker": False, "private_risk_level": "high"}
 
     return {"network_class": "private_unknown", "is_docker": False, "private_risk_level": "monitor"}
 
@@ -155,7 +161,7 @@ def _iplocate_lookup(ip: str) -> dict:
     if _tracker.is_exhausted("iplocate"):
         return {}
     try:
-        resp = requests.get(
+        resp = _http.get(
             f"https://www.iplocate.io/api/lookup/{ip}",
             timeout=HTTP_TIMEOUT
         )
@@ -217,7 +223,7 @@ def _abuseipdb_lookup(ip: str) -> dict:
     if _tracker.is_exhausted("abuseipdb"):
         return {}
     try:
-        resp = requests.get(
+        resp = _http.get(
             "https://api.abuseipdb.com/api/v2/check",
             headers={"Key": config.ABUSEIPDB_KEY, "Accept": "application/json"},
             params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": "true"},
@@ -272,7 +278,7 @@ def _shodan_internetdb(ip: str) -> dict:
     if _tracker.is_exhausted("shodan"):
         return {}
     try:
-        resp = requests.get(f"https://internetdb.shodan.io/{ip}", timeout=HTTP_TIMEOUT)
+        resp = _http.get(f"https://internetdb.shodan.io/{ip}", timeout=HTTP_TIMEOUT)
         if resp.status_code == 200:
             data = resp.json()
             if "detail" in data:
@@ -299,7 +305,7 @@ def _shodan_host_api(ip: str) -> dict:
     if _tracker.is_exhausted("shodan_host"):
         return {}
     try:
-        resp = requests.get(
+        resp = _http.get(
             f"https://api.shodan.io/shodan/host/{ip}",
             params={"key": config.SHODAN_KEY, "minify": "false"},
             timeout=HTTP_TIMEOUT
@@ -575,6 +581,8 @@ class IPEnricher:
         log.info(f"Enriching batch of {len(unique)} unique IPs (parallel={max_workers}) ...")
         if not unique:
             return results
+        # Warm quota cache in one DB round-trip so per-IP lookups stay O(1).
+        _tracker.prefetch(["iplocate", "abuseipdb", "shodan", "shodan_host", "virustotal"])
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             future_to_ip = {pool.submit(self.enrich, ip): ip for ip in unique}
             for fut in concurrent.futures.as_completed(future_to_ip):

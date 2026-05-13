@@ -106,11 +106,12 @@
     /* ── Derived stats ─────────────────────────────────────── */
     const dayAgo = Date.now() - 86400000;
     const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
-    let last24 = 0;
+    let last24 = 0, insiderCount = 0;
     items.forEach(a => {
       const s = (a.severity || 'low').toLowerCase();
       if (s in bySev) bySev[s]++;
       if (+new Date(a.timestamp || 0) > dayAgo) last24++;
+      if (a.is_internal) insiderCount++;
     });
     const sevTotal = items.length || 1;
 
@@ -204,6 +205,11 @@
         h('div', { className: 'al-kpi-label' }, 'Last 24h'),
         h('div', { className: 'al-kpi-val', style: { color: 'var(--gold)' } }, last24),
         h('div', { className: 'al-kpi-sub' }, 'recent activity')
+      ),
+      h('div', { className: 'al-kpi', style: { borderColor: '#7c0a1e88' } },
+        h('div', { className: 'al-kpi-label' }, 'Insider Threats'),
+        h('div', { className: 'al-kpi-val', style: { color: '#ff4466' } }, insiderCount),
+        h('div', { className: 'al-kpi-sub' }, 'from inside network')
       )
     );
 
@@ -327,7 +333,20 @@
                   h('td', { dangerouslySetInnerHTML: { __html: badge(a.severity) } }),
                   h('td', null, h('b', null, a.threat_type || '—')),
                   h('td', { className: 'mono', style: { fontSize: 11 } },
-                    (a.country ? flag(a.country) + ' ' : '') + (a.source_ip || '—')
+                    a.is_internal
+                      ? h('span', null,
+                          h('span', {
+                            style: {
+                              display: 'inline-block', marginRight: 6,
+                              padding: '1px 7px', fontSize: 9, fontWeight: 700,
+                              letterSpacing: '1px', textTransform: 'uppercase',
+                              background: 'rgba(124,10,30,0.18)', color: '#ff4466',
+                              border: '1px solid rgba(124,10,30,0.5)', borderRadius: 4,
+                            }
+                          }, 'INSIDER'),
+                          (a.source_ip || '—')
+                        )
+                      : (a.country ? flag(a.country) + ' ' : '') + (a.source_ip || '—')
                   ),
                   h('td', null, a.honeypot || '—'),
                   h('td', null,
