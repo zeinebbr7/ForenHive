@@ -22,6 +22,7 @@ from models.report import (
 )
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
+from services.ollama_service import get_ollama
 from services.profiler import build_profile
 from services.report_service import get_reports
 
@@ -501,8 +502,14 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "asn_domain":   privacy.get("asn_domain", ""),
         },
         "ptr_hostname": dns.get("ptr", ""),
-        # Recommendations
-        "recommendations":   recommendations,
+        # Deterministic recommendations
+        "recommendations":         recommendations,
+        # Ollama recommendations (passed through from _build_forensic_context)
+        "ollama_recommendations":  ctx.get("ollama_recommendations", []),
+        # VirusTotal fields (fix: these were missing and caused "Quota épuisé" always)
+        "vt_available": ctx.get("vt_available", True),
+        "vt_malicious": ctx.get("vt_malicious", 0),
+        "vt_family":    ctx.get("vt_family", ""),
         "extra_references":  [],
     }
 
@@ -922,6 +929,27 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception:
             pass
 
+    # ── Ollama recommendations ─────────────────────────────────────────────────
+    ollama_recs: List[Dict[str, Any]] = []
+    if source_ip:
+        try:
+            ollama_recs = await get_ollama().generate_recommendations(
+                ip=source_ip,
+                country=profile_dict.get("country", "unknown"),
+                risk_score=risk_score,
+                risk_level=risk_label,
+                honeypots=honeypots_hit or ([detail.get("honeypot")] if detail.get("honeypot") else []),
+                mitre=[r["id"] for r in mitre_rows],
+                auth_attempts=int(pg_row.get("login_attempts") or len(logins)),
+                auth_success=auth_success,
+                yara=profile_dict.get("yara_matches") or [],
+                is_tor=bool(profile_dict.get("is_tor")),
+                is_vpn=bool(profile_dict.get("is_vpn")),
+                commands=[c.get("input", "") for c in cmds[:5]],
+            )
+        except Exception as exc:
+            log.warning("Ollama recommendations failed for %s: %s", source_ip, exc)
+
     return {
         "session_id": session_id,
         "session": detail,
@@ -950,6 +978,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         "vt_malicious": int(profile_dict.get("vt_malicious") or 0),
         "vt_available": bool(profile_dict.get("vt_available", True)),
         "vt_family": profile_dict.get("vt_family") or "",
+        "ollama_recommendations": ollama_recs,
         # Jinja2 helper
         "enumerate": enumerate,
     }
