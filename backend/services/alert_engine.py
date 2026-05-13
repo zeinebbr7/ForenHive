@@ -307,14 +307,53 @@ class AlertEngine:
             return []
 
     async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
+        errors: List[str] = []
+
+        # ── WhatsApp / voice call (Twilio) ──────────────────────────────────
         try:
-            from alerts.alert_manager import send_alert
-            await asyncio.to_thread(send_alert, record.source_ip, record.risk_score)
-            log.info("WhatsApp alert dispatched for %s score=%d", record.source_ip, record.risk_score)
-            return True, None
+            from alerts.alert_manager import send_alert as wa_send
+            await asyncio.to_thread(wa_send, record.source_ip, record.risk_score)
+            log.info("WhatsApp alert dispatched  ip=%s score=%d", record.source_ip, record.risk_score)
         except Exception as exc:
             log.error("WhatsApp dispatch failed: %s", exc)
-            return False, str(exc)
+            errors.append(f"whatsapp: {exc}")
+
+        # ── Email alert with real attack data ───────────────────────────────
+        recipients = list(record.recipients or []) or self.settings.alert_recipients_list
+        if not recipients:
+            recipients = await self._all_user_emails()
+        if recipients:
+            try:
+                ctx = {
+                    "is_test":          False,
+                    "severity":         (record.severity or "unknown").upper(),
+                    "threat_type":      record.threat_type or "suspicious_activity",
+                    "source_ip":        record.source_ip,
+                    "country":          record.country or "Unknown",
+                    "risk_score":       record.risk_score,
+                    "attempts":         record.attempts,
+                    "mitre_tags":       list(record.mitre_tags or []),
+                    "honeypot":         record.honeypot or "unknown",
+                    "yara_match":       record.yara_match,
+                    "abuseipdb_score":  record.abuseipdb_score,
+                    "ioc_hash":         record.ioc_hash or "",
+                    "tsa_timestamp":    record.tsa_timestamp or "",
+                    "mistral_analysis": record.mistral_analysis or "",
+                    "timestamp":        record.timestamp.isoformat() if record.timestamp else "",
+                }
+                subject = (
+                    f"[FORENHIVE ALERT] {ctx['severity']} — "
+                    f"{ctx['threat_type']} | {record.source_ip}"
+                )
+                await asyncio.to_thread(get_email().send_alert, recipients, subject, ctx)
+                log.info("Email alert dispatched  ip=%s to=%s", record.source_ip, recipients)
+            except Exception as exc:
+                log.error("Email dispatch failed: %s", exc)
+                errors.append(f"email: {exc}")
+        else:
+            log.warning("No email recipients configured — email alert skipped for %s", record.source_ip)
+
+        return (not errors), ("; ".join(errors) if errors else None)
 
     async def history(self, limit: int = 100) -> Tuple[int, List[AlertRecord]]:
         es = get_es()

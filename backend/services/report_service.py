@@ -239,9 +239,10 @@ class ReportService:
             country = (src.get("geo") or {}).get("country_name")
             if country:
                 countries[country] += 1
-            hp = e.get("honeypot")
+            hp_raw = e.get("honeypot")
+            hp = hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw
             if hp:
-                honeypots[hp] += 1
+                honeypots[str(hp)] += 1
             sev = e.get("severity")
             if sev:
                 severities[str(sev)] += 1

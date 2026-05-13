@@ -24,9 +24,10 @@ INDEX    = f"honeypot-logs-{TODAY}"
 DEST_IP  = "172.16.1.100"
 
 SOURCE_IPS = [
-    "45.33.32.156",    # Linode US
-    "185.220.101.47",  # Tor exit node DE
-    "103.251.167.20",  # AS Asia
+    "59.22.201.143",    # Korea Telecom (brute force test IP)
+    "45.33.32.156",     # Linode US
+    "185.220.101.47",   # Tor exit node DE
+    "103.251.167.20",   # AS Asia
 ]
 
 # Brute-force credential pairs rotated across cowrie events
