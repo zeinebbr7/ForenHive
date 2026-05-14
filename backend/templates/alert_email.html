@@ -127,7 +127,7 @@
               <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:13px;color:{% if abuseipdb_score >= 50 %}#991b1b{% else %}#0d1117{% endif %};font-family:'Courier New',Consolas,monospace;font-weight:600;">{{ abuseipdb_score }}%</td>
             </tr>
             {% endif %}
-            {% if yara_match %}
+            {% if yara_match and honeypot and honeypot|lower == 'dionaea' %}
             <tr>
               <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; YARA</td>
               <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:12px;">
@@ -135,7 +135,7 @@
               </td>
             </tr>
             {% endif %}
-            {% if ioc_hash %}
+            {% if ioc_hash and honeypot and honeypot|lower == 'dionaea' %}
             <tr>
               <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; SHA-256</td>
               <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:10px;color:#0d1117;font-family:'Courier New',Consolas,monospace;word-break:break-all;">{{ ioc_hash }}</td>
@@ -152,20 +152,6 @@
             </tr>
             {% endif %}
           </table>
-
-          <!-- AI analysis block -->
-          {% if mistral_analysis %}
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
-            <tr>
-              <td style="background:#cffafe;border:1px solid #0e7490;border-left:4px solid #0e7490;border-radius:2px;padding:14px 16px;">
-                <p style="margin:0 0 8px 0;font-family:'Courier New',Consolas,monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#155e75;">
-                  &#9656; AI Analysis &nbsp;<span style="color:#0e7490;font-weight:400;">&#8212; Mistral 7B &middot; local</span>
-                </p>
-                <p style="margin:0;font-size:13px;line-height:1.65;color:#0d1117;">{{ mistral_analysis }}</p>
-              </td>
-            </tr>
-          </table>
-          {% endif %}
 
           <!-- CTA buttons -->
           {% if report_url %}

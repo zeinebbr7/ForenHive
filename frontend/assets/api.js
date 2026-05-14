@@ -127,7 +127,7 @@ const api = {
 
   /* ─── forensic PDF reports (Sprint 4) ─── */
   forensicSessions(limit = 50) { return this._call('/api/reports/forensic/sessions?limit=' + limit); },
-  forensicSessionDetail(sid)   { return this._call('/api/reports/forensic/' + encodeURIComponent(sid) + '/detail'); },
+  forensicSessionEnrichment(sid) { return this._call('/api/reports/forensic/sessions/' + encodeURIComponent(sid) + '/enrichment'); },
   forensicReportPreviewUrl(sid) {
     return this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/preview';
   },

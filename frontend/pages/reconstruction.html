@@ -1,55 +1,105 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">Forensic Analysis</div>
+    <div class="section-tag" style="margin-bottom:8px"> Forensic Analysis</div>
     <h2 class="page-title">Attack <span>Reconstruction</span></h2>
-    <div class="page-sub">Step-by-step reconstruction of the attack session with enriched intelligence.</div>
+    <div class="page-sub">Step-by-step reconstruction of the Lockheed Martin kill chain — adapted to each attack's signals.</div>
   </div>
 </div>
 
 <div class="card mb-20">
   <div class="card-h">
     <div class="card-t">Session Selection</div>
-    <div class="card-sub">Search by IP address or select a session</div>
+    <div class="card-sub">Search by IP, session, MITRE technique, or honeypot</div>
   </div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-    <div style="flex:1;min-width:200px">
-      <label class="form-l" style="display:block;margin-bottom:4px">Search by IP</label>
-      <div style="display:flex;gap:8px">
-        <input class="form-i" id="rc-ip-input" placeholder="e.g. 192.168.1.1" style="flex:1">
-        <button class="btn btn-gold btn-sm" id="rc-ip-btn">Search</button>
-      </div>
+
+  <div class="rc-search">
+    <input type="text" class="form-i" id="rc-q" placeholder="🔍  e.g. 192.168.1.10 · T1110 · cowrie · ELEVE" autocomplete="off">
+    <button type="button" class="btn btn-gold btn-search" id="rc-go">Search</button>
+    <button type="button" class="btn btn-gh btn-search" id="rc-clr">Clear</button>
+  </div>
+
+  <div class="rc-filter-row">
+    <div class="rc-filter-group">
+      <span class="rc-filter-lbl">Honeypot:</span>
+      <button class="rc-tab active" data-hp="">All</button>
+      <button class="rc-tab" data-hp="cowrie">Cowrie</button>
+      <button class="rc-tab" data-hp="dionaea">Dionaea</button>
+      <button class="rc-tab" data-hp="galah">Galah</button>
+      <button class="rc-tab" data-hp="zeek">Zeek</button>
     </div>
-    <div style="flex:2;min-width:260px">
-      <label class="form-l" style="display:block;margin-bottom:4px">Session</label>
-      <select class="form-s" id="rc-sid"><option>Loading...</option></select>
+    <div class="rc-filter-group">
+      <span class="rc-filter-lbl">Sort:</span>
+      <select class="form-s rc-sort" id="rc-sort">
+        <option value="date">Most recent</option>
+        <option value="risk">Highest risk</option>
+        <option value="stage">Furthest kill-chain</option>
+      </select>
     </div>
+  </div>
+
+  <div class="form-g" style="margin-top:14px">
+    <label class="form-l">Session <span id="rc-count" class="mono" style="color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0"></span></label>
+    <select class="form-s" id="rc-sid"><option>Loading…</option></select>
   </div>
 </div>
 
-<div id="rc-body"><div class="alert info">Select a session or search an IP to begin.</div></div>
+<div id="rc-body"><div class="alert info">Select a session to start the reconstruction.</div></div>
 
 <style>
-.kc-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:12px 0 18px}
-.kc-cell{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 8px;text-align:center;opacity:.35;transition:all .25s}
-.kc-cell.done{opacity:1;border-color:var(--gold);background:rgba(140,26,43,.06)}
-.kc-cell.active{opacity:1;border-color:var(--red2);background:rgba(198,40,40,.12);box-shadow:0 0 0 2px rgba(198,40,40,.22)}
-.kc-num{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text3)}
-.kc-lab{font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;color:var(--text2);margin-top:3px;letter-spacing:.5px}
-.kc-cell.done .kc-lab{color:var(--gold)}
-.kc-cell.active .kc-lab{color:var(--red2)}
-.flow{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
-.flow-node{padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text2)}
-.flow-arrow{color:var(--gold);font-size:16px}
-.intel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-top:14px}
-.tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
-.tag{font-family:'Share Tech Mono',monospace;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--text2)}
-.tag.red{border-color:#c62828;color:#ef9a9a;background:rgba(198,40,40,.08)}
-.tag.gold{border-color:var(--gold);color:var(--gold);background:rgba(183,148,0,.07)}
-.flag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.flag{font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;letter-spacing:.4px;border:1px solid #c62828;color:#ef9a9a;background:rgba(198,40,40,.12)}
-.narrative{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.7;color:var(--text2);white-space:pre-wrap;word-break:break-word;margin-top:8px}
-.mitre-pill{font-family:'Share Tech Mono',monospace;font-size:10px;padding:3px 8px;border:1px solid rgba(198,40,40,.4);border-radius:4px;background:rgba(198,40,40,.07);color:#ef9a9a;display:inline-block;margin:2px}
-.port-chip{font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg3);color:var(--text2);display:inline-block;margin:2px}
+.rc-search { display:flex;gap:8px;align-items:center;margin-bottom:12px; }
+.rc-search .form-i { flex:1; }
+.rc-search .btn-search { white-space:nowrap; height:38px; }
+.rc-filter-row { display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px; }
+.rc-filter-group { display:flex;gap:6px;align-items:center;flex-wrap:wrap; }
+.rc-filter-lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-right:4px; }
+.rc-tab { padding:5px 12px;border:1px solid var(--border);border-radius:14px;background:var(--bg3);color:var(--text2);font-family:'Share Tech Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;transition:all .15s; }
+.rc-tab:hover { border-color:var(--border2);color:var(--text); }
+.rc-tab.active { border-color:var(--gold);color:var(--gold);background:rgba(140,26,43,.08); }
+.rc-sort { width:auto;min-width:160px;padding:6px 28px 6px 10px;font-size:11px; }
+
+.kc-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:12px 0 18px; }
+.kc-cell { background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 8px;text-align:center;opacity:.4;transition:all .25s;position:relative; }
+.kc-cell.done   { opacity:1;border-color:var(--gold);background:rgba(140,26,43,.06); }
+.kc-cell.active { opacity:1;border-color:var(--red2);background:rgba(198,40,40,.10);box-shadow:0 0 0 2px rgba(198,40,40,.25); }
+.kc-cell.done::after { content:'✓';position:absolute;top:3px;right:5px;color:var(--gold);font-size:10px; }
+.kc-num { font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text3); }
+.kc-lab { font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;color:var(--text2);margin-top:3px;letter-spacing:.5px; }
+.kc-cell.done .kc-lab { color:var(--gold); }
+.kc-cell.active .kc-lab { color:var(--red2); }
+
+.kc-prog { height:6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:6px; }
+.kc-prog-bar { height:100%;background:linear-gradient(90deg,var(--gold),var(--red2));transition:width .5s; }
+
+.flow { display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap; }
+.flow-node { padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text2); }
+.flow-node.src { border-color:var(--red2);color:var(--red2); }
+.flow-node.tgt { border-color:var(--gold);color:var(--gold); }
+.flow-arrow { color:var(--gold);font-size:18px; }
+
+.rc-metrics { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:12px; }
+.rc-metric { background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px; }
+.rc-metric .lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px; }
+.rc-metric .val { font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:600;color:var(--text);margin-top:4px; }
+.rc-metric.crit .val { color:var(--red2); }
+.rc-metric.warn .val { color:var(--gold); }
+
+.rc-chips { display:flex;flex-wrap:wrap;gap:6px;margin-top:8px; }
+.rc-chip { padding:3px 9px;border:1px solid var(--border);border-radius:12px;background:var(--bg3);font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text2); }
+.rc-chip.hl { border-color:var(--gold);color:var(--gold);background:rgba(140,26,43,.08); }
+.rc-chip.red { border-color:var(--red2);color:var(--red2); }
+
+.rc-hero { display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px; }
+.rc-hero-l { flex:1;min-width:220px; }
+.rc-hero-r { text-align:right; }
+.rc-risk-big { font-family:'Rajdhani',sans-serif;font-size:42px;font-weight:700;line-height:1; }
+.rc-risk-lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:4px; }
+.rc-2col { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
+.rc-3col { display:grid;grid-template-columns:repeat(3,1fr);gap:14px; }
+@media(max-width:860px){.rc-2col{grid-template-columns:1fr;}.rc-3col{grid-template-columns:1fr 1fr;}}
+.rc-src-badge { display:inline-block;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:.8px;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid; }
+.rc-src-badge.live  { color:#4caf7d;border-color:#4caf7d;background:rgba(76,175,125,.08); }
+.rc-src-badge.cache { color:var(--gold);border-color:var(--gold);background:rgba(140,26,43,.06); }
+.rc-src-badge.none  { color:var(--text3);border-color:var(--border);background:transparent; }
 </style>
 
 <script>
@@ -57,416 +107,463 @@
   const { fmt, esc, $ } = FH;
   const KC = ['Recon','Weapon','Delivery','Exploit','Install','C&C','Lateral','Actions'];
 
-  // ── safe helpers ─────────────────────────────────────────────────────────────
-  function s(v) { return (v !== null && v !== undefined && v !== '') ? esc(String(v)) : null; }
-  function tags(arr, cls) {
-    if (!arr || !arr.length) return null;
-    return '<div class="tag-list">' + arr.map(t => `<span class="tag ${cls||''}">${esc(String(t))}</span>`).join('') + '</div>';
-  }
-  function tr(label, content) {
-    return content !== null && content !== undefined
-      ? `<tr><th style="width:155px">${label}</th><td>${content}</td></tr>`
-      : '';
-  }
-
-  // ── load sessions ─────────────────────────────────────────────────────────────
   let sessions = [];
-  try { sessions = await api.forensicSessions(200); } catch(e) {
-    if (e.status !== 404) {
-      $('#rc-sid').innerHTML = '<option>Error</option>';
+  let endpointMissing = false;
+  try {
+    sessions = await api.forensicSessions(50);
+  } catch(e) {
+    if (e.status === 404) { endpointMissing = true; sessions = []; }
+    else {
+      $('#rc-sid').innerHTML = '<option>Loading error</option>';
       $('#rc-body').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
       return;
     }
   }
-  if (!sessions.length) {
+
+  if ((endpointMissing || !sessions.length)) {
     try {
-      const ss = await api.sessions({ page_size: 100 });
-      sessions = ((ss && ss.items) || []).map(s => ({
-        session_id: s.session_id || s.id,
-        source_ip: s.source_ip,
-        honeypot_type: s.honeypot_type || s.honeypot,
-        risk_score: s.risk_score,
-        kill_chain_phase: s.kill_chain_phase,
-        kill_chain_stage: s.kill_chain_stage,
-        primary_technique: s.primary_technique,
-        started_at: s.started_at || s.first_event_at || s.created_at,
-      }));
-    } catch(_) {}
+      const ss = await api.sessions({ page_size: 50 });
+      const items = (ss && ss.items) || [];
+      if (items.length) {
+        sessions = items.map(s => ({
+          session_id: s.session_id || s.id,
+          source_ip: s.source_ip,
+          honeypot_type: s.honeypot_type || s.honeypot,
+          risk_score: s.risk_score,
+          kill_chain_phase: s.kill_chain_phase,
+          kill_chain_stage: s.kill_chain_stage,
+          primary_technique: s.primary_technique,
+          started_at: s.started_at || s.first_event_at || s.created_at,
+        }));
+        endpointMissing = false;
+      }
+    } catch (_) {}
   }
+
   if (!sessions.length) {
     $('#rc-sid').innerHTML = '<option>No sessions</option>';
-    $('#rc-body').innerHTML = '<div class="alert info">No forensic sessions available. Run the forensic engine to generate sessions.</div>';
+    $('#rc-body').innerHTML = `<div class="alert info"><b>No forensic sessions available.</b><br>${
+      endpointMissing
+        ? 'Endpoint <span class="mono">/api/reports/forensic/sessions</span> not deployed (Sprint 4) and <span class="mono">/api/sessions</span> is empty.'
+        : 'Run the forensic engine to generate sessions.'
+    }</div>`;
     return;
   }
 
-  function populateSelect(list) {
-    $('#rc-sid').innerHTML = '<option value="">— select —</option>' + list.map(x =>
-      `<option value="${esc(x.session_id)}">${esc((x.session_id||'').slice(0,22))}  [${esc(x.honeypot_type||'?')}]  ${esc(x.source_ip||'?')}  risk:${x.risk_score||0}</option>`
-    ).join('');
-  }
-  populateSelect(sessions);
+  // ── Filtering state ──
+  let hpFilter = '';
+  let sortMode = 'date';
 
-  // ── render ───────────────────────────────────────────────────────────────────
-  async function loadAndRender(sid) {
-    $('#rc-body').innerHTML = '<div class="alert info">Loading session data...</div>';
-    try {
-      const base = sessions.find(x => x.session_id === sid) || { session_id: sid };
-      let detail = null;
-      try { detail = await api.forensicSessionDetail(sid); } catch(_) {}
-
-      const d  = Object.assign({}, base, detail || {});
-      const en = (d.enrichment_data) || {};
-
-      const geo   = en.geo            || {};
-      const priv  = en.privacy        || {};
-      const rep   = en.reputation     || {};
-      const infra = en.infrastructure || {};
-      const host  = infra.host_detail || {};
-      const whois = en.whois          || {};
-      const dns   = en.dns            || {};
-      const thr   = en.threat_summary || {};
-      const hp    = String(d.honeypot_type || '').toLowerCase();
-      const stage = Math.max(0, Math.min(8, parseInt(d.kill_chain_stage) || 0));
-
-      // kill chain
-      const cells = KC.map((lab, i) => {
-        const cls = i < stage-1 ? 'done' : i === stage-1 ? 'active' : '';
-        return `<div class="kc-cell ${cls}"><div class="kc-num">0${i+1}</div><div class="kc-lab">${lab}</div></div>`;
-      }).join('');
-
-      const path = hp==='dionaea' ? ['Zeek','Dionaea']
-                 : hp==='galah'   ? ['Zeek','Galah']
-                 : hp==='cowrie'  ? ['Zeek','Cowrie']
-                 : ['Zeek', d.honeypot_type||'?'];
-
-      // mitre techniques
-      const techs = d.mitre_techniques || en.mitre_techniques || [];
-      const mitreHtml = techs.length
-        ? techs.map(t => {
-            const id   = typeof t==='object' ? (t.id||t.technique_id||'') : String(t);
-            const name = typeof t==='object' ? (t.name||'') : '';
-            return `<span class="mitre-pill" title="${esc(name)}">${esc(id)}</span>`;
-          }).join('')
-        : null;
-
-      // active privacy flags only
-      const flags = [
-        [thr.is_tor||priv.is_tor||rep.is_tor,           'TOR EXIT'],
-        [thr.is_vpn||priv.is_vpn,                       'VPN'],
-        [thr.is_proxy||priv.is_proxy||priv.is_relay,    'PROXY/RELAY'],
-        [priv.is_anonymous,                              'ANONYMOUS'],
-        [thr.is_datacenter||priv.is_datacenter,          'DATACENTER'],
-        [priv.is_hosting,                                'HOSTING'],
-        [thr.is_abuser_listed||priv.is_abuser,           'ABUSER LISTED'],
-        [thr.is_bogon||priv.is_bogon,                    'BOGON'],
-      ].filter(([v]) => v);
-
-      // malware
-      const yara   = (en.yara_matches || []).filter(Boolean);
-      const vtMal  = parseInt(en.vt_malicious) || 0;
-      const vtFam  = en.vt_family || '';
-      const sha256 = (en.sha256_hashes || []).filter(Boolean);
-
-      // hostnames
-      const allHosts = [...new Set([
-        ...(thr.hostnames||[]), ...(infra.hostnames||[]),
-        ...(rep.hostnames||[]), ...(dns.aliases||[]),
-        ...(dns.ptr ? [dns.ptr] : []),
-      ])].filter(Boolean);
-
-      // commands / http paths
-      const commands  = (en.commands   || []).filter(Boolean).slice(0,15);
-      const httpPaths = (en.http_paths || []).filter(Boolean);
-      const exploitCves = (en.exploit_cve || []).filter(Boolean);
-      const recActions  = (en.recommended_actions || []).filter(Boolean);
-      const narrative   = d.forensic_narrative || en.forensic_narrative || en.narrative || '';
-
-      // abuse score color
-      const abScore = parseInt(rep.abuse_score) || 0;
-      const abCls   = abScore >= 75 ? 'score-crit' : abScore >= 25 ? 'score-high' : 'score-low';
-
-      // ── build cards ─────────────────────────────────────────────────────────
-
-      // 1 — session overview (always shown)
-      const sessionRows = [
-        tr('Session ID',       `<span class="mono" style="word-break:break-all">${esc(d.session_id)}</span>`),
-        tr('Honeypot',         s(d.honeypot_type)),
-        tr('Source IP',        d.source_ip ? `<span class="mono">${esc(d.source_ip)}</span>` : null),
-        tr('Destination Port', en.destination_port ? `<span class="mono">${en.destination_port}</span>` : null),
-        tr('Started',          s(fmt.date(d.started_at))),
-        d.ended_at ? tr('Ended', s(fmt.date(d.ended_at))) : '',
-        en.session_duration_sec != null ? tr('Duration', `<span class="mono">${Number(en.session_duration_sec).toFixed(1)}s</span>`) : '',
-      ].join('');
-
-      // 2 — risk (always shown)
-      const riskScore = parseInt(d.risk_score) || 0;
-      const riskCls   = fmt.scoreClass ? fmt.scoreClass(riskScore) : '';
-      const riskRows  = [
-        tr('Risk Score',      `<span class="score ${riskCls}">${riskScore}</span>`),
-        tr('Risk Level',      s(en.risk_level)),
-        tr('Confidence',      en.confidence != null ? `${en.confidence}%` : null),
-        tr('Threat Tier',     thr.tier ? `<b>${thr.tier.toUpperCase()}</b>` : null),
-        tr('Attack Types',    tags(en.attack_types)),
-        en.lateral_movement   ? tr('Lateral Movement', '<span class="tag red">Detected</span>') : '',
-        en.is_off_hours       ? tr('Attack Timing', '<span class="tag red">Off-hours</span>') : '',
-        tr('Login Attempts',  s(d.login_attempts ?? en.login_attempts)),
-        tr('Successful Logins', s(d.success_count ?? en.success_count)),
-        en.attack_velocity != null ? tr('Attack Velocity', `<span class="mono">${Number(en.attack_velocity).toFixed(2)} req/s</span>`) : '',
-        en.previously_seen    ? tr('Recidivist IP', `<span class="tag red">Yes — ${en.previous_sessions||'?'} prior sessions</span>`) : '',
-        tr('Honeypots Hit',   tags(en.honeypot_types_hit)),
-      ].join('');
-
-      // 3 — MITRE (only if data exists)
-      const hasMitre = techs.length || d.kill_chain_phase || d.primary_technique || en.primary_technique;
-      const mitreRows = hasMitre ? [
-        tr('Primary Technique', s(d.primary_technique || en.primary_technique)),
-        tr('Kill Chain Phase',  s(d.kill_chain_phase)),
-        tr('Kill Chain Stage',  stage > 0 ? `${stage} / 8` : null),
-        tr('Mapping Source',    s(en.mapping_source)),
-      ].join('') : '';
-
-      // 4 — geo (only if data)
-      const hasGeo = geo.country || geo.city || geo.asn || thr.country;
-      const cc = (geo.country_code || thr.country_code || rep.country_code || '').toLowerCase();
-      const geoRows = hasGeo ? [
-        tr('Country',      s(geo.country || thr.country || rep.country_name)),
-        cc ? tr('Country Code', `<span class="mono">${cc.toUpperCase()}</span>`) : '',
-        tr('City',         s(geo.city || thr.city)),
-        tr('Region',       s(geo.region)),
-        tr('Timezone',     geo.timezone ? `<span class="mono">${esc(geo.timezone)}</span>` : null),
-        geo.lat != null ? tr('Coordinates', `<span class="mono">${Number(geo.lat).toFixed(4)}, ${Number(geo.lon).toFixed(4)}</span>`) : '',
-        tr('ASN',          (geo.asn || whois.asn || priv.asn_number) ? `<span class="mono">${esc(String(geo.asn || whois.asn || priv.asn_number))}</span>` : null),
-        tr('ASN Org',      s(geo.org || whois.asn_description || priv.company_name)),
-        tr('ISP',          s(rep.isp || priv.company_name)),
-        tr('Network CIDR', (geo.network_cidr || whois.cidr || thr.network_cidr) ? `<span class="mono">${esc(geo.network_cidr || whois.cidr || thr.network_cidr)}</span>` : null),
-      ].join('') : '';
-
-      // 5 — reputation (only if AbuseIPDB returned data)
-      const hasRep = abScore || rep.total_reports || rep.last_reported_at;
-      const abCategories = thr.attack_categories || [];
-      const repRows = hasRep ? [
-        tr('Abuse Score',      `<span class="score ${abCls}">${abScore}</span>`),
-        tr('Total Reports',    s(rep.total_reports || thr.total_reports)),
-        tr('Distinct Reporters', s(rep.distinct_users || thr.distinct_reporters)),
-        rep.last_reported_at ? tr('Last Reported', `<span class="mono">${esc(rep.last_reported_at)}</span>`) : '',
-        tr('Usage Type',       s(rep.usage_type || thr.usage_type)),
-        tr('ISP',              s(rep.isp)),
-        rep.domain ? tr('Domain', `<span class="mono">${esc(rep.domain)}</span>`) : '',
-      ].join('') : '';
-
-      // 6 — infrastructure / Shodan (only if data)
-      const openPorts = thr.open_ports || infra.open_ports || [];
-      const vulns     = thr.known_vulns || infra.vulns || [];
-      const shodanTags = thr.shodan_tags || infra.tags || [];
-      const cpes      = infra.cpes || [];
-      const hasInfra  = openPorts.length || vulns.length || shodanTags.length || cpes.length || host.os;
-      const infraRows = hasInfra ? [
-        tr('OS',           s(host.os)),
-        tr('Organization', s(host.organization)),
-        host.last_update ? tr('Last Scanned', `<span class="mono">${esc(host.last_update)}</span>`) : '',
-      ].join('') : '';
-
-      // 7 — Whois (only if data)
-      const hasWhois = whois.network_name || whois.cidr || whois.asn || whois.registration;
-      const whoisRows = hasWhois ? [
-        tr('Network Name',  s(whois.network_name)),
-        tr('CIDR',          (whois.cidr||whois.asn_cidr) ? `<span class="mono">${esc(whois.cidr||whois.asn_cidr)}</span>` : null),
-        tr('ASN',           whois.asn ? `<span class="mono">${esc(String(whois.asn))}</span>` : null),
-        tr('Registry',      s(whois.asn_registry)),
-        whois.registration ? tr('Registered', `<span class="mono">${esc(whois.registration)}</span>`) : '',
-        whois.abuse_emails && whois.abuse_emails.length ? tr('Abuse Contact', `<span class="mono">${esc(whois.abuse_emails[0])}</span>`) : '',
-      ].join('') : '';
-
-      // 8 — DNS (only if data)
-      const hasDns = dns.ptr || allHosts.length;
-
-      // 9 — malware (only if data)
-      const hasMalware = yara.length || vtMal || vtFam || sha256.length;
-      const malwareRows = hasMalware ? [
-        yara.length ? tr('YARA Matches',  tags(yara, 'red')) : '',
-        vtMal       ? tr('VT Detections', `<span class="tag red">${vtMal} engines positive</span>`) : '',
-        tr('Malware Family', s(vtFam)),
-        tr('VT Tags',        tags(en.vt_tags || [], 'gold')),
-        en.vt_first_seen ? tr('First Seen (VT)', `<span class="mono">${esc(en.vt_first_seen)}</span>`) : '',
-      ].join('') : '';
-
-      // 10 — session behaviour (honeypot-specific)
-      const hasBehaviour = commands.length || httpPaths.length || exploitCves.length
-                        || en.exfil_bytes || en.smb_share_enum || en.epmapper_prescan;
-      const behRows = hasBehaviour ? [
-        en.command_count ? tr('Commands Executed', s(en.command_count)) : '',
-        en.exfil_bytes   ? tr('Exfil Bytes', `<span class="mono">${esc(String(en.exfil_bytes))}</span>`) : '',
-        en.smb_share_enum ? tr('SMB Share Enum', '<span class="tag red">Detected</span>') : '',
-        en.epmapper_prescan ? tr('Epmapper Prescan', s(en.epmapper_prescan)) : '',
-      ].join('') : '';
-
-      // ── assemble HTML ──────────────────────────────────────────────────────
-      let html = `
-<div class="card mb-20">
-  <div class="card-h">
-    <div class="card-t">Kill Chain &middot; Stage ${stage} / 8</div>
-    <div class="card-sub">${esc(d.kill_chain_phase || 'unknown phase')}</div>
-  </div>
-  <div class="kc-grid">${cells}</div>
-  <div class="card-sub" style="margin-top:14px">ATTACK PATH</div>
-  <div class="flow">
-    <span class="flow-node">${esc(d.source_ip || '?')}</span>
-    ${path.map(p=>`<span class="flow-arrow"></span><span class="flow-node">${esc(p)}</span>`).join('')}
-  </div>
-</div>
-
-<div class="intel-grid">
-
-  <div class="card">
-    <div class="card-h"><div class="card-t">Session Overview</div></div>
-    <table class="tbl">${sessionRows}</table>
-  </div>
-
-  <div class="card">
-    <div class="card-h"><div class="card-t">Risk Assessment</div></div>
-    <table class="tbl">${riskRows}</table>
-  </div>`;
-
-      if (hasMitre) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">MITRE ATT&amp;CK</div></div>
-    <table class="tbl">${mitreRows}</table>
-    ${mitreHtml ? `<div class="card-sub" style="margin-top:10px">TECHNIQUES</div><div style="margin-top:6px">${mitreHtml}</div>` : ''}
-  </div>`;
-      }
-
-      if (hasGeo) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Geographic Intelligence</div></div>
-    <table class="tbl">${geoRows}</table>
-  </div>`;
-      }
-
-      if (flags.length) {
-        const privRows = [
-          tr('Usage Type',   s(rep.usage_type || thr.usage_type)),
-          tr('ASN Type',     s(priv.asn_type)),
-          tr('Company Type', s(priv.company_type)),
-        ].join('');
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Privacy &amp; Anonymization</div></div>
-    <div class="flag-row">${flags.map(([,l])=>`<span class="flag">${l}</span>`).join('')}</div>
-    ${privRows ? `<table class="tbl" style="margin-top:12px">${privRows}</table>` : ''}
-  </div>`;
-      }
-
-      if (hasRep) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Reputation &middot; AbuseIPDB</div></div>
-    <table class="tbl">${repRows}</table>
-    ${abCategories.length ? `<div class="card-sub" style="margin-top:10px">ATTACK CATEGORIES</div><div style="margin-top:6px">${tags(abCategories,'red')}</div>` : ''}
-  </div>`;
-      }
-
-      if (hasInfra) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Infrastructure &middot; Shodan</div></div>
-    ${infraRows ? `<table class="tbl">${infraRows}</table>` : ''}
-    ${openPorts.length ? `<div class="card-sub" style="margin-top:10px">OPEN PORTS</div><div style="margin-top:6px">${openPorts.slice(0,30).map(p=>`<span class="port-chip">${esc(String(p))}</span>`).join('')}</div>` : ''}
-    ${vulns.length ? `<div class="card-sub" style="margin-top:10px">VULNERABILITIES</div><div style="margin-top:6px">${tags(vulns,'red')}</div>` : ''}
-    ${shodanTags.length ? `<div class="card-sub" style="margin-top:10px">TAGS</div><div style="margin-top:6px">${tags(shodanTags,'gold')}</div>` : ''}
-    ${cpes.length ? `<div class="card-sub" style="margin-top:10px">CPEs</div><div style="margin-top:6px">${tags(cpes)}</div>` : ''}
-  </div>`;
-      }
-
-      if (hasWhois) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Network &middot; RDAP/Whois</div></div>
-    <table class="tbl">${whoisRows}</table>
-  </div>`;
-      }
-
-      if (hasDns) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">DNS</div></div>
-    <table class="tbl">
-      ${dns.ptr ? tr('PTR Record', `<span class="mono">${esc(dns.ptr)}</span>`) : ''}
-    </table>
-    ${allHosts.length ? `<div class="card-sub" style="margin-top:10px">HOSTNAMES</div><div style="margin-top:6px">${tags(allHosts)}</div>` : ''}
-  </div>`;
-      }
-
-      if (hasBehaviour) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Session Behaviour</div></div>
-    ${behRows ? `<table class="tbl">${behRows}</table>` : ''}
-    ${exploitCves.length ? `<div class="card-sub" style="margin-top:10px">EXPLOIT CVEs</div><div style="margin-top:6px">${tags(exploitCves,'red')}</div>` : ''}
-    ${httpPaths.length ? `<div class="card-sub" style="margin-top:10px">HTTP PATHS</div><div style="margin-top:6px">${tags(httpPaths)}</div>` : ''}
-    ${commands.length ? `<div class="card-sub" style="margin-top:10px">SHELL COMMANDS</div><div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${commands.map(c=>`<code style="font-size:10px;background:var(--bg3);padding:2px 6px;border-radius:3px;color:#ef9a9a;font-family:'Share Tech Mono',monospace">${esc(c)}</code>`).join('')}</div>` : ''}
-  </div>`;
-      }
-
-      if (hasMalware) {
-        html += `<div class="card">
-    <div class="card-h"><div class="card-t">Malware Intelligence</div></div>
-    <table class="tbl">${malwareRows}</table>
-    ${sha256.length ? `<div class="card-sub" style="margin-top:10px">FILE HASHES (SHA-256)</div><div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${sha256.map(h=>`<code style="font-size:10px;font-family:'Share Tech Mono',monospace;background:var(--bg3);padding:2px 6px;border-radius:3px;color:var(--text2)">${esc(h)}</code>`).join('')}</div>` : ''}
-  </div>`;
-      }
-
-      html += `</div>`; // /intel-grid
-
-      if (narrative) {
-        html += `<div class="card" style="margin-top:14px">
-  <div class="card-h"><div class="card-t">Forensic Narrative</div></div>
-  <div class="narrative">${esc(narrative)}</div>
-</div>`;
-      }
-
-      if (recActions.length) {
-        html += `<div class="card" style="margin-top:14px">
-  <div class="card-h"><div class="card-t">Recommended Actions</div></div>
-  <ul style="margin:8px 0 0 18px;font-size:12px;color:var(--text2);line-height:1.9">
-    ${recActions.map(a=>`<li>${esc(typeof a==='object'?(a.action||JSON.stringify(a)):String(a))}</li>`).join('')}
-  </ul>
-</div>`;
-      }
-
-      html += `<div style="margin-top:14px">
-    <a class="btn btn-gold btn-sm" href="#timeline">View Timeline</a>
-  </div>`;
-
-      $('#rc-body').innerHTML = html;
-
-
-    } catch(err) {
-      console.error('reconstruction render error:', err);
-      $('#rc-body').innerHTML = `<div class="alert err">Render error: ${esc(err.message || String(err))}</div>`;
+  function filteredSessions() {
+    const q = ($('#rc-q').value || '').trim().toLowerCase();
+    let list = sessions.slice();
+    if (hpFilter) list = list.filter(s => (s.honeypot_type||'').toLowerCase() === hpFilter);
+    if (q) {
+      list = list.filter(s => {
+        const hay = [
+          s.session_id, s.source_ip, s.honeypot_type,
+          s.primary_technique, s.kill_chain_phase, s.risk_level,
+          ...(Array.isArray(s.mitre_techniques) ? s.mitre_techniques : []),
+          ...(Array.isArray(s.honeypots_hit) ? s.honeypots_hit : []),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
     }
+    if (sortMode === 'risk')      list.sort((a,b) => (b.risk_score||0) - (a.risk_score||0));
+    else if (sortMode === 'stage')list.sort((a,b) => (b.kill_chain_stage||0) - (a.kill_chain_stage||0));
+    else                           list.sort((a,b) => new Date(b.started_at||0) - new Date(a.started_at||0));
+    return list;
   }
 
-  // ── events ───────────────────────────────────────────────────────────────────
-  $('#rc-sid').addEventListener('change', function() {
-    const sid = this.value;
-    if (!sid) { $('#rc-body').innerHTML = '<div class="alert info">Select a session.</div>'; return; }
-    loadAndRender(sid);
-  });
-
-  function searchByIp(ip) {
-    ip = (ip || '').trim();
-    if (!ip) return;
-    const matches = sessions.filter(x => x.source_ip && x.source_ip.includes(ip));
-    if (!matches.length) {
-      $('#rc-body').innerHTML = `<div class="alert info">No sessions found for IP <span class="mono">${esc(ip)}</span>.</div>`;
+  function fillDropdown() {
+    const list = filteredSessions();
+    $('#rc-count').textContent = `${list.length} of ${sessions.length}`;
+    if (!list.length) {
+      $('#rc-sid').innerHTML = '<option value="">— no match —</option>';
+      $('#rc-body').innerHTML = `<div class="alert warn">No session matches the current filters. Try clearing the search or switching the honeypot tab.</div>`;
       return;
     }
-    populateSelect(matches);
-    $('#rc-sid').value = matches[0].session_id;
-    loadAndRender(matches[0].session_id);
+    $('#rc-sid').innerHTML = '<option value="">— select —</option>' + list.map(s =>
+      `<option value="${esc(s.session_id)}">[${esc((s.honeypot_type||'?').toUpperCase())}] ${esc(s.source_ip||'?')} · risk ${s.risk_score||0} · ${esc(s.session_id)}</option>`
+    ).join('');
   }
 
-  $('#rc-ip-btn').addEventListener('click', () => searchByIp($('#rc-ip-input').value));
-  $('#rc-ip-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') searchByIp(e.target.value);
-  });
-  $('#rc-ip-input').addEventListener('input', e => {
-    if (!e.target.value.trim()) populateSelect(sessions);
-  });
+  function runSearch() {
+    fillDropdown();
+    const list = filteredSessions();
+    if (list.length === 1) {
+      $('#rc-sid').value = list[0].session_id;
+      render(list[0]);
+    } else if (list.length > 1 && ($('#rc-q').value || '').trim()) {
+      $('#rc-sid').value = list[0].session_id;
+      render(list[0]);
+    }
+  }
 
+  fillDropdown();
+
+  $('#rc-q').addEventListener('input', fillDropdown);
+  $('#rc-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
+  $('#rc-go').addEventListener('click', runSearch);
+  $('#rc-clr').addEventListener('click', () => {
+    $('#rc-q').value = '';
+    hpFilter = '';
+    document.querySelectorAll('.rc-tab').forEach(t => t.classList.toggle('active', !t.dataset.hp));
+    fillDropdown();
+    $('#rc-body').innerHTML = `<div class="alert info">Select a session to start the reconstruction.</div>`;
+  });
+  document.querySelectorAll('.rc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.rc-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      hpFilter = tab.dataset.hp || '';
+      fillDropdown();
+    });
+  });
+  $('#rc-sort').addEventListener('change', () => { sortMode = $('#rc-sort').value; fillDropdown(); });
+
+  function attackPath(s) {
+    const hits = Array.isArray(s.honeypots_hit) && s.honeypots_hit.length
+      ? s.honeypots_hit
+      : [s.honeypot_type].filter(Boolean);
+    return ['Zeek', ...hits.map(h => h.charAt(0).toUpperCase() + h.slice(1))];
+  }
+
+  function metricTiles(s) {
+    const tiles = [];
+    const push = (lbl, val, cls='') => {
+      if (val === null || val === undefined || val === '') return;
+      if (val === 0 && !['Risk Score','Login Attempts'].includes(lbl)) return;
+      tiles.push(`<div class="rc-metric ${cls}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div></div>`);
+    };
+    const rs = s.risk_score || 0;
+    push('Risk Score', rs, rs >= 70 ? 'crit' : rs >= 40 ? 'warn' : '');
+    push('Risk Level', s.risk_level);
+    push('Confidence', s.confidence);
+    push('Honeypots Hit', s.honeypot_count);
+    push('Sub-sessions', s.sessions_count);
+    push('Login Attempts', s.login_attempts);
+    push('Successful Auth', s.success_count, (s.success_count||0) > 0 ? 'crit' : '');
+    if (s.attack_velocity) push('Velocity (ev/s)', Number(s.attack_velocity).toFixed(2));
+    return tiles.length ? `<div class="rc-metrics">${tiles.join('')}</div>` : '';
+  }
+
+  function riskColor(rs) {
+    if (rs >= 80) return 'var(--red2)';
+    if (rs >= 50) return 'var(--gold)';
+    if (rs >= 20) return '#a98a3a';
+    return 'var(--text3)';
+  }
+
+  function render(s) {
+    const stage = Math.max(0, Math.min(8, s.kill_chain_stage || 0));
+    const pct = (stage / 8) * 100;
+    const cells = KC.map((lab, i) => {
+      const cls = i < stage - 1 ? 'done' : (i === stage - 1 ? 'active' : '');
+      return `<div class="kc-cell ${cls}"><div class="kc-num">0${i+1}</div><div class="kc-lab">${lab}</div></div>`;
+    }).join('');
+
+    const path = attackPath(s);
+    const pathHTML = `<span class="flow-node src">${esc(s.source_ip||'?')}</span>` +
+      path.map((p, i) => `<span class="flow-arrow">→</span><span class="flow-node ${i===path.length-1?'tgt':''}">${esc(p)}</span>`).join('');
+
+    const mitre = Array.isArray(s.mitre_techniques) ? s.mitre_techniques : [];
+    const mitreChips = mitre.length
+      ? `<div class="rc-chips" style="margin-top:14px">${mitre.map(t => `<span class="rc-chip ${t===s.primary_technique?'hl':''}">${esc(t)}</span>`).join('')}</div>`
+      : '';
+
+    const durStr = (s.started_at && s.ended_at)
+      ? (() => { const ms = new Date(s.ended_at) - new Date(s.started_at); return ms > 0 ? `${(ms/1000).toFixed(1)} s` : '—'; })()
+      : '—';
+
+    const rs = s.risk_score || 0;
+
+    $('#rc-body').innerHTML = `
+      <div class="card mb-20">
+        <div class="rc-hero">
+          <div class="rc-hero-l">
+            <div class="card-t">${esc(s.kill_chain_phase || 'Kill chain in progress')}</div>
+            <div class="card-sub">Step ${stage} / 8 · ${esc((s.honeypot_type||'unknown').toUpperCase())} · ${esc(s.source_ip||'?')}</div>
+          </div>
+          <div class="rc-hero-r">
+            <div class="rc-risk-big" style="color:${riskColor(rs)}">${rs}</div>
+            <div class="rc-risk-lbl">Risk · ${esc(s.risk_level || (rs >= 80 ? 'CRITICAL' : rs >= 50 ? 'HIGH' : rs >= 20 ? 'MEDIUM' : 'LOW'))}</div>
+          </div>
+        </div>
+
+        <div class="kc-prog"><div class="kc-prog-bar" style="width:${pct}%"></div></div>
+        <div class="kc-grid">${cells}</div>
+
+        <div class="card-sub" style="margin-top:14px">ATTACK PATH</div>
+        <div class="flow">${pathHTML}</div>
+
+        ${metricTiles(s)}
+        ${mitreChips}
+      </div>
+
+      <div class="card mb-20">
+        <div class="card-h">
+          <div class="card-t">Session Details</div>
+          <div class="card-sub">Forensic identifiers</div>
+        </div>
+        <table class="tbl">
+          <tr><th style="width:200px">Session ID</th><td class="mono">${esc(s.session_id)}</td></tr>
+          <tr><th>Honeypot</th><td>${esc(s.honeypot_type)}</td></tr>
+          <tr><th>Source IP</th><td class="mono">${esc(s.source_ip)}</td></tr>
+          <tr><th>Risk score</th><td><span class="score ${fmt.scoreClass(rs)}">${rs}</span>${s.risk_level?` <span class="rc-chip">${esc(s.risk_level)}</span>`:''}${s.confidence?` <span class="rc-chip">conf: ${esc(s.confidence)}</span>`:''}</td></tr>
+          <tr><th>Phase</th><td>${esc(s.kill_chain_phase||'—')}</td></tr>
+          <tr><th>Primary Technique</th><td class="mono">${esc(s.primary_technique||'—')}</td></tr>
+          <tr><th>Started</th><td class="mono">${fmt.date(s.started_at)}</td></tr>
+          <tr><th>Ended</th><td class="mono">${s.ended_at ? fmt.date(s.ended_at) : '—'}</td></tr>
+          <tr><th>Duration</th><td class="mono">${esc(durStr)}</td></tr>
+        </table>
+      </div>
+
+      <div id="rc-enrich"><div class="card mb-20"><div class="card-sub">Loading threat intelligence…</div></div></div>
+
+      <div class="card">
+        <div class="card-h"><div class="card-t">Actions</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn btn-gold btn-sm" href="#timeline">View detailed timeline →</a>
+          <a class="btn btn-gh btn-sm" href="${api.forensicReportPreviewUrl(s.session_id)}" target="_blank">HTML report preview</a>
+          <a class="btn btn-gh btn-sm" href="#profiling?ip=${encodeURIComponent(s.source_ip||'')}">Profile this IP</a>
+        </div>
+      </div>`;
+
+    loadEnrichment(s);
+  }
+
+  // ── Threat intelligence panels ──
+  async function loadEnrichment(s) {
+    const target = document.getElementById('rc-enrich');
+    if (!target) return;
+    let data;
+    try {
+      data = await api.forensicSessionEnrichment(s.session_id);
+    } catch (e) {
+      target.innerHTML = `<div class="card mb-20"><div class="alert warn" style="margin:0">Threat intelligence unavailable: ${esc(e.message||'error')}</div></div>`;
+      return;
+    }
+    target.innerHTML = renderEnrichment(data, s);
+  }
+
+  function panel(title, sub, bodyHTML, klass='') {
+    return `<div class="card mb-20 ${klass}"><div class="card-h"><div class="card-t">${esc(title)}</div>${sub?`<div class="card-sub">${esc(sub)}</div>`:''}</div>${bodyHTML}</div>`;
+  }
+
+  function kvTable(rows) {
+    const cells = rows
+      .filter(([_, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0))
+      .map(([k, v]) => {
+        let val;
+        if (Array.isArray(v)) val = `<div class="rc-chips" style="margin-top:0">${v.map(x => `<span class="rc-chip">${esc(String(x))}</span>`).join('')}</div>`;
+        else if (typeof v === 'boolean') val = v ? '<span class="rc-chip red">yes</span>' : '<span class="rc-chip">no</span>';
+        else val = `<span class="mono">${esc(String(v))}</span>`;
+        return `<tr><th style="width:170px">${esc(k)}</th><td>${val}</td></tr>`;
+      }).join('');
+    return cells ? `<table class="tbl">${cells}</table>` : '<div class="card-sub">No data.</div>';
+  }
+
+  function srcBadge(src) {
+    if (src === 'live')  return `<span class="rc-src-badge live">LIVE</span>`;
+    if (src === 'cache') return `<span class="rc-src-badge cache">CACHED</span>`;
+    return `<span class="rc-src-badge none">NO DATA</span>`;
+  }
+
+  function noDataMsg(tool) {
+    const msgs = {
+      shodan:    'No Shodan data — requires the forensic engine to have run this IP through InternetDB.',
+      whois:     'No WHOIS record — requires the forensic engine to have cached registration data.',
+      virustotal:'No VirusTotal result — only available when Dionaea captured a binary file from this session.',
+      yara:      'No YARA matches — no artifact was captured or no rule matched.',
+    };
+    return `<div class="alert info" style="margin:0;font-size:12px">${msgs[tool] || 'No data available for this session.'}</div>`;
+  }
+
+  function hasValues(obj, keys) {
+    return obj && keys.some(k => {
+      const v = obj[k];
+      return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+    });
+  }
+
+  function renderEnrichment(d, s) {
+    const hp = (s.honeypot_type || '').toLowerCase();
+    const parts = [];
+
+    // ── Section header ──
+    parts.push(`<div style="margin:18px 0 14px">
+      <div style="font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:700;color:var(--gold);letter-spacing:.5px">Threat Intelligence & Tool Outputs</div>
+      <div class="card-sub" style="margin-top:2px">All enrichment tools are shown — sources: <span class="rc-src-badge live">LIVE</span> real-time API · <span class="rc-src-badge cache">CACHED</span> forensic engine · <span class="rc-src-badge none">NO DATA</span> not available</div>
+    </div>`);
+
+    // ── 2-column layout for smaller panels ──
+    // IPLocate + AbuseIPDB side by side
+    const ipSrc  = (d.iplocate  || {})._source || 'none';
+    const abSrc  = (d.abuseipdb || {})._source || 'none';
+
+    const ip = d.iplocate || {};
+    const flags = [
+      ip.is_tor  && '<span class="rc-chip red">TOR</span>',
+      ip.is_vpn  && '<span class="rc-chip red">VPN</span>',
+      ip.is_proxy&& '<span class="rc-chip red">PROXY</span>',
+      ip.is_hosting   && '<span class="rc-chip">HOSTING</span>',
+      ip.is_datacenter&& '<span class="rc-chip">DATACENTER</span>',
+      ip.is_bogon     && '<span class="rc-chip">BOGON</span>',
+    ].filter(Boolean).join(' ');
+
+    const ipBody = hasValues(ip, ['country','city','region','asn','as_org'])
+      ? kvTable([
+          ['Country',       ip.country ? `${ip.country}${ip.country_iso?` (${ip.country_iso})`:''}` : null],
+          ['City',          ip.city],
+          ['Region',        ip.region],
+          ['Coordinates',   (ip.lat && ip.lon) ? `${ip.lat}, ${ip.lon}` : null],
+          ['ASN',           ip.asn],
+          ['AS Org',        ip.as_org],
+        ]) + (flags ? `<div class="rc-chips" style="margin-top:10px">${flags}</div>` : '')
+      : noDataMsg('iplocate');
+
+    const a = d.abuseipdb || {};
+    const abScore = a.abuse_score != null ? a.abuse_score : null;
+    const abColor = abScore >= 50 ? 'var(--red2)' : abScore >= 20 ? 'var(--gold)' : 'var(--text)';
+    const abBody = hasValues(a, ['abuse_score','total_reports','usage_type','isp','domain'])
+      ? (abScore != null ? `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="font-family:'Rajdhani',sans-serif;font-size:38px;font-weight:700;color:${abColor};line-height:1">${abScore}</div>
+          <div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase">Abuse Score / 100</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">${(a.total_reports||0)} community report${(a.total_reports||0)!==1?'s':''}</div></div>
+        </div>` : '')
+        + kvTable([
+          ['Usage type',    a.usage_type],
+          ['ISP',           a.isp],
+          ['Domain',        a.domain],
+          ['Country',       a.country],
+          ['Last reported', a.last_reported],
+        ])
+      : noDataMsg('abuseipdb');
+
+    parts.push(`<div class="rc-2col mb-20">
+      <div class="card">${panelHead('IPLocate', 'Geolocation, ASN & privacy', srcBadge(ipSrc))}${ipBody}</div>
+      <div class="card">${panelHead('AbuseIPDB', 'Community abuse reputation', srcBadge(abSrc))}${abBody}</div>
+    </div>`);
+
+    // ── Shodan (full width) — only show if data exists ──
+    const sh = d.shodan || {};
+    const shHasData = sh.ports?.length || sh.vulns?.length || sh.tags?.length || sh.hostnames?.length;
+    if (shHasData) {
+      const shSrc = sh._source || 'cache';
+      const shBody = `<div class="rc-3col" style="margin-bottom:10px">
+          ${sh.ports?.length ? `<div><div class="card-sub" style="margin-bottom:6px">OPEN PORTS</div><div class="rc-chips" style="margin-top:0">${sh.ports.map(p => `<span class="rc-chip hl">${esc(String(p))}</span>`).join('')}</div></div>` : ''}
+          ${sh.vulns?.length ? `<div><div class="card-sub" style="margin-bottom:6px">CVEs</div><div class="rc-chips" style="margin-top:0">${sh.vulns.map(v => `<span class="rc-chip red">${esc(v)}</span>`).join('')}</div></div>` : ''}
+          ${sh.tags?.length  ? `<div><div class="card-sub" style="margin-bottom:6px">TAGS</div><div class="rc-chips" style="margin-top:0">${sh.tags.map(t => `<span class="rc-chip">${esc(t)}</span>`).join('')}</div></div>` : ''}
+        </div>
+        ${sh.hostnames?.length ? kvTable([['Hostnames', sh.hostnames]]) : ''}`;
+      parts.push(`<div class="card mb-20">${panelHead('Shodan InternetDB', 'Internet exposure — open ports, CVEs, tags', srcBadge(shSrc))}${shBody}</div>`);
+    }
+
+    // ── WHOIS (full width) — only show if data exists ──
+    const w = d.whois || {};
+    const wHasData = hasValues(w, ['registrar','organization','country','created','updated','abuse_email','net_range','asn']);
+    if (wHasData) {
+      const wSrc = w._source || 'cache';
+      const wBody = kvTable([
+        ['Registrar',     w.registrar],
+        ['Organization',  w.organization],
+        ['Country',       w.country],
+        ['Net range',     w.net_range],
+        ['ASN',           w.asn],
+        ['Created',       w.created],
+        ['Updated',       w.updated],
+        ['Abuse contact', w.abuse_email],
+      ]);
+      parts.push(`<div class="card mb-20">${panelHead('WHOIS', 'Network registration record', srcBadge(wSrc))}${wBody}</div>`);
+    }
+
+    // ── VirusTotal + YARA — Dionaea only ──
+    const isDionaea = hp === 'dionaea';
+    if (isDionaea) {
+      const vt = d.virustotal;
+      let vtBody;
+      if (vt) {
+        const vc = vt.malicious >= 5 ? 'var(--red2)' : vt.malicious > 0 ? 'var(--gold)' : 'var(--text3)';
+        vtBody = `<div class="rc-metrics" style="margin:0 0 14px">
+          <div class="rc-metric ${vt.malicious>=5?'crit':vt.malicious>0?'warn':''}"><div class="lbl">Malicious</div><div class="val" style="color:${vc}">${vt.malicious||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Suspicious</div><div class="val">${vt.suspicious||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Harmless</div><div class="val">${vt.harmless||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Undetected</div><div class="val">${vt.undetected||0}</div></div>
+          ${vt.engines ? `<div class="rc-metric"><div class="lbl">Total engines</div><div class="val">${vt.engines}</div></div>` : ''}
+        </div>` +
+        kvTable([
+          ['SHA-256',    vt.sha256],
+          ['Family',     vt.family],
+          ['Known names',vt.names],
+          ['First seen', vt.first_seen ? new Date((Number(vt.first_seen)||0)*1000).toISOString().slice(0,10) : null],
+        ]) +
+        (vt.permalink ? `<div style="margin-top:10px"><a class="btn btn-gh btn-sm" href="${esc(vt.permalink)}" target="_blank">Open on VirusTotal →</a></div>` : '');
+      } else {
+        vtBody = noDataMsg('virustotal');
+      }
+
+      let yaraBody;
+      if (d.yara && d.yara.length) {
+        const rows = d.yara.map(y => `
+          <tr>
+            <td class="mono"><b>${esc(y.rule||'?')}</b>${y.namespace?`<br><span style="font-size:10px;color:var(--text3)">${esc(y.namespace)}</span>`:''}</td>
+            <td>${(y.tags||[]).map(t => `<span class="rc-chip red">${esc(t)}</span>`).join(' ')||'—'}</td>
+            <td class="mono" style="font-size:11px">${esc((y.meta&&(y.meta.description||y.meta.author))||'—')}</td>
+          </tr>`).join('');
+        yaraBody = `<table class="tbl"><thead><tr><th>Rule</th><th>Tags</th><th>Meta</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } else {
+        yaraBody = noDataMsg('yara');
+      }
+
+      let capturedBody = '';
+      if (d.captured_files && d.captured_files.length) {
+        capturedBody = `<div style="margin-bottom:14px">` + d.captured_files.map(f =>
+          kvTable([
+            ['SHA-256', f.sha256],
+            ['Size',    f.size != null ? `${f.size} bytes` : null],
+            ['Type',    f.type],
+          ])
+        ).join('') + '</div>';
+      }
+
+      parts.push(`<div class="rc-2col mb-20">
+        <div class="card">${panelHead('VirusTotal — Dionaea Sample', 'AV engine consensus on captured binary', '')}${capturedBody}${vtBody}</div>
+        <div class="card">${panelHead('YARA Rules', `${d.yara?.length||0} rule${(d.yara?.length||0)!==1?'s':''} matched`, '')}${yaraBody}</div>
+      </div>`);
+    }
+
+    // ── MITRE ──
+    if (d.mitre && d.mitre.length) {
+      const rows = d.mitre.map(m => `
+        <tr>
+          <td class="mono" style="width:90px"><a href="${esc(m.url)}" target="_blank" style="color:var(--gold)">${esc(m.id)}</a></td>
+          <td>${esc(m.name)}</td>
+          <td><span class="rc-chip">${esc(m.tactic)}</span></td>
+        </tr>`).join('');
+      parts.push(`<div class="card mb-20">${panelHead('MITRE ATT&CK', `${d.mitre.length} technique${d.mitre.length>1?'s':''} mapped from observed behaviour`, '')}
+        <table class="tbl"><thead><tr><th style="width:90px">ID</th><th>Technique</th><th>Tactic</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>`);
+    }
+
+    return parts.join('');
+  }
+
+  function panelHead(title, sub, badge) {
+    return `<div class="card-h" style="padding-bottom:12px">
+      <div>
+        <div class="card-t">${esc(title)}</div>
+        ${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}
+      </div>
+      ${badge ? `<div>${badge}</div>` : ''}
+    </div>`;
+  }
+
+  $('#rc-sid').addEventListener('change', () => {
+    const sid = $('#rc-sid').value;
+    if (!sid) { $('#rc-body').innerHTML = `<div class="alert info">Select a session.</div>`; return; }
+    const s = sessions.find(x => x.session_id === sid);
+    if (s) render(s);
+  });
 })();
 </script>

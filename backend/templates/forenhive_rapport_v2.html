@@ -4,58 +4,51 @@
 <meta charset="UTF-8">
 <title>ForenHive SOC Report &#8212; {{ report_id }}</title>
 <style>
-  /* ═══════════════════════════════════════════════════
-     FORENHIVE &#8212; Honeypot Forensic Report
-     Theme: honey amber + terminal teal (T-Pot inspired)
-     ═══════════════════════════════════════════════════ */
+  /* ═══════════════════════════════════════════════════════
+     ForenHive &#8212; Honeypot Forensic Report
+     Theme: paper light &#183; wine-red + yellow lightning
+     ═══════════════════════════════════════════════════════ */
 
   /* ── PAGE & PRINT ── */
   @page {
     size: A4;
     margin: 16mm 14mm 18mm 14mm;
-    @bottom-left  { content: "FORENHIVE // {{ report_id }}"; font-family: 'Courier New', monospace; font-size: 7pt; color: #92400e; letter-spacing: 1px; }
-    @bottom-right { content: counter(page) " / " counter(pages); font-family: 'Courier New', monospace; font-size: 7pt; color: #92400e; letter-spacing: 1px; }
+    @bottom-left  { content: "FORENHIVE // {{ report_id }}"; font-family: 'Courier New', monospace; font-size: 7pt; color: #7A6E5A; letter-spacing: 1.5px; }
+    @bottom-right { content: counter(page) " / " counter(pages); font-family: 'Courier New', monospace; font-size: 7pt; color: #7A6E5A; letter-spacing: 1.5px; }
   }
   @page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
 
   /* ── TOKENS ── */
   :root {
-    --paper:      #faf8f2;
-    --paper-2:    #f3ecd8;
-    --paper-3:    #ede4cb;
-    --ink:        #0d1117;
-    --ink-2:      #1f2937;
-    --muted:      #6b6356;
-    --rule:       #d8cfb8;
-    --rule-soft:  #ebe3cc;
+    --bg:        #F5F3EE;
+    --bg2:       #EDE9E0;
+    --bg3:       #E5E0D5;
+    --surface:   #FBF9F5;
+    --surface2:  #F2EFE6;
 
-    /* Honey &#8212; primary */
-    --honey:      #c2570a;
-    --honey-deep: #7c2d12;
-    --honey-glow: #fbbf24;
-    --honey-wash: #fef3c7;
-    --honey-tint: #fdf6e3;
+    --gold:      #8C1A2B;
+    --gold2:     #A62240;
+    --gold-glow: rgba(140,26,43,0.07);
 
-    /* Teal accent */
-    --teal:       #0e7490;
-    --teal-deep:  #155e75;
-    --teal-wash:  #cffafe;
+    --red:       #9B1B1B;
+    --red2:      #C62828;
+    --blue:      #0D47A1;
+    --blue2:     #1565C0;
+    --teal:      #00897B;
 
-    /* Threat scale */
-    --crit:       #991b1b;
-    --high:       #c2410c;
-    --med:        #b45309;
-    --low:        #166534;
+    --yellow:    #C9962E;
+    --yellow2:   #E8B84B;
+    --accent:    #A6802A;
+    --purple:    #7B2FBE;
 
-    /* Terminal palette */
-    --term-bg:    #0a0e14;
-    --term-bg-2:  #11161f;
-    --term-fg:    #d1d5db;
-    --term-green: #4ade80;
-    --term-cyan:  #22d3ee;
-    --term-amber: #fbbf24;
-    --term-red:   #f87171;
-    --term-muted: #6b7280;
+    --text:      #1A1208;
+    --text2:     #3D3220;
+    --text3:     #7A6E5A;
+
+    --border:    rgba(140,26,43,0.10);
+    --border2:   rgba(140,26,43,0.22);
+    --rule:      rgba(140,26,43,0.10);
+    --rule-soft: rgba(140,26,43,0.06);
 
     --mono: 'Courier New', Consolas, monospace;
     --sans: 'Helvetica Neue', Arial, sans-serif;
@@ -65,319 +58,253 @@
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    font-family: var(--sans);
-    font-size: 9.5pt;
-    line-height: 1.55;
-    color: var(--ink);
-    background: var(--paper);
+    font-family: var(--sans); font-size: 9.5pt;
+    line-height: 1.55; color: var(--text);
+    background: var(--bg);
   }
 
   /* ═══════ COVER ═══════ */
   .cover {
     page-break-after: always;
-    background: var(--term-bg);
-    color: var(--term-fg);
+    background: var(--bg);
     margin: -16mm -14mm 0 -14mm;
-    padding: 28mm 18mm 24mm 18mm;
+    padding: 26mm 18mm 22mm 18mm;
     min-height: 260mm;
-    position: relative;
-    overflow: hidden;
-    font-family: var(--mono);
-  }
-  .cover::before {
-    content: "";
-    position: absolute; inset: 0;
-    background-image:
-      radial-gradient(circle at 80% 10%, rgba(251,191,36,.10), transparent 40%),
-      radial-gradient(circle at 10% 90%, rgba(34,211,238,.06), transparent 40%);
-    pointer-events: none;
-  }
-  .cover-hex {
-    position: absolute; top: 0; right: -40mm;
-    width: 160mm; height: 100%; opacity: .14; pointer-events: none;
+    position: relative; overflow: hidden;
   }
   .cover-grid {
     position: absolute; inset: 0;
     background-image:
-      linear-gradient(to right, rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,.025) 1px, transparent 1px);
-    background-size: 12mm 12mm;
+      linear-gradient(rgba(140,26,43,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(140,26,43,0.05) 1px, transparent 1px);
+    background-size: 16mm 16mm;
+    pointer-events: none;
+  }
+  .cover-glow {
+    position: absolute; top: -40mm; right: -40mm;
+    width: 120mm; height: 120mm;
+    background: radial-gradient(circle, rgba(201,150,46,0.20) 0%, rgba(201,150,46,0.06) 50%, transparent 70%);
     pointer-events: none;
   }
   .cover-inner { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
 
   .cover-topbar {
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 7.5pt; color: var(--term-muted); letter-spacing: 2px; text-transform: uppercase;
-    border-bottom: 1px solid rgba(255,255,255,.08);
-    padding-bottom: 4mm; margin-bottom: 18mm;
+    font-family: var(--mono); font-size: 7.5pt; color: var(--text3);
+    letter-spacing: 2px; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4mm; margin-bottom: 12mm;
   }
-  .cover-topbar .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--term-green); margin-right: 6px; }
-  .cover-topbar .right span + span { margin-left: 6mm; }
+  .cover-topbar .brand { color: var(--gold); font-weight: 700; }
+  .cover-topbar .right span + span { margin-left: 5mm; }
+  .cover-topbar .live-dot { display: inline-block; width: 5px; height: 5px; background: var(--yellow); border-radius: 50%; vertical-align: middle; margin-right: 4px; }
 
-  .cover-eyebrow { color: var(--term-amber); font-size: 9pt; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 6mm; }
-  .cover-eyebrow::before { content: "// "; color: var(--term-muted); }
+  .bolt { display: inline-block; width: 9mm; height: 9mm; background: var(--yellow); color: var(--bg); text-align: center; line-height: 9mm; font-size: 16pt; font-weight: 900; border-radius: 1.5mm; vertical-align: middle; margin-right: 3mm; }
+  .cover-brand-line { display: flex; align-items: center; margin-bottom: 14mm; }
+  .cover-brand-line .name { font-family: var(--sans); font-size: 18pt; font-weight: 700; letter-spacing: 5px; color: var(--gold); text-transform: uppercase; }
+  .cover-brand-line .name em { font-style: normal; color: var(--text); }
+  .cover-brand-line .sub { margin-left: auto; font-family: var(--mono); font-size: 8pt; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; }
 
-  .cover-title { font-size: 48pt; font-weight: 700; line-height: .95; letter-spacing: -1px; margin: 0 0 4mm 0; color: #fff; }
-  .cover-title em { font-style: normal; color: var(--term-amber); }
+  .cover-eyebrow { font-family: var(--mono); font-size: 9pt; color: var(--gold); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 5mm; }
+  .cover-eyebrow::before { content: "// "; color: var(--text3); }
 
-  .cover-subtitle {
-    font-family: var(--sans); font-size: 12pt; font-weight: 400;
-    color: var(--term-fg); max-width: 130mm; line-height: 1.5; margin-bottom: 16mm;
-  }
+  .cover-title { font-family: var(--sans); font-size: 52pt; font-weight: 700; line-height: 0.95; letter-spacing: -1px; color: var(--text); margin: 0 0 5mm 0; }
+  .cover-title em { font-style: normal; color: var(--gold); }
 
-  .cover-meta-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
-    border-top: 1px solid rgba(255,255,255,.10);
-    border-bottom: 1px solid rgba(255,255,255,.10);
-    margin-bottom: 14mm;
-  }
-  .cover-meta-cell { padding: 6mm 5mm 6mm 0; border-right: 1px solid rgba(255,255,255,.08); }
+  .cover-subtitle { font-size: 12pt; font-weight: 400; color: var(--text2); max-width: 140mm; line-height: 1.55; margin-bottom: 14mm; }
+
+  .cover-meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 12mm; }
+  .cover-meta-cell { padding: 6mm 5mm 6mm 0; border-right: 1px solid var(--border); }
   .cover-meta-cell:last-child { border-right: none; padding-right: 0; }
-  .cover-meta-label { font-size: 7pt; letter-spacing: 2px; color: var(--term-muted); text-transform: uppercase; margin-bottom: 3mm; }
-  .cover-meta-value { font-size: 11pt; color: #fff; font-weight: 500; }
-  .cover-meta-value .small { font-size: 8.5pt; color: var(--term-fg); }
+  .cover-meta-label { font-family: var(--mono); font-size: 7pt; letter-spacing: 1.8px; color: var(--text3); text-transform: uppercase; margin-bottom: 3mm; }
+  .cover-meta-value { font-size: 13pt; color: var(--text); font-weight: 600; }
+  .cover-meta-value.mono { font-family: var(--mono); font-size: 10pt; font-weight: 500; }
+  .cover-meta-value .small { font-size: 9pt; color: var(--text3); font-family: var(--mono); }
 
-  .cover-verdict { margin-top: auto; display: flex; gap: 4mm; align-items: stretch; }
-  .verdict-block {
-    flex: 1; background: rgba(255,255,255,.03);
-    border: 1px solid rgba(255,255,255,.08);
-    border-left: 3px solid var(--term-amber);
-    padding: 5mm 6mm;
-  }
-  .verdict-block.crit { border-left-color: var(--term-red); }
-  .verdict-label { font-size: 7pt; color: var(--term-muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 2mm; }
-  .verdict-value { font-size: 13pt; color: #fff; font-weight: 600; font-family: var(--sans); }
-  .verdict-value.score { color: var(--term-red); font-family: var(--mono); }
+  .cover-verdict { margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .vbox { background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; padding: 5mm 5mm 4mm 5mm; position: relative; overflow: hidden; }
+  .vbox::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
+  .vbox.crit::before { background: linear-gradient(90deg, var(--red), var(--red2)); }
+  .vbox-label { font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 1.6px; text-transform: uppercase; margin-bottom: 3mm; }
+  .vbox-value { font-size: 14pt; font-weight: 700; color: var(--text); line-height: 1.1; }
+  .vbox-value.score { font-family: var(--mono); color: var(--red); font-size: 17pt; }
+  .vbox-value.score .max { color: var(--text3); font-size: 10pt; font-weight: 400; }
+  .vbox-value.lvl { color: var(--red); }
 
-  .cover-footer {
-    margin-top: 14mm; display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 7.5pt; color: var(--term-muted); letter-spacing: 1.5px;
-  }
-  .tlp-stamp {
-    display: inline-block; background: #fef3c7; color: var(--honey-deep);
-    padding: 2mm 5mm; font-family: var(--mono); font-size: 9pt; font-weight: 700; letter-spacing: 3px;
-  }
+  .cover-footer { margin-top: 12mm; display: flex; justify-content: space-between; align-items: flex-end; font-family: var(--mono); font-size: 7.5pt; color: var(--text3); letter-spacing: 1.2px; }
+  .tlp-stamp { display: inline-block; background: var(--yellow); color: var(--text); padding: 2mm 5mm; font-family: var(--mono); font-size: 9pt; font-weight: 700; letter-spacing: 3px; border-radius: 1.5mm; }
 
   /* ═══════ SECTION CHROME ═══════ */
   .section { padding-top: 8mm; }
   .section-bar {
     display: flex; align-items: baseline; gap: 4mm;
     margin: 0 0 6mm 0; padding-bottom: 3mm;
-    border-bottom: 2px solid var(--ink);
-    page-break-after: avoid;
+    border-bottom: 1px solid var(--border);
+    page-break-after: avoid; position: relative;
   }
-  .section-num {
-    font-family: var(--mono); font-size: 9pt; font-weight: 700;
-    color: var(--honey); letter-spacing: 1px;
-    background: var(--honey-wash); padding: 1.5mm 3mm;
-    border: 1px solid var(--honey); border-radius: 1px;
-  }
-  .section-title { font-size: 18pt; font-weight: 700; line-height: 1.1; color: var(--ink); margin: 0; flex: 1; }
-  .section-tag { font-family: var(--mono); font-size: 7.5pt; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .section-bar::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 30mm; height: 2px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
+  .section-num { font-family: var(--mono); font-size: 8.5pt; font-weight: 700; color: var(--gold); letter-spacing: 1.5px; background: var(--gold-glow); padding: 1.5mm 3mm; border: 1px solid var(--border2); border-radius: 20pt; }
+  .section-title { font-size: 22pt; font-weight: 700; line-height: 1.1; color: var(--text); margin: 0; flex: 1; letter-spacing: -0.01em; }
+  .section-tag { font-family: var(--mono); font-size: 7.5pt; color: var(--text3); letter-spacing: 1.2px; text-transform: uppercase; }
 
-  h2 {
-    font-family: var(--mono); font-size: 9.5pt; font-weight: 600;
-    color: var(--ink); margin: 7mm 0 3mm 0;
-    text-transform: uppercase; letter-spacing: 1.5px;
-    page-break-after: avoid;
-  }
-  h2::before { content: "\25B8 "; color: var(--honey); font-weight: 700; }
-  h3 { font-family: var(--sans); font-size: 9pt; font-weight: 700; color: var(--ink-2); margin: 5mm 0 2mm 0; page-break-after: avoid; }
+  h2 { font-family: var(--mono); font-size: 9.5pt; font-weight: 700; color: var(--text); margin: 7mm 0 3mm 0; text-transform: uppercase; letter-spacing: 1.6px; page-break-after: avoid; }
+  h2::before { content: "\25B8 "; color: var(--gold); }
+  h3 { font-size: 11pt; font-weight: 700; color: var(--text); margin: 5mm 0 2mm 0; page-break-after: avoid; }
   p { margin: 0 0 3mm 0; }
 
   /* ═══════ TOC ═══════ */
   .toc { page-break-after: always; padding-top: 4mm; }
-  .toc-heading { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 2mm; }
-  .toc-title { font-size: 32pt; font-weight: 700; line-height: 1; margin: 0 0 10mm 0; letter-spacing: -1px; }
-  .toc-title em { font-style: normal; color: var(--honey); }
+  .toc-heading { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--gold); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 3mm; }
+  .toc-title { font-size: 36pt; font-weight: 700; line-height: 1; margin: 0 0 10mm 0; letter-spacing: -1px; color: var(--text); }
+  .toc-title em { font-style: normal; color: var(--gold); }
   .toc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10mm; }
-  .toc-entry {
-    display: flex; align-items: baseline; gap: 3mm;
-    padding: 2.5mm 0; border-bottom: 1px dotted var(--rule); font-size: 10pt;
-  }
-  .toc-num { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--honey); flex: 0 0 14mm; letter-spacing: 1px; }
+  .toc-entry { display: flex; align-items: baseline; gap: 3mm; padding: 2.5mm 0; border-bottom: 1px dotted var(--border2); font-size: 10pt; color: var(--text); }
+  .toc-num { font-family: var(--mono); font-size: 8pt; font-weight: 700; color: var(--gold); flex: 0 0 14mm; letter-spacing: 1px; }
   .toc-label { flex: 1; }
-  .toc-entry.sub { padding-left: 14mm; font-size: 9pt; color: var(--muted); border-bottom-style: dashed; }
-  .toc-entry.sub .toc-num { color: var(--teal); font-size: 7.5pt; }
+  .toc-entry.sub { padding-left: 14mm; font-size: 9pt; color: var(--text2); border-bottom-style: dashed; }
+  .toc-entry.sub .toc-num { color: var(--accent); font-size: 7.5pt; }
 
   /* ═══════ TABLES ═══════ */
-  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm 0; font-size: 8.5pt; background: var(--paper); }
-  th, td { padding: 2.2mm 3mm; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-soft); }
-  th {
-    background: var(--ink); color: var(--honey-glow);
-    font-family: var(--mono); font-weight: 600; font-size: 7.5pt;
-    text-transform: uppercase; letter-spacing: 1.2px;
-    border-bottom: 2px solid var(--honey);
-  }
-  tr:nth-child(even) td { background: var(--honey-tint); }
-  td code { font-family: var(--mono); font-size: 8pt; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm 0; font-size: 9pt; background: var(--surface); }
+  th, td { padding: 2.5mm 3mm; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-soft); }
+  th { background: var(--surface2); color: var(--text3); font-family: var(--mono); font-weight: 600; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1.4px; border-bottom: 1px solid var(--border); }
+  td code { font-family: var(--mono); font-size: 8.5pt; color: var(--text); }
+  .tbl-zebra tr:nth-child(even) td { background: var(--surface2); }
+  .kv th, .kv td { padding: 2.5mm 3mm; border-bottom: 1px solid var(--rule-soft); }
+  .kv th { background: var(--surface2); color: var(--text2); font-family: var(--sans); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 8.5pt; width: 40%; }
+  .kv tr td { background: var(--surface); }
 
-  /* compact key/value table */
-  .kv th, .kv td { padding: 2mm 3mm; border-bottom: 1px solid var(--rule-soft); }
-  .kv th { background: var(--paper-2); color: var(--ink-2); font-family: var(--sans); text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--rule-soft); width: 40%; }
-  .kv tr td { background: var(--paper); }
+  /* ═══════ CALLOUTS ═══════ */
+  .callout { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--gold); padding: 4mm 5mm; margin: 3mm 0; font-size: 9pt; border-radius: 0 2mm 2mm 0; }
+  .callout.yellow { background: #F5EED8; border-color: rgba(201,150,46,0.30); border-left-color: var(--yellow); }
+  .callout.red { background: rgba(198,40,40,0.05); border-color: rgba(198,40,40,0.20); border-left-color: var(--red2); }
+  .callout.blue { background: rgba(13,71,161,0.05); border-color: rgba(13,71,161,0.20); border-left-color: var(--blue); }
 
-  /* ═══════ BLOCKS ═══════ */
-  .callout { background: var(--honey-tint); border-left: 3px solid var(--honey); padding: 3mm 4mm; margin: 3mm 0; font-size: 9pt; }
-  .callout.teal { background: var(--teal-wash); border-left-color: var(--teal); }
-  .callout.warn { background: #fef3c7; border-left-color: var(--high); color: var(--honey-deep); font-size: 8.5pt; }
+  .disclaimer { border: 1px dashed var(--yellow); background: #F5EED8; padding: 4mm 5mm; margin: 3mm 0 5mm 0; font-size: 8.5pt; color: var(--text2); border-radius: 2mm; }
+  .disclaimer strong { color: var(--accent); font-family: var(--mono); letter-spacing: 1px; }
 
-  .disclaimer {
-    border: 1px dashed var(--honey);
-    background: repeating-linear-gradient(45deg, var(--honey-tint), var(--honey-tint) 6px, var(--paper) 6px, var(--paper) 12px);
-    padding: 4mm 5mm; margin: 3mm 0 5mm 0; font-size: 8.5pt; color: var(--ink-2);
-  }
-  .disclaimer strong { color: var(--honey-deep); font-family: var(--mono); letter-spacing: 1px; }
-
-  /* ── TERMINAL CODE ── */
-  pre {
-    font-family: var(--mono); font-size: 7.5pt;
-    background: var(--term-bg); color: var(--term-fg);
-    padding: 4mm 5mm; margin: 3mm 0;
-    border-left: 3px solid var(--term-amber);
-    white-space: pre-wrap; word-break: break-all; line-height: 1.55;
-  }
-  code { font-family: var(--mono); font-size: 8pt; background: var(--paper-2); padding: .3mm 1.5mm; border-radius: 1px; color: var(--ink); }
+  pre { font-family: var(--mono); font-size: 7.5pt; background: #F5EED8; color: var(--text); padding: 4mm 5mm; margin: 3mm 0; border: 1px solid rgba(201,150,46,0.25); border-left: 3px solid var(--yellow); border-radius: 2mm; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+  code { font-family: var(--mono); font-size: 8.5pt; background: var(--bg3); color: var(--text); padding: 0.3mm 1.5mm; border-radius: 1.5mm; }
 
   /* ═══════ TAGS / BADGES ═══════ */
-  .tag {
-    display: inline-block; font-family: var(--mono); font-size: 7pt; font-weight: 600;
-    padding: .5mm 2.5mm; margin: 0 1mm 1mm 0; letter-spacing: .5px;
-    border: 1px solid currentColor; border-radius: 1px;
-  }
-  .tag-mitre { color: var(--teal-deep); background: var(--teal-wash); border-color: var(--teal); }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 7pt; font-weight: 700; padding: .8mm 3mm; margin: 0 1mm 1mm 0; letter-spacing: 0.5px; border: 1px solid; border-radius: 20pt; }
+  .tag-mitre { color: var(--blue); background: rgba(13,71,161,0.08); border-color: rgba(13,71,161,0.28); }
   .tag-yara  { color: #14532d; background: #dcfce7; border-color: #16a34a; }
-  .tag-ioc   { color: var(--honey-deep); background: var(--honey-wash); border-color: var(--honey); }
+  .tag-ioc   { color: var(--gold); background: var(--gold-glow); border-color: var(--border2); }
 
-  .score-badge {
-    display: inline-block; font-family: var(--mono); font-size: 8pt; font-weight: 700;
-    padding: 1mm 3mm; color: #fff; letter-spacing: 1px; border-radius: 1px;
-  }
-  .score-critical { background: var(--crit); }
-  .score-high     { background: var(--high); }
-  .score-medium   { background: var(--med); }
-  .score-low      { background: var(--low); }
+  .score-badge { display: inline-block; font-family: var(--mono); font-size: 9pt; font-weight: 700; padding: 1mm 3.5mm; color: var(--surface); letter-spacing: 1px; border-radius: 1.5mm; }
+  .score-critical { background: var(--red); }
+  .score-high     { background: var(--gold); }
+  .score-medium   { background: var(--accent); }
+  .score-low      { background: var(--blue); }
+
+  sup.ref { font-family: var(--mono); font-size: 6.5pt; color: var(--gold); font-weight: 700; }
 
   /* ═══════ KPI TILES ═══════ */
-  .kpi-grid {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
-    border: 1px solid var(--rule); margin: 0 0 5mm 0; background: var(--paper);
-  }
-  .kpi { padding: 4mm 4mm; border-right: 1px solid var(--rule); position: relative; }
-  .kpi:last-child { border-right: none; }
-  .kpi-label { font-family: var(--mono); font-size: 7pt; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2mm; }
-  .kpi-value { font-size: 16pt; font-weight: 700; color: var(--ink); line-height: 1; letter-spacing: -.5px; }
-  .kpi-value.mono { font-family: var(--mono); font-size: 13pt; }
-  .kpi-sub { font-size: 8pt; color: var(--muted); margin-top: 2mm; }
-  .kpi.accent { background: var(--honey); color: #fff; }
-  .kpi.accent .kpi-label { color: rgba(255,255,255,.85); }
-  .kpi.accent .kpi-value, .kpi.accent .kpi-sub { color: #fff; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 0 0 5mm 0; }
+  .kpi { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; padding: 5mm 5mm 4mm 5mm; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
+  .kpi.r::before { background: linear-gradient(90deg, var(--red), var(--red2)); }
+  .kpi.b::before { background: linear-gradient(90deg, var(--blue), var(--blue2)); }
+  .kpi.y::before { background: var(--yellow); }
+  .kpi-label { font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 1.6px; text-transform: uppercase; margin-bottom: 3mm; }
+  .kpi-value { font-size: 22pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.01em; }
+  .kpi-value.mono { font-family: var(--mono); font-size: 18pt; }
+  .kpi-sub { font-size: 8.5pt; color: var(--text3); margin-top: 2mm; }
+  .kpi.r .kpi-value { color: var(--red); }
+  .kpi.b .kpi-value { color: var(--blue); }
+  .kpi.y .kpi-value { color: var(--accent); }
 
-  /* ═══════ RISK GAUGE ═══════ */
-  .risk-panel {
-    display: grid; grid-template-columns: 70mm 1fr; gap: 8mm; align-items: center;
-    padding: 5mm 6mm; background: var(--paper-2); border: 1px solid var(--rule); margin: 3mm 0 5mm 0;
-  }
-  .gauge { position: relative; width: 60mm; height: 36mm; }
-  .gauge svg { width: 100%; height: 100%; }
-  .gauge-readout { position: absolute; left: 0; right: 0; bottom: 4mm; text-align: center; }
-  .gauge-readout .num { font-family: var(--mono); font-size: 22pt; font-weight: 700; color: var(--ink); line-height: 1; }
-  .gauge-readout .denom { font-family: var(--mono); font-size: 10pt; color: var(--muted); }
-  .gauge-readout .lvl { display: block; font-family: var(--mono); font-size: 8pt; letter-spacing: 2px; margin-top: 1mm; color: var(--crit); font-weight: 700; }
+  /* ═══════ RISK GAUGE (circular) ═══════ */
+  .risk-panel { display: grid; grid-template-columns: 60mm 1fr; gap: 8mm; align-items: center; padding: 6mm; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; margin: 3mm 0 5mm 0; }
+  .gauge { position: relative; width: 50mm; height: 50mm; margin: 0 auto; }
+  .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .gauge-readout { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .gauge-readout .num { font-size: 28pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.02em; }
+  .gauge-readout .denom { font-family: var(--mono); font-size: 9pt; color: var(--text3); margin-top: 1mm; }
+  .gauge-readout .lvl { font-family: var(--mono); font-size: 8pt; letter-spacing: 2px; margin-top: 2mm; color: var(--red); font-weight: 700; }
   .risk-meta { font-size: 9pt; }
-  .risk-meta dt { font-family: var(--mono); font-size: 7pt; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2mm; }
-  .risk-meta dd { margin: 0 0 1mm 0; font-weight: 500; color: var(--ink); }
+  .risk-meta dt { font-family: var(--mono); font-size: 7pt; color: var(--text3); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2mm; }
+  .risk-meta dd { margin: 0 0 1mm 0; font-weight: 500; color: var(--text); }
 
   /* ── SIGNAL BARS ── */
-  .signal-row { display: grid; grid-template-columns: 50mm 1fr 18mm; align-items: center; gap: 3mm; padding: 1.5mm 0; border-bottom: 1px dotted var(--rule-soft); }
+  .signal-row { display: grid; grid-template-columns: 56mm 1fr 18mm; align-items: center; gap: 3mm; padding: 1.8mm 0; border-bottom: 1px solid var(--rule-soft); }
   .signal-row:last-child { border-bottom: none; }
-  .signal-name { font-size: 8.5pt; color: var(--ink-2); }
-  .signal-name .sub { display: block; font-family: var(--mono); font-size: 6.5pt; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: .5mm; }
-  .signal-track { height: 5mm; background: #ddd6c4; border: 1px solid #c4b99e; position: relative; overflow: hidden; border-radius: 1px; }
-  .signal-fill { height: 100%; }
-  .signal-fill.c-zero  { background: transparent; }
-  .signal-fill.c-low   { background: #166534; }
-  .signal-fill.c-med   { background: #c2570a; }
-  .signal-fill.c-high  { background: #991b1b; }
-  .signal-pts { font-family: var(--mono); font-size: 8.5pt; font-weight: 700; text-align: right; color: var(--ink); }
-  .signal-pts .max { color: var(--muted); font-weight: 400; }
+  .signal-name { font-size: 9pt; color: var(--text); }
+  .signal-name .sub { display: block; font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 0.5px; margin-top: .5mm; }
+  .signal-track { height: 4.5mm; background: var(--bg3); border-radius: 2mm; overflow: hidden; border: 1px solid var(--border); }
+  .signal-fill { height: 100%; border-radius: 2mm; }
+  .signal-fill.c-zero { background: transparent; }
+  .signal-fill.c-low  { background: var(--blue); }
+  .signal-fill.c-med  { background: var(--accent); }
+  .signal-fill.c-high { background: var(--red); }
+  .signal-pts { font-family: var(--mono); font-size: 9pt; font-weight: 700; text-align: right; color: var(--text); }
+  .signal-pts .max { color: var(--text3); font-weight: 400; }
 
-  /* ═══════ VISUAL TIMELINE ═══════ */
+  /* ═══════ TIMELINE (card style) ═══════ */
   .timeline { position: relative; padding-left: 14mm; margin: 3mm 0 5mm 0; }
-  .timeline::before {
-    content: ""; position: absolute; left: 6mm; top: 0; bottom: 0; width: 2px;
-    background: linear-gradient(to bottom, var(--honey) 0%, var(--honey) 80%, var(--rule) 100%);
-  }
-  .tl-item { position: relative; padding: 0 0 5mm 0; }
-  .tl-item::before {
-    content: ""; position: absolute; left: -8.5mm; top: 1.5mm;
-    width: 3mm; height: 3mm; background: var(--honey);
-    border: 2px solid var(--paper); border-radius: 50%;
-    box-shadow: 0 0 0 1px var(--honey);
-  }
-  .tl-item.crit::before { background: var(--crit); box-shadow: 0 0 0 1px var(--crit); }
-  .tl-ts { font-family: var(--mono); font-size: 7.5pt; color: var(--muted); letter-spacing: 1px; }
-  .tl-head { display: flex; align-items: baseline; gap: 3mm; margin-bottom: 1mm; font-family: var(--mono); font-size: 8pt; }
-  .tl-type { color: var(--honey-deep); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-  .tl-body { font-size: 9pt; color: var(--ink-2); }
-  .tl-body code { font-size: 7.5pt; }
+  .timeline::before { content: ""; position: absolute; left: 6mm; top: 0; bottom: 0; width: 2px; background: var(--border2); }
+  .tl-item { position: relative; padding: 3mm 4mm; margin-bottom: 3mm; background: var(--surface); border: 1px solid var(--border); border-radius: 2mm; page-break-inside: avoid; }
+  .tl-item::before { content: ""; position: absolute; left: -8.5mm; top: 4mm; width: 3.5mm; height: 3.5mm; background: var(--gold); border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--gold); }
+  .tl-item.crit::before { background: var(--red2); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--red2); }
+  .tl-item.warn::before { background: var(--yellow); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--yellow); }
+  .tl-item.info::before { background: var(--blue); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--blue); }
+  .tl-head { display: flex; align-items: center; gap: 3mm; margin-bottom: 1.5mm; flex-wrap: wrap; }
+  .tl-ts { font-family: var(--mono); font-size: 8pt; color: var(--text3); letter-spacing: 0.5px; }
+  .tl-type { font-family: var(--mono); font-size: 7.5pt; font-weight: 700; color: var(--gold); text-transform: uppercase; letter-spacing: 1.2px; }
+  .tl-body { font-size: 9pt; color: var(--text2); }
+  .tl-body code { font-size: 8pt; }
+
+  /* ── PILLS (IPLocate) ── */
+  .pill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin: 2mm 0 4mm 0; }
+  .pill { display: flex; align-items: center; gap: 2mm; font-family: var(--mono); font-size: 8pt; padding: 2mm 3mm; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 2mm; letter-spacing: 1px; text-transform: uppercase; }
+  .pill .ind { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+  .pill.ok  { background: rgba(13,71,161,0.05); border-color: rgba(13,71,161,0.25); color: var(--blue); }
+  .pill.ok .ind  { background: var(--blue); }
+  .pill.danger { color: var(--red); border-color: rgba(198,40,40,0.30); background: rgba(198,40,40,0.05); }
+  .pill.danger .ind { background: var(--red2); }
 
   /* ── LOG ROWS (appendix) ── */
-  .log-row { display: grid; grid-template-columns: 30mm 28mm 1fr; gap: 3mm; padding: 1mm 0; border-bottom: 1px solid var(--rule-soft); font-size: 7.5pt; }
-  .log-row .ts { font-family: var(--mono); color: var(--muted); }
-  .log-row .ty { font-family: var(--mono); color: var(--honey-deep); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-  .log-row .dt { font-family: var(--mono); word-break: break-all; }
+  .log-row { display: grid; grid-template-columns: 28mm 28mm 1fr; gap: 3mm; padding: 1.5mm 0; border-bottom: 1px solid var(--rule-soft); font-size: 7.5pt; }
+  .log-row .ts { font-family: var(--mono); color: var(--text3); }
+  .log-row .ty { font-family: var(--mono); color: var(--gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .log-row .dt { font-family: var(--mono); color: var(--text2); word-break: break-all; }
 
   /* ── REFERENCES ── */
   .ref-list { list-style: none; padding: 0; counter-reset: ref; }
-  .ref-list li {
-    counter-increment: ref; padding: 1.5mm 0 1.5mm 10mm; text-indent: -10mm;
-    font-size: 8pt; color: var(--ink-2); border-bottom: 1px dotted var(--rule-soft);
-  }
-  .ref-list li::before { content: "[" counter(ref) "]"; display: inline-block; width: 8mm; font-family: var(--mono); font-weight: 700; color: var(--honey); margin-right: 2mm; }
-  sup.ref { font-family: var(--mono); font-size: 6.5pt; color: var(--honey); font-weight: 700; }
-
-  /* ── STATUS PILLS ── */
-  .pill {
-    display: inline-flex; align-items: center; gap: 2mm;
-    font-family: var(--mono); font-size: 7.5pt; padding: .8mm 2.5mm;
-    background: var(--paper-2); color: var(--ink);
-    border: 1px solid var(--rule); border-radius: 1px; letter-spacing: 1px; text-transform: uppercase;
-  }
-  .pill .ind { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
-  .pill.safe  { background: #f0fdf4; border-color: #16a34a; color: #15803d; }
-  .pill.safe .ind  { background: #16a34a; }
-  .pill.danger { color: var(--crit); border-color: var(--crit); background: #fef2f2; }
-  .pill.danger .ind { background: var(--crit); }
+  .ref-list li { counter-increment: ref; padding: 2mm 0 2mm 10mm; text-indent: -10mm; font-size: 9pt; color: var(--text2); border-bottom: 1px dotted var(--rule-soft); }
+  .ref-list li::before { content: "[" counter(ref) "]"; display: inline-block; width: 8mm; font-family: var(--mono); font-weight: 700; color: var(--gold); margin-right: 2mm; }
 
   /* ── UTILITIES ── */
   .page-break { page-break-before: always; }
   .no-break { page-break-inside: avoid; }
   .mono { font-family: var(--mono); }
-  .muted { color: var(--muted); }
+  .muted { color: var(--text3); }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
   .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; }
+  .text-red { color: var(--red); }
+  .text-gold { color: var(--gold); }
 </style>
 </head>
 <body>
 
 {# ═══ COVER ═══ #}
 <section class="cover">
-  <svg class="cover-hex" viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-    <defs>
-      <pattern id="hex" x="0" y="0" width="24" height="28" patternUnits="userSpaceOnUse">
-        <polygon points="12,2 22,8 22,20 12,26 2,20 2,8" fill="none" stroke="#fbbf24" stroke-width=".6"/>
-      </pattern>
-    </defs>
-    <rect width="200" height="300" fill="url(#hex)"/>
-  </svg>
   <div class="cover-grid"></div>
-
+  <div class="cover-glow"></div>
   <div class="cover-inner">
     <div class="cover-topbar">
-      <div><span class="dot"></span>FORENHIVE // FORENSIC ENGINE v{{ engine_version | default("1.0") }}</div>
-      <div class="right"><span>SESSION CAPTURED</span><span>{{ session_start }}</span></div>
+      <div><span class="brand">FORENHIVE</span><span style="margin-left:6mm;">// FORENSIC ENGINE v{{ engine_version | default("1.0") }}</span></div>
+      <div class="right">
+        <span><span class="live-dot"></span>SESSION CAPTURED</span>
+        <span>{{ session_start }}</span>
+      </div>
+    </div>
+
+    <div class="cover-brand-line">
+      <span class="bolt">&#9889;</span>
+      <span class="name">FOREN<em>HIVE</em></span>
+      <span class="sub">Honeypot IDS</span>
     </div>
 
     <div class="cover-eyebrow">Honeypot Forensic Analysis</div>
@@ -411,21 +338,21 @@
     </div>
 
     <div class="cover-verdict">
-      <div class="verdict-block {% if risk_score >= 60 %}crit{% endif %}">
-        <div class="verdict-label">Verdict</div>
-        <div class="verdict-value">{{ verdict | default("Pending analysis") }}</div>
+      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
+        <div class="vbox-label">Verdict</div>
+        <div class="vbox-value">{{ verdict | default("Pending analysis") }}</div>
       </div>
-      <div class="verdict-block {% if risk_score >= 60 %}crit{% endif %}">
-        <div class="verdict-label">Risk Score</div>
-        <div class="verdict-value score">{{ risk_score }} / 100</div>
+      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
+        <div class="vbox-label">Risk Score</div>
+        <div class="vbox-value score">{{ risk_score }}<span class="max"> / 100</span></div>
       </div>
-      <div class="verdict-block">
-        <div class="verdict-label">Classification</div>
-        <div class="verdict-value" style="font-family:var(--mono);font-size:11pt;letter-spacing:2px;">{{ risk_level | default("INFO") }}</div>
+      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
+        <div class="vbox-label">Classification</div>
+        <div class="vbox-value lvl">{{ risk_level | default("INFO") }}</div>
       </div>
-      <div class="verdict-block">
-        <div class="verdict-label">Confidence</div>
-        <div class="verdict-value">{{ risk_confidence | default("N/A") }}</div>
+      <div class="vbox">
+        <div class="vbox-label">Confidence</div>
+        <div class="vbox-value">{{ risk_confidence | default("N/A") }}</div>
       </div>
     </div>
 
@@ -434,7 +361,7 @@
         Analyst: ForenHive Automated Engine v{{ engine_version | default("1.0") }}<br>
         Generated: {{ generated_at }}
       </div>
-      <div class="tlp-stamp">{{ classification | default("TLP:AMBER") }}</div>
+      <div class="tlp-stamp">&#9889; {{ classification | default("TLP:AMBER") }}</div>
     </div>
   </div>
 </section>
@@ -448,8 +375,7 @@
       <div class="toc-entry"><span class="toc-num">01</span><span class="toc-label">Executive Brief</span></div>
       <div class="toc-entry"><span class="toc-num">02</span><span class="toc-label">Methodology</span></div>
       <div class="toc-entry sub"><span class="toc-num">2.1</span><span class="toc-label">Data Sources</span></div>
-      <div class="toc-entry sub"><span class="toc-num">2.2</span><span class="toc-label">Analysis Pipeline</span></div>
-      <div class="toc-entry sub"><span class="toc-num">2.3</span><span class="toc-label">Risk Scoring Model</span></div>
+      <div class="toc-entry sub"><span class="toc-num">2.2</span><span class="toc-label">Risk Scoring Model</span></div>
       <div class="toc-entry"><span class="toc-num">03</span><span class="toc-label">Session Fingerprint</span></div>
       <div class="toc-entry sub"><span class="toc-num">3.1</span><span class="toc-label">Network Identity</span></div>
       <div class="toc-entry sub"><span class="toc-num">3.2</span><span class="toc-label">WHOIS Registry</span></div>
@@ -460,7 +386,7 @@
     <div>
       <div class="toc-entry"><span class="toc-num">05</span><span class="toc-label">Threat Analysis</span></div>
       <div class="toc-entry sub"><span class="toc-num">5.1</span><span class="toc-label">MITRE ATT&amp;CK Mapping</span></div>
-      <div class="toc-entry sub"><span class="toc-num">5.2</span><span class="toc-label">Malware (YARA &amp; VirusTotal)</span></div>
+      <div class="toc-entry sub"><span class="toc-num">5.2</span><span class="toc-label">Malware (YARA &middot; VirusTotal)</span></div>
       <div class="toc-entry sub"><span class="toc-num">5.3</span><span class="toc-label">Composite Risk Score</span></div>
       <div class="toc-entry"><span class="toc-num">06</span><span class="toc-label">Behavioral Profile</span></div>
       <div class="toc-entry"><span class="toc-num">07</span><span class="toc-label">Indicators of Compromise</span></div>
@@ -483,7 +409,7 @@
   </div>
 
   <div class="kpi-grid no-break">
-    <div class="kpi accent">
+    <div class="kpi r">
       <div class="kpi-label">Risk Score</div>
       <div class="kpi-value mono">{{ risk_score }}/100</div>
       <div class="kpi-sub">{{ risk_level }} &middot; conf {{ risk_confidence | default("N/A") }}</div>
@@ -493,14 +419,14 @@
       <div class="kpi-value">{{ event_count }}</div>
       <div class="kpi-sub">across {{ honeypot_type | default("Cowrie SSH") }}</div>
     </div>
-    <div class="kpi">
+    <div class="kpi y">
       <div class="kpi-label">Auth Attempts</div>
       <div class="kpi-value">{{ auth_attempts | default([]) | length }}</div>
       <div class="kpi-sub">{% if auth_success %}brute force &middot; 1 success{% else %}brute force &middot; 0 success{% endif %}</div>
     </div>
-    <div class="kpi">
+    <div class="kpi b">
       <div class="kpi-label">Session Duration</div>
-      <div class="kpi-value">{{ session_duration | default("N/A") }}</div>
+      <div class="kpi-value mono">{{ session_duration | default("N/A") }}</div>
       <div class="kpi-sub">UTC</div>
     </div>
   </div>
@@ -509,10 +435,9 @@
     On <strong>{{ session_date }}</strong>, the ForenHive honeypot cluster recorded a session originating
     from <code>{{ source_ip }}</code> ({{ geo_city }}, {{ geo_country }} &middot; AS{{ asn }}{% if isp %} &middot; {{ isp }}{% endif %}).
     {% if abuse_score is defined and abuse_score is not none %}
-      AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> confidence of abuse{% if abuse_reports %} across {{ abuse_reports }} reports{% endif %}.<sup class="ref">1</sup>
+      AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> confidence of abuse{% if abuse_reports %} across {{ abuse_reports }} reports{% endif %}<sup class="ref">1</sup>.
     {% endif %}
   </p>
-
   <p>
     The session comprised <strong>{{ event_count }}</strong> logged events across <strong>{{ honeypot_type | default("Cowrie SSH") }}</strong>.
     {% if auth_attempts is defined and auth_attempts | length > 0 %}
@@ -522,7 +447,6 @@
     {% endif %}
     {% if exec_narrative is defined and exec_narrative %}{{ exec_narrative }}{% endif %}
   </p>
-
   <p>
     {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
       <strong>{{ mitre_techniques | length }} MITRE ATT&amp;CK technique{{ "s" if mitre_techniques | length > 1 else "" }}</strong> were identified
@@ -540,7 +464,6 @@
       Behavioral indicators are consistent with <strong>{{ malware_family }}</strong>.<sup class="ref">2</sup>
     {% endif %}
   </p>
-
   {% if bottom_line is defined and bottom_line %}
   <div class="callout"><strong>Bottom line.</strong> {{ bottom_line }}</div>
   {% endif %}
@@ -555,8 +478,8 @@
   </div>
 
   <h2>Data sources</h2>
-  <table>
-    <tr><th style="width:30mm">Source</th><th>Description</th><th>Purpose</th></tr>
+  <table class="tbl-zebra">
+    <tr><th style="width:32mm">Source</th><th>Description</th><th>Purpose</th></tr>
     <tr><td>{{ honeypot_type | default("Cowrie") }}</td><td>SSH/Telnet medium-interaction honeypot</td><td>Session logs, auth attempts, commands, dropped files</td></tr>
     <tr><td>AbuseIPDB</td><td>Crowd-sourced IP reputation</td><td>Abuse confidence score, report count</td></tr>
     <tr><td>MaxMind GeoLite2 / IPLocate</td><td>IP geolocation &amp; classification</td><td>Country, city, ASN, ISP, Tor/VPN/proxy flags</td></tr>
@@ -574,7 +497,7 @@
   </p>
 
   <h2>Risk scoring model &#8212; 6 signals</h2>
-  <table>
+  <table class="tbl-zebra">
     <tr><th style="width:50mm">Signal</th><th style="width:22mm">Max pts</th><th>Description</th></tr>
     <tr><td>IP Reputation</td><td class="mono">25</td><td>AbuseIPDB abuse confidence (thresholded). Skipped for private IPs.</td></tr>
     <tr><td>Compromise Confirmed</td><td class="mono">25</td><td>Binary &#8212; successful auth or exploit activation on any honeypot.</td></tr>
@@ -602,11 +525,7 @@
         <tr><th>City</th><td>{{ geo_city }}</td></tr>
         <tr><th>ASN</th><td class="mono">AS{{ asn }}</td></tr>
         <tr><th>ISP / Org</th><td>{{ isp | default("N/A") }}</td></tr>
-        <tr><th>AbuseIPDB Score</th><td>
-          {% if abuse_score is defined and abuse_score is not none %}
-            <strong style="color:var(--crit)">{{ abuse_score }}%</strong><sup class="ref">1</sup>
-          {% else %}N/A{% endif %}
-        </td></tr>
+        <tr><th>AbuseIPDB Score</th><td>{% if abuse_score is defined and abuse_score is not none %}<strong class="text-red">{{ abuse_score }}%</strong><sup class="ref">1</sup>{% else %}N/A{% endif %}</td></tr>
         <tr><th>AbuseIPDB Reports</th><td class="mono">{{ abuse_reports | default("N/A") }}</td></tr>
       </table>
     </div>
@@ -634,20 +553,20 @@
     {% if whois_data.get('network_type') %}<tr><th>Network Type</th><td>{{ whois_data.get('network_type') }}</td></tr>{% endif %}
     {% if whois_data.get('registration') %}<tr><th>Registered</th><td class="mono">{{ whois_data.get('registration')[:10] }}</td></tr>{% endif %}
     {% if whois_data.get('last_changed') %}<tr><th>Last Updated</th><td class="mono">{{ whois_data.get('last_changed')[:10] }}</td></tr>{% endif %}
-    {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="mono" style="color:var(--crit)">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
+    {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="mono text-red">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
     {% if ptr_hostname is defined and ptr_hostname %}<tr><th>PTR (rDNS)</th><td class="mono">{{ ptr_hostname }}</td></tr>{% endif %}
   </table>
   {% endif %}
 
   {% if iplocate_data is defined and iplocate_data %}
   <h2>3.3 IPLocate &#8212; threat classification</h2>
-  <div class="three-col" style="margin-bottom:3mm">
-    <div class="pill {% if iplocate_data.is_tor %}danger{% else %}safe{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
-    <div class="pill {% if iplocate_data.is_vpn or iplocate_data.is_proxy %}danger{% else %}safe{% endif %}"><span class="ind"></span>VPN / Proxy &middot; {% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</div>
-    <div class="pill {% if iplocate_data.is_hosting %}danger{% else %}safe{% endif %}"><span class="ind"></span>Hosting &middot; {% if iplocate_data.is_hosting %}Yes{% else %}No{% endif %}</div>
-    <div class="pill {% if iplocate_data.is_abuser %}danger{% else %}safe{% endif %}"><span class="ind"></span>Known Abuser &middot; {% if iplocate_data.is_abuser %}YES{% else %}No{% endif %}</div>
-    <div class="pill {% if iplocate_data.is_bogon %}danger{% else %}safe{% endif %}"><span class="ind"></span>Bogon &middot; {% if iplocate_data.is_bogon %}YES{% else %}No{% endif %}</div>
-    <div class="pill {% if iplocate_data.is_datacenter %}danger{% else %}safe{% endif %}"><span class="ind"></span>Datacenter &middot; {% if iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</div>
+  <div class="pill-grid">
+    <div class="pill {% if iplocate_data.is_tor %}danger{% else %}ok{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_vpn or iplocate_data.is_proxy %}danger{% else %}ok{% endif %}"><span class="ind"></span>VPN / Proxy &middot; {% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_hosting %}danger{% else %}ok{% endif %}"><span class="ind"></span>Hosting &middot; {% if iplocate_data.is_hosting %}Yes{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_abuser %}danger{% else %}ok{% endif %}"><span class="ind"></span>Known Abuser &middot; {% if iplocate_data.is_abuser %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_bogon %}danger{% else %}ok{% endif %}"><span class="ind"></span>Bogon &middot; {% if iplocate_data.is_bogon %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_datacenter %}danger{% else %}ok{% endif %}"><span class="ind"></span>Datacenter &middot; {% if iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</div>
   </div>
   {% if iplocate_data.company_name or iplocate_data.asn_name %}
   <table class="kv">
@@ -663,7 +582,7 @@
   <table class="kv">
     <tr><th>Open Ports</th><td class="mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "&#8212;" }}</td></tr>
     <tr><th>Hostnames</th><td class="mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "&#8212;" }}</td></tr>
-    <tr><th>Known CVEs</th><td class="mono" style="color:var(--crit)">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "&#8212;" }}</td></tr>
+    <tr><th>Known CVEs</th><td class="mono text-red">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "&#8212;" }}</td></tr>
     <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "&#8212;" }}</td></tr>
   </table>
   {% endif %}
@@ -677,10 +596,9 @@
     <span class="section-tag">~/kill_chain</span>
   </div>
   <p>Key events from the session ({{ event_count }} total). Full chronological log is in <strong>Appendix&nbsp;A</strong>.</p>
-
   <div class="timeline">
     {% for ev in timeline_summary | default([]) %}
-    <div class="tl-item{% if ev.severity == 'CRITICAL' or ev.severity == 'HIGH' %} crit{% endif %}">
+    <div class="tl-item{% if ev.severity == 'CRITICAL' %} crit{% elif ev.severity == 'HIGH' %} warn{% elif ev.severity == 'INFO' %} info{% endif %}">
       <div class="tl-head">
         <span class="tl-ts">{{ ev.timestamp }}</span>
         <span class="tl-type">{{ ev.event_type }}</span>
@@ -704,24 +622,21 @@
 
   <h2>5.1 MITRE ATT&amp;CK mapping</h2>
   {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
-  <table>
+  <table class="tbl-zebra">
     <tr><th style="width:24mm">Technique</th><th style="width:50mm">Name</th><th style="width:38mm">Tactic</th><th>Evidence</th></tr>
     {% for t in mitre_techniques %}
     <tr>
       <td><span class="tag tag-mitre">{{ t.tid }}</span></td>
-      <td>{{ t.name }}</td>
-      <td>{{ t.tactic }}</td>
-      <td>{{ t.evidence }}</td>
+      <td>{{ t.name }}</td><td>{{ t.tactic }}</td><td>{{ t.evidence }}</td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
   <p class="muted">No MITRE ATT&amp;CK techniques identified.</p>
   {% endif %}
-
   {% if mitre_narrative is defined and mitre_narrative %}
-  <div class="callout teal">
-    <strong>Attack-chain narrative</strong> <span class="muted mono" style="font-size:7pt">(Mistral 7B, T=0.3)</span><br>
+  <div class="callout yellow">
+    <strong>&#9889; Attack-chain narrative</strong> <span class="muted mono" style="font-size:7.5pt">(Mistral 7B &middot; T=0.3)</span><br>
     {{ mitre_narrative }}
   </div>
   {% endif %}
@@ -729,8 +644,8 @@
   <h2>5.2 Malware analysis &#8212; YARA &amp; VirusTotal</h2>
   <h3>YARA</h3>
   {% if yara_matches is defined and yara_matches | length > 0 %}
-  <table>
-    <tr><th>Rule</th><th>Severity</th></tr>
+  <table class="tbl-zebra">
+    <tr><th>Rule</th><th style="width:30mm">Severity</th></tr>
     {% for y in yara_matches %}
     <tr>
       <td><span class="tag tag-yara">{{ y.name if y.name is defined else y }}</span></td>
@@ -739,7 +654,7 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="callout warn">
+  <div class="callout yellow">
     <strong>YARA :</strong> Aucune signature ne correspond au ruleset actuel ({{ yara_rules_used | default("10") }} r&egrave;gles).
     Cela n&rsquo;exclut pas un malware connu &#8212; le ruleset peut manquer de signatures sp&eacute;cifiques &agrave; cette famille.<sup class="ref">2</sup>
   </div>
@@ -752,9 +667,9 @@
     {% for f in dropped_files %}
     <tr>
       <td class="mono"><code>{{ f.filename }}</code></td>
-      <td style="font-size:6.5pt;word-break:break-all" class="mono"><code>{{ f.sha256 }}</code></td>
+      <td style="font-size:7pt;word-break:break-all" class="mono"><code>{{ f.sha256 }}</code></td>
       <td>{% if f.yara_hits %}{% for y in f.yara_hits %}<span class="tag tag-yara">{{ y }}</span>{% endfor %}{% else %}&#8212;{% endif %}</td>
-      <td class="mono">{% if f.vt_detections is defined and f.vt_detections is not none %}<strong style="color:var(--crit)">{{ f.vt_detections }}/{{ f.vt_total | default("?") }}</strong>{% else %}N/A{% endif %}</td>
+      <td class="mono">{% if f.vt_detections is defined and f.vt_detections is not none %}<strong class="text-red">{{ f.vt_detections }}/{{ f.vt_total | default("?") }}</strong>{% else %}N/A{% endif %}</td>
     </tr>
     {% endfor %}
   </table>
@@ -762,15 +677,14 @@
 
   <h3>VirusTotal</h3>
   {% if not vt_available %}
-  <div class="callout warn">
-    <strong>&#9888; Quota VirusTotal &eacute;puis&eacute;</strong> &#8212; Le r&eacute;sultat VT est indisponible pour cette session.
-    Relancer l&rsquo;analyse quand le quota est restaur&eacute; (4 req/jour &#8212; tier gratuit).
+  <div class="callout yellow">
+    <strong>&#9888; Quota VirusTotal &eacute;puis&eacute;</strong> &#8212; Le r&eacute;sultat VT est indisponible pour cette session (4 req/jour &#8212; tier gratuit).
   </div>
   {% elif dropped_files is defined and dropped_files | length > 0 %}
     {% if vt_malicious is defined and vt_malicious > 0 %}
-    <div class="callout" style="border-left-color:var(--crit);background:#fef2f2">
+    <div class="callout red">
       <strong>Malware d&eacute;tect&eacute; :</strong> {{ vt_malicious }} moteur(s) AV ont signal&eacute; ce fichier.
-      {% if vt_family %} Famille identifi&eacute;e : <strong>{{ vt_family }}</strong>.{% endif %}
+      {% if vt_family %} Famille : <strong>{{ vt_family }}</strong>.{% endif %}
       {% if vt_top_engines %} Top engines : {{ vt_top_engines | join(', ') }}.{% endif %}
     </div>
     {% else %}
@@ -781,43 +695,34 @@
   {% else %}
   <div class="callout">
     <strong>VirusTotal :</strong> Aucun fichier captur&eacute; durant cette session &#8212; l&rsquo;analyse VT par hash SHA-256 n&rsquo;est pas applicable.
-    VirusTotal est utilis&eacute; pour les binaires d&eacute;pos&eacute;s par les honeypots Dionaea / Cowrie (wget, curl, tftp).
   </div>
   {% endif %}
 
   <h2>5.3 Composite risk score &amp; signal breakdown</h2>
   <div class="risk-panel no-break">
     <div class="gauge">
-      <svg viewBox="0 0 200 120" aria-hidden="true">
-        <path d="M 20 110 A 80 80 0 0 1 180 110" stroke="#ede4cb" stroke-width="16" fill="none" stroke-linecap="butt"/>
-        <path d="M 20 110 A 80 80 0 0 1 180 110"
-              stroke="url(#riskgrad)" stroke-width="16" fill="none"
-              stroke-dasharray="{{ (risk_score / 100 * 251) | round(1) }} 251" stroke-linecap="butt"/>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="#E5E0D5" stroke-width="7"/>
+        <circle cx="50" cy="50" r="42" fill="none" stroke="url(#rg)" stroke-width="7"
+                stroke-linecap="round"
+                stroke-dasharray="{{ (risk_score / 100 * 263.9) | round(1) }} 263.9"/>
         <defs>
-          <linearGradient id="riskgrad" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%"   stop-color="#166534"/>
-            <stop offset="33%"  stop-color="#b45309"/>
-            <stop offset="66%"  stop-color="#c2410c"/>
-            <stop offset="100%" stop-color="#991b1b"/>
+          <linearGradient id="rg" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="#9B1B1B"/>
+            <stop offset="100%" stop-color="#C9962E"/>
           </linearGradient>
         </defs>
-        <g transform="translate(100,110) rotate({{ -180 + (risk_score / 100 * 180) }})">
-          <line x1="0" y1="0" x2="0" y2="-78" stroke="#0d1117" stroke-width="2"/>
-          <circle cx="0" cy="0" r="4" fill="#0d1117"/>
-        </g>
-        <text x="20"  y="118" font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">0</text>
-        <text x="100" y="40"  font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">50</text>
-        <text x="180" y="118" font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">100</text>
       </svg>
       <div class="gauge-readout">
-        <span class="num">{{ risk_score }}</span><span class="denom"> / 100</span>
+        <span class="num">{{ risk_score }}</span>
+        <span class="denom">/ 100</span>
         <span class="lvl">{{ risk_level }}</span>
       </div>
     </div>
     <dl class="risk-meta">
       <dt>Verdict</dt><dd>{{ verdict | default("Pending analysis") }}</dd>
       <dt>Confidence</dt><dd>{{ risk_confidence | default("N/A") }}</dd>
-      <dt>Risk Level</dt><dd style="color:var(--crit);font-weight:700">{{ risk_level | default("INFO") }}</dd>
+      <dt>Risk Level</dt><dd class="text-red" style="font-weight:700">{{ risk_level | default("INFO") }}</dd>
       {% if risk_warnings is defined and risk_warnings | length > 0 %}
       <dt>Warnings</dt><dd>{{ risk_warnings | join(' &middot; ') }}</dd>
       {% endif %}
@@ -843,7 +748,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="muted">Signal breakdown not available. See &sect;2.3 for scoring criteria.</p>
+  <p class="muted">Signal breakdown not available. See &sect;2.2 for scoring criteria.</p>
   {% endif %}
 </section>
 
@@ -868,7 +773,7 @@
   <div class="two-col">
     <div>
       <table class="kv">
-        <tr><th colspan="2" style="background:var(--ink);color:var(--honey-glow);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;font-size:7.5pt">Profile summary</th></tr>
+        <tr><th colspan="2" style="background:var(--gold);color:var(--surface);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;font-size:8pt;text-align:center">Profile summary</th></tr>
         <tr><th>Sophistication</th><td>{{ profile.sophistication | default("N/A") }}</td></tr>
         <tr><th>Confidence</th><td>{{ profile.confidence | default("N/A") }}%</td></tr>
         <tr><th>Objective</th><td>{{ profile.objective | default("N/A") }}</td></tr>
@@ -886,27 +791,19 @@
       </table>
     </div>
   </div>
-
   {% if profile.detective_narrative is defined and profile.detective_narrative %}
   <h2>Analytical narrative</h2>
   <div class="callout">{{ profile.detective_narrative }}</div>
   {% endif %}
-
   {% if profile.es_reference_cases is defined and profile.es_reference_cases | length > 0 %}
   <h2>Similar historical sessions (ES memory)</h2>
-  <table>
+  <table class="tbl-zebra">
     <tr><th>Session</th><th>IP</th><th>Similarity basis</th><th>Date</th></tr>
     {% for rc in profile.es_reference_cases[:5] %}
-    <tr>
-      <td><code>{{ rc.session_id }}</code></td>
-      <td><code>{{ rc.ip }}</code></td>
-      <td>{{ rc.match_reason }}</td>
-      <td>{{ rc.date }}</td>
-    </tr>
+    <tr><td><code>{{ rc.session_id }}</code></td><td><code>{{ rc.ip }}</code></td><td>{{ rc.match_reason }}</td><td>{{ rc.date }}</td></tr>
     {% endfor %}
   </table>
   {% endif %}
-
   {% else %}
   <p class="muted">Behavioral profile not available for this session.</p>
   {% endif %}
@@ -919,7 +816,6 @@
     <h1 class="section-title">Indicators of Compromise</h1>
     <span class="section-tag">~/iocs</span>
   </div>
-
   {% if iocs is defined and iocs | length > 0 %}
   <table>
     <tr><th style="width:24mm">Type</th><th>Value</th><th style="width:60mm">Context</th></tr>
@@ -946,22 +842,20 @@
     <h1 class="section-title">Chain of Custody</h1>
     <span class="section-tag">~/custody</span>
   </div>
-
   <p>
     All evidence artifacts are integrity-protected using SHA-256 hashing.
     {% if coc_timestamp_authority is defined and coc_timestamp_authority %}
       Timestamps anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>
     {% endif %}
   </p>
-
   {% if chain_of_custody is defined and chain_of_custody | length > 0 %}
-  <table>
+  <table class="tbl-zebra">
     <tr><th>Artifact</th><th>SHA-256</th><th>Timestamp</th><th style="width:22mm">TSA</th></tr>
     {% for coc in chain_of_custody %}
     <tr>
       <td>{{ coc.artifact }}</td>
-      <td style="font-size:6.5pt;word-break:break-all" class="mono"><code>{{ coc.sha256 }}</code></td>
-      <td class="mono" style="font-size:7pt">{{ coc.timestamp }}</td>
+      <td style="font-size:7pt;word-break:break-all" class="mono"><code>{{ coc.sha256 }}</code></td>
+      <td class="mono" style="font-size:7.5pt">{{ coc.timestamp }}</td>
       <td>{{ coc.tsa | default("freeTSA.org") }}</td>
     </tr>
     {% endfor %}
@@ -979,10 +873,10 @@
     <span class="section-tag">~/mitigations</span>
   </div>
 
-  <h2>9.1 AI-generated <span style="font-weight:400;color:var(--muted)">(Mistral 7B &middot; Ollama &middot; local)</span></h2>
+  <h2>9.1 AI-generated <span style="font-weight:400;color:var(--text3)">(Mistral 7B &middot; Ollama &middot; local)</span></h2>
   {% if ollama_recommendations is defined and ollama_recommendations | length > 0 %}
-  <table>
-    <tr><th style="width:10mm">#</th><th style="width:24mm">Priority</th><th>Action</th><th>Rationale</th></tr>
+  <table class="tbl-zebra">
+    <tr><th style="width:10mm">#</th><th style="width:28mm">Priority</th><th>Action</th><th>Rationale</th></tr>
     {% for rec in ollama_recommendations %}
     <tr>
       <td class="mono">{{ loop.index }}</td>
@@ -993,13 +887,13 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="callout warn">Mistral 7B recommendations not available for this session (Ollama timeout or model unavailable).</div>
+  <div class="callout yellow">Mistral 7B recommendations not available for this session (Ollama timeout or model unavailable).</div>
   {% endif %}
 
-  <h2>9.2 Deterministic rules <span style="font-weight:400;color:var(--muted)">(ForenHive engine)</span></h2>
+  <h2>9.2 Deterministic rules <span style="font-weight:400;color:var(--text3)">(ForenHive engine)</span></h2>
   {% if recommendations is defined and recommendations | length > 0 %}
-  <table>
-    <tr><th style="width:10mm">#</th><th style="width:24mm">Priority</th><th>Action</th><th>Rationale</th></tr>
+  <table class="tbl-zebra">
+    <tr><th style="width:10mm">#</th><th style="width:28mm">Priority</th><th>Action</th><th>Rationale</th></tr>
     {% for rec in recommendations %}
     <tr>
       <td class="mono">{{ loop.index }}</td>
@@ -1033,17 +927,14 @@
   </ol>
 </section>
 
-{# ═══ APPENDIX A &#8212; FULL SESSION LOG ═══ #}
+{# ═══ APPENDIX A ═══ #}
 <section class="section page-break">
   <div class="section-bar">
     <span class="section-num">A</span>
     <h1 class="section-title">Appendix &#8212; Full Session Log</h1>
     <span class="section-tag">~/appendix_a</span>
   </div>
-  <p class="muted" style="font-size:8pt">
-    Complete chronological log of all {{ event_count }} events. Timestamps are UTC with millisecond precision.
-  </p>
-
+  <p class="muted" style="font-size:8pt">Complete chronological log of all {{ event_count }} events. Timestamps are UTC with millisecond precision.</p>
   {% if full_timeline is defined and full_timeline %}
   <div style="margin-top:3mm">
     {% for ev in full_timeline %}
