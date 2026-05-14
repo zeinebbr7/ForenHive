@@ -428,6 +428,7 @@
     </div>
     <span class="signal-pts">{{ sig.points }}/{{ sig.max_points }}</span>
   </div>
+  {% if sig.value %}<p class="text-muted" style="font-size:7.5pt;margin:0 0 2mm 0;padding-left:4mm;">&#8627; {{ sig.value }}</p>{% endif %}
   {% endfor %}
 {% else %}
 <p class="text-muted">Signal breakdown not available. See &sect;2.3 for scoring criteria.</p>

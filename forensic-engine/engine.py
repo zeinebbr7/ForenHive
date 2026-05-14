@@ -1281,7 +1281,7 @@ class ForensicEngine:
 
 def main():
     parser = argparse.ArgumentParser(description="ForenHive Forensic Engine")
-    parser.add_argument("--hours",       type=int, default=24, help="Hours to look back")
+    parser.add_argument("--hours",       type=float, default=24, help="Hours to look back")
     parser.add_argument("--enrich-only", action="store_true",  help="IP enrichment only")
     parser.add_argument("--yara-only",   action="store_true",  help="YARA scan only")
     parser.add_argument("--score-only",  action="store_true",  help="Scoring + MITRE only")

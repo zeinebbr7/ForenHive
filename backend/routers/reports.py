@@ -273,6 +273,8 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "name":       s.get("name", ""),
             "points":     s.get("points", 0),
             "max_points": s.get("max", 0),
+            "value":      s.get("value", ""),
+            "why":        s.get("why", ""),
         }
         for s in ctx.get("score_signals", [])
     ]
@@ -762,7 +764,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         elif t_id == "T1078":
             evidence = "Login réussi confirmé"
         elif "T1059" in t_id:
-            evidence = f"{len(cmds)} commandes — " + ", ".join(c.get("input","")[:20] for c in cmds[:2])
+            evidence = f"{len(cmds)} commandes — " + ", ".join((c.get("input") or "")[:20] for c in cmds[:2])
         elif "T1552" in t_id:
             evidence = "Credentials lus"
         elif t_id == "T1105":
@@ -771,7 +773,7 @@ async def _build_forensic_context(session_id: str) -> dict:
 
     # Add from commands if not already present
     for c in cmds:
-        inp = c.get("input", "")
+        inp = c.get("input") or ""
         if any(x in inp for x in ["wget", "curl", "tftp"]) and "T1105" not in mitre_seen:
             mitre_seen.add("T1105")
             mitre_rows.append({"id": "T1105", "technique": "Ingress Tool Transfer", "tactic": "Command & Control", "confidence": "100%", "evidence": f"wget {inp[:40]}"})
