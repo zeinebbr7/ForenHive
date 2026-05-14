@@ -37,7 +37,7 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
+from risk_score_optimized import RiskScorer, risk_level, score_session_from_data
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -480,14 +480,15 @@ def _save_session(session: dict):
                     """
                     INSERT INTO forensic_sessions
                         (session_id, honeypot_type, source_ip, started_at, ended_at,
-                         risk_score, mitre_techniques, enrichment_data,
+                         risk_score, signal_breakdown, mitre_techniques, enrichment_data,
                          kill_chain_phase, kill_chain_stage,
                          primary_technique, forensic_narrative,
                          login_attempts, success_count, attack_velocity,
                          created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (session_id) DO UPDATE
                         SET risk_score         = EXCLUDED.risk_score,
+                            signal_breakdown   = EXCLUDED.signal_breakdown,
                             enrichment_data    = EXCLUDED.enrichment_data,
                             mitre_techniques   = EXCLUDED.mitre_techniques,
                             kill_chain_phase   = EXCLUDED.kill_chain_phase,
@@ -506,6 +507,7 @@ def _save_session(session: dict):
                         session.get("started_at"),
                         session.get("ended_at"),
                         session.get("risk_score"),
+                        json.dumps(session.get("enrichment_data", {}).get("signal_breakdown", {})),
                         json.dumps(session.get("mitre_techniques", [])),
                         json.dumps(session.get("enrichment_data", {})),
                         session.get("kill_chain_phase"),
@@ -869,6 +871,24 @@ class ForensicEngine:
             f"Total={len(all_sessions)}"
         )
 
+        # Skip sessions already scored — prevents score drift when new sessions
+        # from the same IP arrive and recidivism/honeypot data changes the result.
+        already_scored: set = set()
+        try:
+            with _pg_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT session_id FROM forensic_sessions WHERE risk_score IS NOT NULL"
+                    )
+                    already_scored = {row[0] for row in cur.fetchall()}
+        except Exception as e:
+            log.warning(f"Could not load already-scored sessions: {e}")
+
+        before = len(all_sessions)
+        all_sessions = [s for s in all_sessions if s.get("session_id") not in already_scored]
+        log.info(f"Skipping {before - len(all_sessions)} already-scored sessions, "
+                 f"{len(all_sessions)} new to score")
+
         enrichment_cache = enrichment_cache or {}
 
         # Load YARA/VT from PG and map to IPs via ES
@@ -1026,8 +1046,8 @@ class ForensicEngine:
                 **time_metrics,
             }
 
-            # ── Deterministic risk scoring (18 signals) ───────────────────────
-            result = calculate_risk_score(session_data)
+            # ── Risk scoring (6 signals) ──────────────────────────────────────
+            result = score_session_from_data(session_data)
             score  = result["score"]
             level  = result["level"]
 
@@ -1055,15 +1075,7 @@ class ForensicEngine:
                 **enrich,
                 "risk_level":          level,
                 "confidence":          result["confidence"],
-                "attack_types":        result["attack_types"],
-                "lateral_movement":    result["lateral_movement"],
                 "signal_breakdown":    result["signal_breakdown"],
-                "data_quality":        result["data_quality"],
-                "notes":               result["notes"],
-                "narrative":           result["narrative"],
-                "recommended_actions": result["recommended_actions"],
-                "iocs":                result["iocs"],
-                "attribution":         result["attribution"],
                 "mitre_techniques":    mitre_techniques,
                 "kill_chain_phase":    kill_chain_phase,
                 "kill_chain_stage":    kill_chain_stage,
@@ -1083,8 +1095,6 @@ class ForensicEngine:
 
             if score >= 40:
                 flags = ""
-                if result["lateral_movement"]:
-                    flags += " [LATERAL]"
                 if kill_chain_phase:
                     flags += f" [{kill_chain_phase}]"
                 log.info(

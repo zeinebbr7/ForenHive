@@ -688,12 +688,6 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("pre-flight aggregation failed for %s: %s", source_ip, exc)
 
-    # Prefer PG risk_score (forensic engine) over profiler estimate
-    if pg_row.get("risk_score") is not None:
-        risk_score = int(pg_row["risk_score"])
-    else:
-        risk_score = int(profile_dict.get("risk_score") or 0)
-    risk_label, risk_color = _risk_label_color(risk_score)
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
@@ -812,28 +806,41 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    # For unified sessions, ip_risk_scores is always authoritative (forensic_sessions
-    # may hold a stale breakdown from a prior engine run before re-enrichment).
-    # For per-session reports, fall back to forensic_sessions.signal_breakdown.
-    sb = {}
-    if source_ip:
+    # Always prefer forensic_sessions.signal_breakdown (snapshot at engine run time
+    # for this specific session). Only fall back to ip_risk_scores if the per-session
+    # breakdown is missing — ip_risk_scores is a sliding 24h window and changes as
+    # new sessions from the same IP arrive, causing the displayed score to drift.
+    sb = pg_row.get("signal_breakdown") or {}
+    irs_risk_score: Optional[int] = None
+    if not sb and source_ip:
         try:
             async with session_scope() as db:
                 irs = await db.execute(
-                    text("SELECT signal_breakdown FROM ip_risk_scores WHERE source_ip = CAST(:ip AS INET) LIMIT 1"),
+                    text("SELECT signal_breakdown, risk_score FROM ip_risk_scores WHERE source_ip = CAST(:ip AS INET) LIMIT 1"),
                     {"ip": source_ip},
                 )
                 irs_row = irs.mappings().fetchone()
                 if irs_row and irs_row["signal_breakdown"]:
                     sb = irs_row["signal_breakdown"]
+                    # Use the unified risk score that matches this breakdown
+                    if irs_row["risk_score"] is not None:
+                        irs_risk_score = int(irs_row["risk_score"])
         except Exception:
             pass
-    if not sb:
-        sb = pg_row.get("signal_breakdown") or {}
     if sb:
         score_signals = _build_score_signals_from_breakdown(sb)
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
+
+    # Use ip_risk_scores score when breakdown came from there (keeps gauge consistent
+    # with signal bars). Fall back to forensic_sessions, then profiler estimate.
+    if irs_risk_score is not None:
+        risk_score = irs_risk_score
+    elif pg_row.get("risk_score") is not None:
+        risk_score = int(pg_row["risk_score"])
+    else:
+        risk_score = int(profile_dict.get("risk_score") or 0)
+    risk_label, risk_color = _risk_label_color(risk_score)
 
     # ── Malware intelligence — also check PG enrichment_data for captured files ──
     if not profile_dict.get("yara_matches") and not profile_dict.get("ioc_hashes") and source_ip:
