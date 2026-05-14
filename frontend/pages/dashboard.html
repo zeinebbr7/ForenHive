@@ -1,0 +1,200 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px"> Overview</div>
+    <h2 class="page-title">Dash<span>board</span></h2>
+    <div class="page-sub">Real-time monitoring · <span id="dash-src-count">—</span> active sources.</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="dash-refresh"> Refresh</button>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi g"><div class="kpi-label">Total Events</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta" id="kpi-total-d">loading…</div></div>
+  <div class="kpi r"><div class="kpi-label">Last Hour</div><div class="kpi-val" id="kpi-hour">—</div><div class="kpi-delta" id="kpi-hour-d">—</div></div>
+  <div class="kpi b"><div class="kpi-label">Active Honeypots</div><div class="kpi-val" id="kpi-hps">—</div><div class="kpi-delta" id="kpi-hps-d">—</div></div>
+  <div class="kpi p"><div class="kpi-label">NDR Sensors</div><div class="kpi-val" id="kpi-sens">—</div><div class="kpi-delta" id="kpi-sens-d">—</div></div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Source Distribution</div><div class="card-sub"> honeypots +  sensors</div></div>
+    <div id="dash-chart-root" style="min-height:180px"><div class="alert info">Loading…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Live logs</div><div class="card-sub"><span class="dot warn"></span>Last 20 events</div></div>
+    <div id="dash-logs" class="scroll-y" style="max-height:340px"><div class="alert info">Loading…</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-h">
+    <div class="card-t">Latest Events</div>
+    <div class="card-sub">click to view details</div>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr><th>Timestamp</th><th>Source</th><th>Source IP</th><th>Port</th><th>Severity</th><th>Type</th><th></th></tr></thead>
+      <tbody id="dash-events"><tr><td colspan="7"><div class="alert info">Loading…</div></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(async function(){
+  const { SOURCE_META, HONEYPOTS, SENSORS, fmt, esc, $, evNormalize } = FH;
+
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+  const HP_COLORS = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff', zeek:'#50a0ff' };
+
+  async function load() {
+    try {
+      const [split, recent, hourly] = await Promise.all([
+        api.geoSplit(),
+        api.attacks({ limit: 20 }),
+        api.statsHourly(),
+      ]);
+
+      const total = (recent && recent.total) || 0;
+      $('#kpi-total').textContent = fmt.num(total);
+      $('#kpi-total-d').textContent = `▲ ${total.toLocaleString('en-US')} indexed events`;
+      $('#kpi-total-d').classList.add('up');
+
+      const hourlyArr = Array.isArray(hourly) ? hourly : (hourly.items || []);
+      const last = hourlyArr[hourlyArr.length - 1];
+      $('#kpi-hour').textContent = last ? fmt.num(last.count) : '0';
+      $('#kpi-hour-d').textContent = last ? `${Object.keys(last.by_honeypot || {}).length} sources` : 'no recent activity';
+
+      const splitArr = (split && split.split) || [];
+      const hpActive = splitArr.filter(x => HONEYPOTS.includes(x.honeypot) && x.count > 0);
+      const sensActive = splitArr.filter(x => SENSORS.includes(x.honeypot) && x.count > 0);
+      $('#kpi-hps').textContent = hpActive.length + '/' + HONEYPOTS.length;
+      $('#kpi-hps-d').textContent = hpActive.map(x => x.honeypot).join(' · ') || 'none';
+      $('#kpi-sens').textContent = sensActive.length + '/' + SENSORS.length;
+      $('#kpi-sens-d').textContent = sensActive.map(x => x.honeypot).join(' · ') || 'none';
+      $('#dash-src-count').textContent = hpActive.length + sensActive.length;
+
+      // Render charts into #dash-chart-root
+      const chartEl = document.getElementById('dash-chart-root');
+      if (chartEl && R && RD && RC) {
+        const h = R.createElement;
+        const donutData = splitArr.map(x => ({
+          name: (SOURCE_META[x.honeypot]||{label:x.honeypot}).label,
+          hp: x.honeypot, count: x.count,
+        })).filter(d => d.count > 0);
+
+        const last12 = (Array.isArray(hourly)?hourly:[]).slice(-12).map(e => ({
+          h: new Date(e.hour).getUTCHours().toString().padStart(2,'0')+':00',
+          cowrie:(e.by_honeypot||{}).cowrie||0,
+          dionaea:(e.by_honeypot||{}).dionaea||0,
+          galah:(e.by_honeypot||{}).galah||0,
+        }));
+
+        function DashCharts() {
+          const donut = h(RC.PieChart, {width:140,height:140},
+            h(RC.Pie,{data:donutData,dataKey:'count',nameKey:'name',cx:65,cy:65,innerRadius:40,outerRadius:60,paddingAngle:2},
+              ...donutData.map((e,i)=>h(RC.Cell,{key:i,fill:(HP_COLORS[e.hp]||'#888')+'cc',stroke:HP_COLORS[e.hp]||'#888',strokeWidth:1}))
+            ),
+            h(RC.Tooltip,{contentStyle:TOOLTIP_STYLE})
+          );
+          const legend = h('div',{style:{display:'flex',flexDirection:'column',gap:'7px',flex:1}},
+            ...donutData.map((e,i)=>h('div',{key:i,style:{display:'flex',alignItems:'center',gap:'8px'}},
+              h('span',{style:{width:9,height:9,borderRadius:'50%',background:HP_COLORS[e.hp]||'#888',flexShrink:0,display:'inline-block'}}),
+              h('span',{style:{fontSize:12,flex:1}},(SOURCE_META[e.hp]||{icon:''}).icon+' '+(SOURCE_META[e.hp]||{label:e.hp}).label),
+              h('span',{style:{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:'var(--text2)'}},e.count.toLocaleString('en-US'))
+            ))
+          );
+          const bar = last12.length ? h(RC.ResponsiveContainer,{width:'100%',height:90},
+            h(RC.BarChart,{data:last12,margin:{top:0,right:4,bottom:0,left:-28}},
+              h(RC.XAxis,{dataKey:'h',tick:AXIS_TICK,tickLine:false,axisLine:false}),
+              h(RC.YAxis,{tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              h(RC.Tooltip,{contentStyle:TOOLTIP_STYLE}),
+              h(RC.Bar,{dataKey:'cowrie',stackId:'a',fill:'#8C1A2Bcc',name:'Cowrie'}),
+              h(RC.Bar,{dataKey:'dionaea',stackId:'a',fill:'#ff5050cc',name:'Dionaea'}),
+              h(RC.Bar,{dataKey:'galah',stackId:'a',fill:'#b464ffcc',name:'Galah',radius:[2,2,0,0]})
+            )
+          ) : null;
+          return h('div',null,
+            h('div',{style:{display:'flex',alignItems:'center',gap:'16px',marginBottom:'14px'}},donut,legend),
+            bar ? h('div',null,
+              h('div',{style:{fontSize:10,color:'var(--text3)',fontFamily:"'JetBrains Mono',monospace",marginBottom:4,letterSpacing:'.06em',textTransform:'uppercase'}},'Hourly Activity (last 12h)'),
+              bar
+            ) : null
+          );
+        }
+
+        if (!window.__dashChartRoot) window.__dashChartRoot = RD.createRoot(chartEl);
+        window.__dashChartRoot.render(h(DashCharts,null));
+        window.__pageCleanup = () => { if(window.__dashChartRoot){window.__dashChartRoot.unmount();window.__dashChartRoot=null;} };
+      }
+
+      const items = (recent && recent.items) || [];
+      if (!items.length) {
+        $('#dash-logs').innerHTML = '<div class="alert info">No events.</div>';
+        $('#dash-events').innerHTML = '<tr><td colspan="7"><div class="alert info">No events.</div></td></tr>';
+      } else {
+        $('#dash-logs').innerHTML = items.map(raw => {
+          const ev = evNormalize(raw);
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '' };
+          return `<div class="log-row">
+            <div class="log-t">${fmt.time(ev.timestamp)}</div>
+            <div class="log-s ${ev.honeypot}">${meta.icon} ${meta.label}</div>
+            <div class="log-ip">${esc(ev.source_ip || '—')}</div>
+            <div class="log-m">${esc((ev.command || ev.http_path || ev.protocol || '—')).slice(0,80)}</div>
+          </div>`;
+        }).join('');
+
+        $('#dash-events').innerHTML = items.map(raw => {
+          const ev = evNormalize(raw);
+          const meta = SOURCE_META[ev.honeypot] || { label: ev.honeypot, icon: '' };
+          const sevCls = fmt.sevToClass(ev.severity);
+          return `<tr data-id="${esc(ev.id)}" style="cursor:pointer">
+            <td class="mono" style="font-size:11px">${fmt.time(ev.timestamp)}</td>
+            <td><span class="badge ${meta.kind==='sensor'?'blue':'gold'}">${meta.icon} ${meta.label}</span></td>
+            <td class="mono">${esc(ev.source_ip || '—')}</td>
+            <td class="mono">${ev.dest_port || '—'}</td>
+            <td><span class="score ${sevCls}">${esc(ev.severity || 'low')}</span></td>
+            <td class="mono" style="font-size:11px">${esc(ev.protocol || ev.event_action || '—')}</td>
+            <td><button class="btn btn-out btn-sm">View</button></td>
+          </tr>`;
+        }).join('');
+      }
+    } catch (e) {
+      console.error(e);
+      $('#dash-events').innerHTML = `<tr><td colspan="7"><div class="alert err">Error: ${esc(e.message)}</div></td></tr>`;
+    }
+  }
+
+  $('#dash-events').addEventListener('click', async e => {
+    const tr = e.target.closest('tr'); if (!tr || !tr.dataset.id) return;
+    try {
+      const ev = await api.attack(tr.dataset.id);
+      const n = evNormalize(ev);
+      openDrawer(`
+        <div class="drawer-h">
+          <div><div class="card-t">Event ${esc(n.id.slice(0,12))}…</div><div class="card-sub">${fmt.date(n.timestamp)}</div></div>
+          <button class="drawer-close" onclick="closeDrawer()"></button>
+        </div>
+        <div class="drawer-b">
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <span class="badge gold">${esc(n.honeypot)}</span>
+            <span class="badge ${fmt.sevToClass(n.severity)==='crit'?'red':(fmt.sevToClass(n.severity)==='hi'?'red':'gold')}">${esc(n.severity)}</span>
+            ${n.source_ip ? `<span class="mono">${esc(n.source_ip)}${n.source_port?':'+n.source_port:''}</span>` : ''}
+            ${n.dest_port ? `<span class="tag">→ port ${n.dest_port}</span>` : ''}
+          </div>
+          ${n.command ? `<div class="card-sub mb-12">Command</div><pre class="pre">${esc(n.command)}</pre>` : ''}
+          ${n.http_path ? `<div class="card-sub mb-12">HTTP</div><pre class="pre">${esc(n.http_method || 'GET')} ${esc(n.http_path)}</pre>` : ''}
+          <div class="card-sub mb-12" style="margin-top:16px">Raw document</div>
+          <pre class="pre" style="max-height:320px;overflow:auto">${esc(JSON.stringify(n.raw, null, 2))}</pre>
+        </div>`);
+    } catch (ex) {
+      openModal(`<div class="alert err">${esc(ex.message)}</div><div class="flex gap-8" style="justify-content:flex-end;margin-top:12px"><button class="btn btn-gold btn-sm" onclick="closeModal()">OK</button></div>`);
+    }
+  });
+
+  $('#dash-refresh').addEventListener('click', load);
+  await load();
+})();
+</script>

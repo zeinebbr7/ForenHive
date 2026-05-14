@@ -1,0 +1,325 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">Monitoring · System</div>
+    <h2 class="page-title">Health <span>Check</span></h2>
+    <div class="page-sub">ForenHive platform status · data pipeline · 4 stages · Zeek NDR sensor on <span class="mono">eno12399</span>.</div>
+  </div>
+  <div class="page-actions">
+    <span class="mono" id="last-check" style="font-size:11px;color:var(--text3)">—</span>
+    <button class="btn btn-gold btn-sm" id="refresh-now">↺ Check</button>
+  </div>
+</div>
+
+<div class="hc-pipeline mb-20" id="pipeline-strip">
+  <div class="hc-pipe-step" id="pipe-c1">
+    <div class="hc-pipe-icon">01</div>
+    <div class="hc-pipe-label">Honeypots</div>
+    <div class="hc-pipe-sub">Cowrie · Dionaea · Galah · Zeek</div>
+    <div class="hc-pipe-dot" id="pdot-c1"></div>
+  </div>
+  <div class="hc-pipe-arrow">→</div>
+  <div class="hc-pipe-step" id="pipe-c2">
+    <div class="hc-pipe-icon">02</div>
+    <div class="hc-pipe-label">ETL Pipeline</div>
+    <div class="hc-pipe-sub">Filebeat → Logstash → ES</div>
+    <div class="hc-pipe-dot" id="pdot-c2"></div>
+  </div>
+  <div class="hc-pipe-arrow">→</div>
+  <div class="hc-pipe-step" id="pipe-c3">
+    <div class="hc-pipe-icon">03</div>
+    <div class="hc-pipe-label">Forensic Engine</div>
+    <div class="hc-pipe-sub">YARA · Enrichment · Ollama</div>
+    <div class="hc-pipe-dot" id="pdot-c3"></div>
+  </div>
+  <div class="hc-pipe-arrow">→</div>
+  <div class="hc-pipe-step" id="pipe-c4">
+    <div class="hc-pipe-icon">04</div>
+    <div class="hc-pipe-label">Application</div>
+    <div class="hc-pipe-sub">FastAPI · PostgreSQL · Nginx</div>
+    <div class="hc-pipe-dot" id="pdot-c4"></div>
+  </div>
+</div>
+
+<div style="font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.4px;margin-bottom:10px;">Services &amp; Containers</div>
+<div id="svc-chart-root" style="margin-bottom:10px"></div>
+<div class="hc-svc-grid mb-20" id="svc-grid">
+  <div class="alert info" style="grid-column:1/-1">Checking services…</div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h">
+      <div class="card-t">Zeek Captured Traffic</div>
+      <div class="card-sub">Top protocols · destination ports</div>
+    </div>
+    <div id="zeek-protos"><div class="alert info">Loading…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-h">
+      <div class="card-t">Top Source IPs (Zeek)</div>
+      <div class="card-sub">Most active emitters</div>
+    </div>
+    <div id="zeek-ips"><div class="alert info">Loading…</div></div>
+  </div>
+</div>
+
+<div class="card mb-20">
+  <div class="card-h">
+    <div class="card-t">Raw NDR stream · Zeek</div>
+    <div class="card-sub">Last 20 lines</div>
+  </div>
+  <div id="zeek-stream"><div class="alert info">Loading…</div></div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Backend FastAPI</div><div class="card-sub" id="api-info">—</div></div>
+    <div id="api-detail" class="mono" style="font-size:11px;line-height:1.8"><div class="alert info">Loading…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Audit trail</div><div class="card-sub">Last 10 actions</div></div>
+    <div id="audit-list" class="scroll-y" style="max-height:260px"><div class="alert info">Loading…</div></div>
+  </div>
+</div>
+
+<style>
+.hc-pipeline { display:flex;align-items:center;gap:0;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;overflow-x:auto; }
+.hc-pipe-step { flex:1;min-width:120px;text-align:center;position:relative;padding:8px 10px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);transition:border-color .2s; }
+.hc-pipe-step.pipe-up   { border-color: rgba(0,191,165,.35); }
+.hc-pipe-step.pipe-down { border-color: rgba(201,61,85,.4); }
+.hc-pipe-step.pipe-warn { border-color: rgba(232,184,75,.35); }
+.hc-pipe-icon { font-size:20px;margin-bottom:4px; }
+.hc-pipe-label { font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:700;color:var(--text1);letter-spacing:.4px; }
+.hc-pipe-sub { font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-top:2px;letter-spacing:.3px; }
+.hc-pipe-dot { width:8px;height:8px;border-radius:50%;background:var(--text3);margin:6px auto 0;transition:background .3s; }
+.hc-pipe-dot.up   { background:var(--teal);box-shadow:0 0 6px rgba(0,191,165,.5);animation:pulse2 2s infinite; }
+.hc-pipe-dot.down { background:var(--red2);box-shadow:0 0 6px rgba(201,61,85,.5); }
+.hc-pipe-dot.warn { background:var(--yellow); }
+.hc-pipe-arrow { color:var(--text3);font-size:18px;padding:0 8px;flex-shrink:0; }
+.hc-svc-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px; }
+.hc-svc-card { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;transition:border-color .2s; }
+.hc-svc-card.svc-up   { border-color:rgba(0,191,165,.3); }
+.hc-svc-card.svc-down { border-color:rgba(201,61,85,.35); }
+.hc-svc-card.svc-warn { border-color:rgba(232,184,75,.3); }
+.hc-svc-top { display:flex;align-items:center;justify-content:space-between;margin-bottom:8px; }
+.hc-svc-name { font-size:13px;font-weight:700;color:var(--text1); }
+.hc-svc-icon { font-size:18px; }
+.hc-svc-status { display:flex;align-items:center;gap:6px;margin-bottom:5px; }
+.hc-svc-detail { font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;line-height:1.5; }
+.bar-row { display:grid;grid-template-columns:100px 1fr 50px;gap:10px;align-items:center;padding:4px 0;font-size:12px; }
+.bar-row .lab { font-family:'Share Tech Mono',monospace;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.bar-track { background:var(--bg3);height:6px;border-radius:3px;overflow:hidden; }
+.bar-fill  { height:100%;background:linear-gradient(90deg,var(--blue),var(--gold));border-radius:3px; }
+.bar-row .v { font-family:'Share Tech Mono',monospace;color:var(--gold);text-align:right;font-size:11px; }
+.zlog { display:grid;grid-template-columns:76px 110px 1fr;gap:10px;padding:5px 0;border-bottom:1px solid rgba(140,26,43,.07);font-size:12px; }
+.zlog:last-child { border-bottom:none; }
+.zlog .t  { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3); }
+.zlog .ip { font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--blue2); }
+.zlog .m  { color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+</style>
+
+<script>
+(async function(){
+  const { fmt, esc, $ } = FH;
+  const { evNormalize } = FH;
+  const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+  const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
+  const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+  let __protoRoot = null, __ipsRoot = null, __svcRoot = null;
+
+  const SVC_META = {
+    api:           { name:'Backend API',    icon:'API', layer:'c4', desc:'FastAPI · Python 3.11' },
+    elasticsearch: { name:'Elasticsearch', icon:'ES',  layer:'c2', desc:'honeypot-logs indices' },
+    postgresql:    { name:'PostgreSQL',    icon:'PG',  layer:'c4', desc:'users · reports · audit' },
+    ollama:        { name:'Ollama / LLM',  icon:'LLM', layer:'c3', desc:'Mistral 7B Q4_K_M' },
+    cowrie:        { name:'Cowrie',        icon:'SSH', layer:'c1', desc:'SSH :2222 · Telnet :2223' },
+    dionaea:       { name:'Dionaea',       icon:'SMB', layer:'c1', desc:'SMB · FTP · MySQL…' },
+    galah:         { name:'Galah',         icon:'HTTP',layer:'c1', desc:'HTTP :8080/:8888' },
+    zeek:          { name:'Zeek NDR',      icon:'NDR', layer:'c1', desc:'eno12399 · passive' },
+    filebeat:      { name:'Filebeat',      icon:'FB',  layer:'c2', desc:'tail honeypot logs' },
+    logstash:      { name:'Logstash',      icon:'LS',  layer:'c2', desc:'ECS · GeoIP · filters' },
+    nginx:         { name:'Nginx',         icon:'NGX', layer:'c5', desc:'reverse proxy · SPA' },
+  };
+
+  const STLABEL = { up:'OPERATIONAL', ok:'OPERATIONAL', down:'OFFLINE', unknown:'UNKNOWN', degraded:'DEGRADED', warn:'DEGRADED' };
+  const STBADGE = { up:'teal', ok:'teal', down:'red', unknown:'', degraded:'gold', warn:'gold' };
+  const DOTCLS  = { up:'up', ok:'up', down:'down', degraded:'warn', warn:'warn', unknown:'' };
+
+  function setPipeDot(id, st) {
+    const el = $(id); if (!el) return;
+    el.className = 'hc-pipe-dot ' + (DOTCLS[st] || '');
+    const step = el.parentElement;
+    if (step) step.className = 'hc-pipe-step pipe-' + (DOTCLS[st] || 'warn');
+  }
+
+  async function loadZeek() {
+    try {
+      const res = await api.attacks({ honeypot: 'zeek', page_size: 200 });
+      const items = (res && res.items) || [];
+      const normalized = items.map(evNormalize);
+      const ipCounts = {}, protoCounts = {};
+      for (const n of normalized) {
+        if (n.source_ip) ipCounts[n.source_ip] = (ipCounts[n.source_ip] || 0) + 1;
+        const proto = (n.protocol || (n.dest_port ? 'port:'+n.dest_port : 'other')).toString();
+        protoCounts[proto] = (protoCounts[proto] || 0) + 1;
+      }
+      const topProto = Object.entries(protoCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+      const topIp = Object.entries(ipCounts).sort((a,b) => b[1]-a[1]).slice(0, 10);
+
+      // Protocols chart
+      const protoData = topProto.map(([p,c])=>({proto:p, count:c}));
+      if (R && RD && RC && protoData.length) {
+        const hh = R.createElement;
+        function ProtoChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(120, protoData.length*28+20)},
+            hh(RC.BarChart,{data:protoData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'proto',width:100,tick:{...AXIS_TICK,fill:'#e0e6f0'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' events','Count']}),
+              hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:14,fill:'#50a0ffbb'})
+            )
+          );
+        }
+        if (!__protoRoot) __protoRoot = RD.createRoot($('#zeek-protos'));
+        __protoRoot.render(hh(ProtoChart,null));
+      } else {
+        $('#zeek-protos').innerHTML = protoData.length ? '' : '<div class="alert info">No Zeek events.</div>';
+      }
+
+      // Top IPs chart
+      const ipData = topIp.map(([ip,c])=>({ip, count:c}));
+      if (R && RD && RC && ipData.length) {
+        const hh = R.createElement;
+        function IpsChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(140, ipData.length*28+20)},
+            hh(RC.BarChart,{data:ipData,layout:'vertical',margin:{top:0,right:20,bottom:0,left:0}},
+              hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.05)',horizontal:false}),
+              hh(RC.XAxis,{type:'number',tick:AXIS_TICK,tickLine:false,axisLine:false,allowDecimals:false}),
+              hh(RC.YAxis,{type:'category',dataKey:'ip',width:130,tick:{...AXIS_TICK,fill:'#50a0ff'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:v=>[v+' events','Count']}),
+              hh(RC.Bar,{dataKey:'count',name:'Events',radius:[0,3,3,0],barSize:14,fill:'#8C1A2Bbb'})
+            )
+          );
+        }
+        if (!__ipsRoot) __ipsRoot = RD.createRoot($('#zeek-ips'));
+        __ipsRoot.render(hh(IpsChart,null));
+      } else {
+        $('#zeek-ips').innerHTML = ipData.length ? '' : '<div class="alert info">No source IPs.</div>';
+      }
+
+      $('#zeek-stream').innerHTML = normalized.slice(0, 20).length
+        ? normalized.slice(0, 20).map(n => `<div class="zlog"><span class="t">${fmt.time(n.timestamp)}</span><span class="ip">${esc(n.source_ip || '—')}</span><span class="m">${esc(n.message || n.event_action || '—')}${n.dest_port ? ' → :'+esc(n.dest_port) : ''}</span></div>`).join('')
+        : '<div class="alert info">No events.</div>';
+      setPipeDot('#pdot-c1', items.length > 0 ? 'up' : 'warn');
+    } catch (e) {
+      ['zeek-protos','zeek-ips','zeek-stream'].forEach(id => $('#'+id).innerHTML = `<div class="alert err">${esc(e.message)}</div>`);
+      setPipeDot('#pdot-c1', 'warn');
+    }
+  }
+
+  async function loadServices() {
+    try {
+      const h = await api.health();
+      let components = h.components || h.checks || h.services || null;
+      if (!components || !Object.keys(components).length) {
+        components = {};
+        if ('elasticsearch' in h) components.elasticsearch = h.elasticsearch ? 'up' : 'down';
+        components.api = h.status === 'ok' ? 'up' : (h.status || 'unknown');
+        const probe = async hp => { try { const r = await api.attacks({ honeypot: hp, page_size: 1 }); return (r && r.total > 0) ? 'up' : 'unknown'; } catch (_) { return 'unknown'; } };
+        const [cowrie, dionaea, galah, zeek] = await Promise.all([probe('cowrie'), probe('dionaea'), probe('galah'), probe('zeek')]);
+        components.cowrie=cowrie; components.dionaea=dionaea; components.galah=galah; components.zeek=zeek;
+        components.postgresql = ('postgresql' in h) ? (h.postgresql ? 'up' : 'down') : 'unknown';
+        components.ollama     = ('ollama'     in h) ? (h.ollama     ? 'up' : 'down') : 'unknown';
+      }
+      const order = ['api','elasticsearch','postgresql','ollama','cowrie','dionaea','galah','zeek','filebeat','logstash','nginx'];
+      const entries = Object.entries(components).sort((a,b) => { const ai=order.indexOf(a[0]),bi=order.indexOf(b[0]); return (ai<0?99:ai)-(bi<0?99:bi); });
+      $('#svc-grid').innerHTML = entries.map(([name, st]) => {
+        const status = (typeof st==='string') ? st : (st.status||'unknown');
+        const detail = (typeof st==='object' && (st.version||st.detail||st.message)) || '';
+        const meta   = SVC_META[name] || { name, icon:'SVC', desc:'' };
+        const dotCls = DOTCLS[status] || '';
+        const cardCls = dotCls==='up'?'svc-up':dotCls==='down'?'svc-down':'svc-warn';
+        return `<div class="hc-svc-card ${cardCls}">
+          <div class="hc-svc-top"><div class="hc-svc-icon">${meta.icon}</div>
+            <span class="badge ${STBADGE[status]||'gold'}" style="font-size:9px"><span class="dot ${dotCls}"></span>${STLABEL[status]||esc(String(status).toUpperCase())}</span>
+          </div>
+          <div class="hc-svc-name">${esc(meta.name||name)}</div>
+          <div class="hc-svc-detail">${esc(detail||meta.desc||(status==='unknown'?'not exposed by /health':'—'))}</div>
+        </div>`;
+      }).join('');
+      // Services overview Recharts bar
+      if (R && RD && RC) {
+        const hh = R.createElement;
+        const svcData = entries.map(([name, st]) => {
+          const status = (typeof st==='string') ? st : (st.status||'unknown');
+          const meta = SVC_META[name] || { name, icon:'SVC' };
+          const col = DOTCLS[status]==='up' ? '#00bfa5cc' : DOTCLS[status]==='down' ? '#c93d55cc' : '#e8b84bcc';
+          const val = DOTCLS[status]==='up' ? 3 : DOTCLS[status]==='down' ? 1 : 2;
+          return { name: meta.name || name, status, col, val };
+        });
+        function SvcChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(80, svcData.length*20+10)},
+            hh(RC.BarChart,{data:svcData,layout:'vertical',margin:{top:0,right:80,bottom:0,left:0}},
+              hh(RC.XAxis,{type:'number',hide:true,domain:[0,3]}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:130,tick:{...AXIS_TICK,fill:'#c8d0de'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:(_,__,props)=>[props.payload.status.toUpperCase(),'Status']}),
+              hh(RC.Bar,{dataKey:'val',name:'Status',radius:[0,3,3,0],barSize:11},
+                ...svcData.map((d,i)=>hh(RC.Cell,{key:i,fill:d.col}))
+              )
+            )
+          );
+        }
+        if (!__svcRoot) __svcRoot = RD.createRoot(document.getElementById('svc-chart-root'));
+        __svcRoot.render(hh(SvcChart,null));
+      }
+
+      const stOf = name => { const v=components[name]; return typeof v==='string'?v:(v&&v.status)||'unknown'; };
+      const c1 = ['cowrie','dionaea','galah','zeek'].map(stOf);
+      setPipeDot('#pdot-c1', c1.includes('up')?'up':c1.includes('down')?'warn':'warn');
+      setPipeDot('#pdot-c2', stOf('elasticsearch')==='up'?'up':stOf('elasticsearch')==='down'?'down':'warn');
+      setPipeDot('#pdot-c3', stOf('ollama')==='up'?'up':'warn');
+      const c4 = stOf('api');
+      const c4nginx = stOf('nginx');
+      const c4st = (c4==='up'||c4==='ok') && (c4nginx==='up'||c4nginx==='unknown') ? 'up' : (c4==='down'&&c4nginx==='down') ? 'down' : 'warn';
+      setPipeDot('#pdot-c4', c4st);
+      $('#api-info').textContent = `v${h.version||'1.0'} · ${h.status||'unknown'}`;
+      $('#api-detail').innerHTML = `<pre class="pre">${esc(JSON.stringify(h, null, 2))}</pre>`;
+    } catch (e) {
+      $('#svc-grid').innerHTML = `<div class="alert err" style="grid-column:1/-1">Backend unreachable: ${esc(e.message)}</div>`;
+      ['#pdot-c2','#pdot-c3','#pdot-c4'].forEach(id => setPipeDot(id, 'down'));
+      $('#api-info').textContent = 'offline';
+      $('#api-detail').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function loadAudit() {
+    try {
+      const res = await api.audit({ limit: 10 });
+      const items = (res && res.items) || [];
+      $('#audit-list').innerHTML = items.length
+        ? items.map(a => `<div class="log-row"><div class="log-t">${fmt.time(a.timestamp)}</div><div class="log-s" style="color:var(--gold)">${esc(a.action)}</div><div class="log-ip">${esc(a.actor_email||'—')}</div><div class="log-m">${esc((a.method||'')+' '+(a.path||''))}</div></div>`).join('')
+        : '<div class="alert info">No entries.</div>';
+    } catch (e) {
+      $('#audit-list').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function refreshAll() {
+    const btn = $('#refresh-now');
+    btn.disabled = true; btn.textContent = '↺ Checking…';
+    await Promise.all([loadZeek(), loadServices(), loadAudit()]);
+    btn.disabled = false; btn.textContent = '↺ Check';
+    $('#last-check').textContent = 'updated ' + new Date().toLocaleTimeString('en-US', {hour12:false});
+  }
+
+  $('#refresh-now').addEventListener('click', refreshAll);
+  await refreshAll();
+
+  window.__pageCleanup = () => {
+    if (__protoRoot) { __protoRoot.unmount(); __protoRoot = null; }
+    if (__ipsRoot)   { __ipsRoot.unmount();   __ipsRoot = null; }
+    if (__svcRoot)   { __svcRoot.unmount();   __svcRoot = null; }
+  };
+})();
+</script>

@@ -1,0 +1,389 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px"> Timeline</div>
+    <h2 class="page-title">Live <span>Timeline</span></h2>
+    <div class="page-sub">Live stream · auto-refresh every 5 s · charts update in real-time.</div>
+  </div>
+  <div class="page-actions" style="gap:8px">
+    <select class="form-s" id="f-source" style="min-width:130px">
+      <option value="">All sources</option>
+      <option value="cowrie"> Cowrie</option>
+      <option value="dionaea"> Dionaea</option>
+      <option value="galah"> Galah</option>
+      <option value="zeek"> Zeek</option>
+    </select>
+    <select class="form-s" id="f-sev" style="min-width:120px">
+      <option value="">All severities</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <button class="btn btn-gh btn-sm" id="tl-pause"> Pause</button>
+  </div>
+</div>
+
+<!-- ── Live charts panel ──────────────────────────────────────────── -->
+<div id="tl-charts-root" style="margin-bottom:14px"></div>
+
+<!-- ── Live event feed ───────────────────────────────────────────── -->
+<div class="card" style="padding:0;overflow:hidden">
+  <div id="tl-feed" style="max-height:calc(100vh - 380px);overflow-y:auto"></div>
+</div>
+
+<style>
+/* ── event feed rows ─────────────────────────────────────────────── */
+.ev-row { display:grid;grid-template-columns:56px 100px 140px 1fr auto;align-items:start;gap:0 12px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.04);transition:background .15s; }
+.ev-row:hover { background:rgba(255,255,255,.03); }
+.ev-row.ev-new { animation:ev-flash .6s ease; }
+@keyframes ev-flash { from { background:rgba(140,26,43,.12); } to { background:transparent; } }
+.ev-time { font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);padding-top:3px; }
+.ev-src  { display:flex;align-items:center;gap:5px;padding-top:2px; }
+.ev-src-icon { font-size:14px; }
+.ev-src-label { font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2); }
+.ev-ip   { font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text1);padding-top:2px; }
+.ev-detail { min-width:0; }
+.ev-action { font-size:13px;font-weight:600;color:var(--text1);margin-bottom:3px; }
+.ev-cmd  { font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);background:rgba(140,26,43,.08);border-left:2px solid var(--gold);padding:3px 8px;margin-top:4px;border-radius:0 4px 4px 0;white-space:pre;overflow:hidden;text-overflow:ellipsis;max-width:100%; }
+.ev-cred { font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red2);background:rgba(255,80,80,.07);border-left:2px solid var(--red2);padding:2px 8px;margin-top:4px;border-radius:0 4px 4px 0; }
+.ev-meta { font-size:11px;color:var(--text3);margin-top:3px;font-family:'JetBrains Mono',monospace; }
+.ev-badges { display:flex;gap:4px;flex-direction:column;align-items:flex-end;padding-top:2px;white-space:nowrap; }
+.tl-empty { padding:48px;text-align:center;color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:13px; }
+
+/* ── chart panel ─────────────────────────────────────────────────── */
+.tl-chart-card { background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:16px 18px; }
+.tl-chart-title { font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;color:var(--text1);margin-bottom:2px; }
+.tl-chart-sub { font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:12px; }
+.tl-grid { display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px; }
+.tl-legend { display:flex;flex-direction:column;gap:7px; }
+.tl-legend-row { display:flex;align-items:center;gap:8px; }
+.tl-legend-dot { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
+.tl-legend-label { font-size:11px;flex:1; }
+.tl-legend-val { font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2); }
+.tl-split-wrap { display:flex;align-items:center;gap:16px; }
+.tl-pulse { display:flex;align-items:center;gap:6px;margin-bottom:8px; }
+.tl-pulse-dot { width:7px;height:7px;border-radius:50%;background:#ff5050;animation:tl-blink 1s ease-in-out infinite; }
+@keyframes tl-blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+.tl-pulse-txt { font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3); }
+@media(max-width:900px){ .tl-grid { grid-template-columns:1fr; } }
+</style>
+
+<script>
+(async function(){
+  const { SOURCE_META, fmt, esc, $, evNormalize } = FH;
+  const R  = window.React;
+  const RD = window.ReactDOM;
+  const RC = window.Recharts;
+
+  let paused = false;
+  let timer  = null;
+  let seen   = new Set();
+
+  const SEV_COLOR = { critical:'red', high:'red', medium:'gold', low:'teal' };
+  const SEV_LABEL = { critical:' CRIT', high:' HIGH', medium:' MED', low:' LOW' };
+
+  /* ── chart constants ──────────────────────────────────────── */
+  const HP_COLORS  = { cowrie:'#8C1A2B', dionaea:'#ff5050', galah:'#b464ff', zeek:'#50a0ff' };
+  const SEV_COLORS = { critical:'#ff5050', high:'#ff9933', medium:'#f59e0b', low:'#2dd4bf' };
+  const TOOLTIP_STYLE = {
+    backgroundColor:'#0d111e', border:'1px solid #1e2538',
+    borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace",
+    fontSize:'11px', color:'#e0e6f0',
+  };
+  const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
+  const MAX_TICKS = 20;
+
+  /* rolling history — one entry per 5-second tick */
+  const tlHistory = [];
+  let   chartRoot = null;
+
+  /* ── React chart component ────────────────────────────────── */
+  const h = R ? R.createElement : null;
+
+  function ChartsPanel({ history, byHp, bySev, total, paused: isPaused }) {
+    const hpData = Object.entries(byHp)
+      .map(([hp, count]) => ({
+        name:  (SOURCE_META[hp] || { label: hp }).label,
+        hp, count,
+        pct:  ((count / (total || 1)) * 100).toFixed(0),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const sevData = ['critical','high','medium','low'].map(k => ({
+      name:  k.charAt(0).toUpperCase() + k.slice(1),
+      value: bySev[k] || 0,
+      color: SEV_COLORS[k],
+    }));
+    const sevTotal = Object.values(bySev).reduce((a,b)=>a+b,0) || 1;
+
+    const hpKeys = ['cowrie','dionaea','galah','zeek'];
+
+    /* ── activity sparkline ─────────────────────────────────── */
+    const sparkCard = h('div', { className:'tl-chart-card' },
+      h('div', { className:'tl-chart-title' }, 'Live Activity'),
+      h('div', { className:'tl-chart-sub' },
+        'New events per 5-second tick · last ' + MAX_TICKS + ' refreshes'),
+      h('div', { className:'tl-pulse' },
+        h('div', { className:'tl-pulse-dot', style:{ animationPlayState: isPaused?'paused':'running' } }),
+        h('span', { className:'tl-pulse-txt' },
+          isPaused ? 'paused' : (history.length ? history[history.length-1].total + ' events in last tick' : 'waiting…'))
+      ),
+      history.length === 0
+        ? h('div', { style:{ color:'var(--text3)', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', paddingTop:'8px' } }, 'Waiting for first tick…')
+        : h(RC.ResponsiveContainer, { width:'100%', height:140 },
+            h(RC.BarChart, { data: history, margin:{ top:2, right:6, bottom:0, left:-20 } },
+              h(RC.CartesianGrid, { strokeDasharray:'3 3', stroke:'rgba(255,255,255,0.05)', vertical:false }),
+              h(RC.XAxis, { dataKey:'t', tick:AXIS_TICK, tickLine:false, axisLine:false, interval:'preserveStartEnd' }),
+              h(RC.YAxis, { tick:AXIS_TICK, tickLine:false, axisLine:false, allowDecimals:false }),
+              h(RC.Tooltip, { contentStyle:TOOLTIP_STYLE, cursor:{ fill:'rgba(255,255,255,0.04)' } }),
+              ...hpKeys.map((hp, idx) =>
+                h(RC.Bar, {
+                  key:hp, dataKey:hp, stackId:'a',
+                  fill: (HP_COLORS[hp] || '#888') + 'cc',
+                  stroke: HP_COLORS[hp] || '#888', strokeWidth:1,
+                  name: (SOURCE_META[hp] || { label:hp }).label,
+                  radius: idx === hpKeys.length-1 ? [2,2,0,0] : [0,0,0,0],
+                })
+              )
+            )
+          )
+    );
+
+    /* ── honeypot split donut ───────────────────────────────── */
+    const hpCard = h('div', { className:'tl-chart-card' },
+      h('div', { className:'tl-chart-title' }, 'Source Split'),
+      h('div', { className:'tl-chart-sub' }, 'Current batch by sensor'),
+      total === 0
+        ? h('div', { style:{ color:'var(--text3)', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' } }, 'No events yet.')
+        : h('div', { className:'tl-split-wrap', style:{ flexDirection:'column', alignItems:'flex-start', gap:10 } },
+            h(RC.PieChart, { width:120, height:120 },
+              h(RC.Pie, {
+                data: hpData, dataKey:'count', nameKey:'name',
+                cx:56, cy:56, innerRadius:34, outerRadius:52,
+                paddingAngle:2,
+              },
+                ...hpData.map((e,i) =>
+                  h(RC.Cell, { key:i, fill:(HP_COLORS[e.hp]||'#888')+'cc', stroke:HP_COLORS[e.hp]||'#888', strokeWidth:1 })
+                )
+              ),
+              h(RC.Tooltip, { contentStyle:TOOLTIP_STYLE })
+            ),
+            h('div', { className:'tl-legend' },
+              ...hpData.map((e,i) =>
+                h('div', { key:i, className:'tl-legend-row' },
+                  h('span', { className:'tl-legend-dot', style:{ background: HP_COLORS[e.hp]||'#888' } }),
+                  h('span', { className:'tl-legend-label' }, e.name),
+                  h('span', { className:'tl-legend-val' }, e.pct + '%')
+                )
+              )
+            )
+          )
+    );
+
+    /* ── severity donut ─────────────────────────────────────── */
+    const sevCard = h('div', { className:'tl-chart-card' },
+      h('div', { className:'tl-chart-title' }, 'Severity Mix'),
+      h('div', { className:'tl-chart-sub' }, 'Current batch by level'),
+      total === 0
+        ? h('div', { style:{ color:'var(--text3)', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px' } }, 'No events yet.')
+        : h('div', { className:'tl-split-wrap', style:{ flexDirection:'column', alignItems:'flex-start', gap:10 } },
+            h(RC.PieChart, { width:120, height:120 },
+              h(RC.Pie, {
+                data: sevData, dataKey:'value', nameKey:'name',
+                cx:56, cy:56, innerRadius:34, outerRadius:52,
+                paddingAngle:2,
+              },
+                ...sevData.map((e,i) =>
+                  h(RC.Cell, { key:i, fill:e.color+'cc', stroke:e.color, strokeWidth:1 })
+                )
+              ),
+              h(RC.Tooltip, { contentStyle:TOOLTIP_STYLE })
+            ),
+            h('div', { className:'tl-legend' },
+              ...sevData.map((e,i) =>
+                h('div', { key:i, className:'tl-legend-row' },
+                  h('span', { className:'tl-legend-dot', style:{ background: e.color } }),
+                  h('span', { className:'tl-legend-label' }, e.name),
+                  h('span', { className:'tl-legend-val' }, e.value + ' (' + ((e.value/sevTotal)*100).toFixed(0) + '%)')
+                )
+              )
+            )
+          )
+    );
+
+    return h('div', { className:'tl-grid' }, sparkCard, hpCard, sevCard);
+  }
+
+  /* ── init React root ──────────────────────────────────────── */
+  if (R && RD && RC) {
+    chartRoot = RD.createRoot(document.getElementById('tl-charts-root'));
+  } else {
+    document.getElementById('tl-charts-root').innerHTML =
+      '<div class="alert info" style="margin-bottom:12px">Recharts not loaded — charts unavailable.</div>';
+  }
+
+  function renderCharts(normalized, isPaused) {
+    if (!chartRoot) return;
+    const byHp  = {};
+    const bySev = { critical:0, high:0, medium:0, low:0 };
+    normalized.forEach(n => {
+      byHp[n.honeypot] = (byHp[n.honeypot] || 0) + 1;
+      const s = (n.severity || 'low').toLowerCase();
+      if (s in bySev) bySev[s]++;
+    });
+    chartRoot.render(
+      h(ChartsPanel, {
+        history: [...tlHistory],
+        byHp, bySev,
+        total: normalized.length,
+        paused: isPaused,
+      })
+    );
+  }
+
+  /* ── push a tick into rolling history ───────────────────────*/
+  function pushTick(newEventsByHp) {
+    const now = new Date();
+    const t =
+      now.getHours().toString().padStart(2,'0') + ':' +
+      now.getMinutes().toString().padStart(2,'0') + ':' +
+      now.getSeconds().toString().padStart(2,'0');
+    const entry = { t,
+      cowrie:  newEventsByHp.cowrie  || 0,
+      dionaea: newEventsByHp.dionaea || 0,
+      galah:   newEventsByHp.galah   || 0,
+      zeek:    newEventsByHp.zeek    || 0,
+      total:   Object.values(newEventsByHp).reduce((a,b)=>a+b, 0),
+    };
+    tlHistory.push(entry);
+    if (tlHistory.length > MAX_TICKS) tlHistory.shift();
+  }
+
+  /* ── event feed helpers ──────────────────────────────────── */
+  function evActionLabel(n) {
+    const a = (n.event_action || '').toLowerCase();
+    if (a.includes('login.success'))                           return ` Login success`;
+    if (a.includes('login.fail') || a.includes('auth.fail'))  return ` Auth failed`;
+    if (a.includes('login.attempt') || a.includes('login'))   return ` Login attempt`;
+    if (a.includes('command.input') || a.includes('cmd'))     return ` Shell command`;
+    if (a.includes('session.connect') || a.includes('connect')) return ` Connection`;
+    if (a.includes('session.closed') || a.includes('closed')) return ` Session closed`;
+    if (a.includes('file') || a.includes('malware'))          return ` Malicious file`;
+    if (n.http_method)    return ` ${esc(n.http_method)}`;
+    if (n.dionaea_module) return ` ${esc(n.dionaea_module)}`;
+    if (n.honeypot === 'zeek') {
+      const svc = n.protocol ? esc(n.protocol.toUpperCase()) : 'TCP';
+      return ` Traffic ${svc}`;
+    }
+    if (n.message) return esc(n.message.slice(0, 70));
+    return ` Event`;
+  }
+
+  function evDetail(n) {
+    const parts = [];
+    if (n.username || n.password)
+      parts.push(`<div class="ev-cred"> ${esc(n.username||'?')} /  ${esc(n.password||'?')}</div>`);
+    if (n.command)
+      parts.push(`<div class="ev-cmd">$ ${esc(n.command)}</div>`);
+    if (n.dionaea_msg && !n.command && !n.username)
+      parts.push(`<div class="ev-cmd">${esc(n.dionaea_msg)}</div>`);
+    if (n.http_path)
+      parts.push(`<div class="ev-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
+    const meta = [];
+    if (n.protocol)  meta.push(esc(n.protocol.toUpperCase()));
+    if (n.dest_port) meta.push(`port ${n.dest_port}`);
+    if (n.dest_ip && n.honeypot === 'zeek') meta.push(`→ ${esc(n.dest_ip)}`);
+    if (n.session_id) meta.push(`sess: ${esc(String(n.session_id).slice(-8))}`);
+    if (meta.length) parts.push(`<div class="ev-meta">${meta.join(' · ')}</div>`);
+    return parts.join('');
+  }
+
+  function renderRow(n, isNew) {
+    const meta = SOURCE_META[n.honeypot] || { label: n.honeypot || '?', icon: '' };
+    const sev = (n.severity || 'low').toLowerCase();
+    return `<div class="ev-row${isNew ? ' ev-new' : ''}">
+      <div class="ev-time">${fmt.time(n.timestamp)}</div>
+      <div class="ev-src"><span class="ev-src-icon">${meta.icon}</span><span class="ev-src-label">${esc(meta.label)}</span></div>
+      <div class="ev-ip">${esc(n.source_ip || '—')}</div>
+      <div class="ev-detail"><div class="ev-action">${evActionLabel(n)}</div>${evDetail(n)}</div>
+      <div class="ev-badges"><span class="badge ${SEV_COLOR[sev]||'teal'}" style="font-size:10px">${SEV_LABEL[sev]||esc(sev)}</span></div>
+    </div>`;
+  }
+
+  /* ── load / refresh ─────────────────────────────────────── */
+  async function loadFeed(isRefresh) {
+    const srcFilter = $('#f-source').value;
+    const sevFilter = $('#f-sev').value;
+    try {
+      const res = await api.attacks({ page_size: 100, page: 1 });
+      const normalized = (res && res.items || []).map(evNormalize);
+      let filtered = normalized;
+      if (srcFilter) filtered = filtered.filter(n => n.honeypot === srcFilter);
+      if (sevFilter) filtered = filtered.filter(n => (n.severity||'low').toLowerCase() === sevFilter);
+
+      /* ── chart tick ─────────────────────────────────────── */
+      const newByHp = { cowrie:0, dionaea:0, galah:0, zeek:0 };
+      if (!isRefresh) {
+        normalized.forEach(n => { if (n.honeypot in newByHp) newByHp[n.honeypot]++; });
+      } else {
+        const arrivals = normalized.filter(n => !seen.has(n.id));
+        arrivals.forEach(n => { if (n.honeypot in newByHp) newByHp[n.honeypot]++; });
+      }
+      pushTick(newByHp);
+      renderCharts(normalized, paused);
+
+      /* ── feed update ─────────────────────────────────────── */
+      if (!isRefresh) {
+        seen.clear();
+        filtered.forEach(n => seen.add(n.id));
+        if (!filtered.length) {
+          $('#tl-feed').innerHTML =
+            `<div class="tl-empty">No events${srcFilter||sevFilter?' for this filter':''}.</div>`;
+          return;
+        }
+        $('#tl-feed').innerHTML = filtered.map(n => renderRow(n, false)).join('');
+        return;
+      }
+      const newItems = filtered.filter(n => !seen.has(n.id));
+      if (!newItems.length) return;
+      newItems.forEach(n => seen.add(n.id));
+      const feed = $('#tl-feed');
+      feed.insertAdjacentHTML('afterbegin', newItems.map(n => renderRow(n, true)).join(''));
+      const rows = feed.querySelectorAll('.ev-row');
+      if (rows.length > 200) Array.from(rows).slice(200).forEach(r => r.remove());
+    } catch (e) {
+      if (!isRefresh)
+        $('#tl-feed').innerHTML =
+          `<div class="alert err" style="margin:16px">${esc(e.message)}</div>`;
+    }
+  }
+
+  /* ── timer ──────────────────────────────────────────────── */
+  function startTimer() {
+    timer = setInterval(() => {
+      if (!paused) loadFeed(true);
+      else renderCharts([], true); /* keep blink paused in chart */
+    }, 5000);
+  }
+
+  /* ── controls ───────────────────────────────────────────── */
+  $('#tl-pause').addEventListener('click', () => {
+    paused = !paused;
+    $('#tl-pause').innerHTML  = paused ? '▶ Resume' : ' Pause';
+    $('#tl-pause').className  = paused ? 'btn btn-gold btn-sm' : 'btn btn-gh btn-sm';
+  });
+
+  ['#f-source','#f-sev'].forEach(id =>
+    $(id).addEventListener('change', () => { seen.clear(); loadFeed(false); })
+  );
+
+  window.__pageCleanup = () => {
+    clearInterval(timer);
+    if (chartRoot) chartRoot.unmount();
+  };
+
+  /* ── initial load ───────────────────────────────────────── */
+  await loadFeed(false);
+  startTimer();
+})();
+</script>

@@ -1,0 +1,285 @@
+services:
+
+  # ── HONEYPOTS ────────────────────────────────────────
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: forenhive-cowrie
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+      - "2223:2223"
+    volumes:
+      - cowrie-var:/cowrie/cowrie-git/var
+      - ./honeypots/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./honeypots/cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
+    networks:
+      - honeypot-net
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: forenhive-dionaea
+    restart: unless-stopped
+    ports:
+      - "23:23"
+      - "80:80"
+      - "135:135"
+      - "443:443"
+      - "445:445"
+      - "1433:1433"
+      - "1723:1723"
+      - "1883:1883"
+      - "3306:3306"
+      - "11211:11211"
+      - "27017:27017"
+    volumes:
+      - dionaea-logs:/opt/dionaea/var/log
+      - dionaea-malware:/opt/dionaea/var/lib/dionaea
+      - ./honeypots/dionaea/smb.yaml:/opt/dionaea/template/etc/dionaea/services-enabled/smb.yaml:ro
+      - ./honeypots/dionaea/mssql.yaml:/opt/dionaea/template/etc/dionaea/services-enabled/mssql.yaml:ro
+    environment:
+      - DIONAEA_FORCE_INIT_DATA=1
+    networks:
+      - honeypot-net
+
+  galah:
+    build: ./honeypots/galah/galah-src
+    container_name: forenhive-galah
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8888:8888"
+    networks:
+      - honeypot-net
+      - backend-net
+    environment:
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=${OLLAMA_MODEL:-mistral}
+      - LLM_SERVER_URL=http://${OLLAMA_HOST:-forenhive-ollama}:${OLLAMA_PORT:-11434}
+    command:
+      - --event-log-file=/app/logs/event_log.json
+      - --cache-db-file=/app/logs/cache.db
+    volumes:
+      - galah-logs:/app/logs
+    depends_on:
+      - ollama
+
+  zeek:
+    image: zeek/zeek:latest
+    container_name: forenhive-zeek
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - zeek-logs:/usr/local/zeek/logs
+      - zeek-spool:/usr/local/zeek/spool
+      - ./honeypots/zeek/local.zeek:/usr/local/zeek/share/zeek/site/local.zeek
+    command: >
+      sh -c "sed -i 's/interface=eth0/interface=${ZEEK_INTERFACE:-eno12399}/g'
+      /usr/local/zeek/etc/node.cfg &&
+      zeekctl deploy &&
+      tail -f /dev/null"
+
+  # ── PIPELINE ETL ─────────────────────────────────────
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.13.0
+    container_name: forenhive-filebeat
+    restart: unless-stopped
+    user: root
+    command: filebeat -e --strict.perms=false
+    volumes:
+      - ./pipeline/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - cowrie-var:/var/log/cowrie:ro
+      - dionaea-logs:/var/log/dionaea:ro
+      - zeek-logs:/var/log/zeek:ro
+      - zeek-spool:/usr/local/zeek/spool:ro
+      - galah-logs:/var/log/galah:ro
+    networks:
+      - honeypot-net
+      - backend-net
+    depends_on:
+      - logstash
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.0
+    container_name: forenhive-logstash
+    restart: unless-stopped
+    volumes:
+      - ./pipeline/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./pipeline/logstash/pipelines:/usr/share/logstash/pipeline
+      - ./geoip/GeoLite2-City.mmdb:/usr/share/logstash/GeoLite2-City.mmdb:ro
+    ports:
+      - "5044:5044"
+    networks:
+      - backend-net
+    environment:
+      - LS_JAVA_OPTS=${LS_JAVA_OPTS:--Xms512m -Xmx512m}
+    depends_on:
+      - elasticsearch
+
+  # ── STOCKAGE ─────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: forenhive-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+      - network.host=0.0.0.0
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    networks:
+      - backend-net
+
+  postgresql:
+    image: postgres:15
+    container_name: forenhive-postgresql
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-forenhive}
+      - POSTGRES_USER=${POSTGRES_USER:-forenhive}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    networks:
+      - backend-net
+
+  # ── FORENSIC ENGINE ──────────────────────────────────
+  forensic-engine:
+    build: ./forensic-engine
+    container_name: forenhive-forensic-engine
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - dionaea-malware:/opt/dionaea/var/lib/dionaea:ro
+      - zeek-logs:/usr/local/zeek/logs:ro
+      - ./forensic-engine/yara_rules:/app/yara_rules:ro
+      - ./geoip/GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro
+      - ./geoip/GeoLite2-ASN.mmdb:/app/GeoLite2-ASN.mmdb:ro
+    networks:
+      - backend-net
+    env_file:
+      - .env
+    environment:
+      - PG_HOST=forenhive-postgresql
+      - PG_PORT=${POSTGRES_PORT:-5432}
+      - PG_DB=${POSTGRES_DB:-forenhive}
+      - PG_USER=${POSTGRES_USER:-forenhive}
+      - PG_PASSWORD=${POSTGRES_PASSWORD}
+      - ABUSEIPDB_KEY=${ABUSEIPDB_API_KEY}
+      - VIRUSTOTAL_KEY=${VIRUSTOTAL_API_KEY}
+      - ENGINE_INTERVAL_MINUTES=1440
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WA_NUMBER=${TWILIO_WA_NUMBER}
+      - DEST_WA=${DEST_WA}
+    depends_on:
+      - elasticsearch
+      - postgresql
+
+  # ── BACKEND API (FastAPI, async SQLAlchemy + ES) ─────
+  forenhive-backend:
+    build: ./backend
+    container_name: forenhive-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ES_HOST=http://forenhive-elasticsearch:9200
+      - OLLAMA_HOST=http://forenhive-ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:latest}
+      - OLLAMA_TIMEOUT=300
+      - REPORTS_DIR=/reports
+      - PG_HOST=forenhive-postgresql
+      - PG_PORT=${POSTGRES_PORT:-5432}
+      - PG_DB=${POSTGRES_DB:-forenhive}
+      - PG_USER=${POSTGRES_USER:-forenhive}
+      - PG_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-admin@forenhive.local}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2026}
+      - FORENSIC_ENGINE_URL=http://forensic-engine:8001
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:9000,http://127.0.0.1:9000,http://172.16.1.100,http://172.16.1.100:9000,http://172.16.1.100:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - reports-data:/reports
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - backend-net
+    depends_on:
+      - postgresql
+      - elasticsearch
+      - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ── LLM ──────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: forenhive-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - backend-net
+
+  # ── FRONTEND (nginx serving SPA) ─────────────────────
+  forenhive-frontend:
+    image: nginx:alpine
+    container_name: forenhive-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - backend-net
+    depends_on:
+      - forenhive-backend
+
+# ── RÉSEAUX ──────────────────────────────────────────
+networks:
+  honeypot-net:
+    name: honeypot-net
+    driver: bridge
+  backend-net:
+    name: backend-net
+    driver: bridge
+
+# ── VOLUMES ──────────────────────────────────────────
+volumes:
+  cowrie-var:
+    external: true
+    name: bb474ddc3d2a3f3026c85d4c2fe7f1c5723f2e68f8ba60a05e4c9bb4471292ce
+  dionaea-logs:
+    external: true
+    name: dionaea_dionaea-logs
+  dionaea-malware:
+    external: true
+    name: dionaea_dionaea-malware
+  zeek-logs:
+    external: true
+    name: zeek_zeek-logs
+  elasticsearch-data:
+  postgresql-data:
+  reports-data:
+  ollama-models:
+    external: true
+    name: llm_ollama-models
+  galah-logs:
+  zeek-spool:

@@ -1,0 +1,1095 @@
+<div class="page-head">
+  <div>
+    <div class="section-tag" style="margin-bottom:8px">Forensic Profiling</div>
+    <h2 class="page-title">Attacker <span>Dossiers</span></h2>
+    <div class="page-sub">FBI criminal profiling methodology applied to cyber attacker behavioral analysis · LLM-powered</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-gh btn-sm" id="p-load-mock" title="Load demo profiles for development">Demo Data</button>
+    <button class="btn btn-gh btn-sm" id="p-refresh">Refresh</button>
+  </div>
+</div>
+
+<div class="kpi-grid" id="p-stats">
+  <div class="kpi g"><div class="kpi-label">Total Profiles</div><div class="kpi-val" id="p-k-total">—</div><div class="kpi-delta" id="p-k-total-d">loading…</div></div>
+  <div class="kpi r"><div class="kpi-label">Critical</div><div class="kpi-val" id="p-k-crit">—</div><div class="kpi-delta">score ≥ 70</div></div>
+  <div class="kpi p"><div class="kpi-label">High</div><div class="kpi-val" id="p-k-high">—</div><div class="kpi-delta">40 – 69</div></div>
+  <div class="kpi b"><div class="kpi-label">Avg Score</div><div class="kpi-val" id="p-k-avg">—</div><div class="kpi-delta">out of 100</div></div>
+</div>
+
+<div class="filters" id="p-filters" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
+  <select class="form-s" id="p-sort" style="min-width:130px;height:32px;padding:0 28px 0 10px;font-size:11px">
+    <option value="risk_score">Risk Score ↓</option>
+    <option value="last_seen">Last Seen ↓</option>
+    <option value="sessions">Sessions ↓</option>
+  </select>
+  <input class="form-i" id="p-search" placeholder="Filter by IP…" style="min-width:200px;height:32px;padding:0 10px;font-size:12px;margin-left:auto">
+  <input class="form-i" id="p-lookup" placeholder="Profile an IP…" style="min-width:170px;height:32px;padding:0 10px;font-size:12px">
+  <button class="btn btn-gold btn-sm" id="p-lookup-go">Profile →</button>
+</div>
+
+<div class="p-layout">
+  <div class="p-list-col">
+    <div class="card" style="padding:0">
+      <div class="card-h" style="padding:12px 16px;margin:0;border-bottom:1px solid var(--border)">
+        <div class="card-t" style="font-size:13px">Suspect Registry</div>
+        <div class="card-sub" id="p-list-count">—</div>
+      </div>
+      <div id="p-list" class="scroll-y" style="max-height:calc(100vh - 360px);min-height:420px">
+        <div class="alert info" style="margin:14px">Loading…</div>
+      </div>
+    </div>
+  </div>
+  <div class="p-detail-col">
+    <div id="p-detail">
+      <div class="card p-empty">
+        <div class="p-empty-icon">◉</div>
+        <div class="p-empty-t">Select a Suspect</div>
+        <div class="p-empty-s">to open the forensic dossier</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ── Layout ── */
+.p-layout{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+@media(max-width:1100px){.p-layout{grid-template-columns:1fr}}
+.p-filter{cursor:pointer}
+.p-filter.active{background:var(--yellow-glow)!important;border-color:var(--yellow)!important;color:var(--yellow)!important;box-shadow:0 0 0 1px var(--yellow) inset}
+
+/* ── Suspect list card ── */
+.p-card{padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-left:3px solid transparent}
+.p-card:hover{background:rgba(255,255,255,.025)}
+.p-card.active{background:rgba(212,168,74,.05);border-left-color:var(--accent-gold)}
+.p-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px}
+.p-card-ip{font-family:'JetBrains Mono','Share Tech Mono',monospace;font-size:12.5px;font-weight:700;color:var(--text)}
+.p-card-score{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:800;line-height:1;flex-shrink:0}
+.p-card-meta{display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--text3);font-family:'Share Tech Mono','JetBrains Mono',monospace;align-items:center;margin-bottom:4px}
+.p-sev-tag{padding:2px 6px;border-radius:3px;border:1px solid;font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-family:'Share Tech Mono',monospace}
+.p-sev-CRITICAL{color:var(--red2);border-color:rgba(201,61,85,.35);background:rgba(201,61,85,.06)}
+.p-sev-HIGH{color:var(--accent-gold);border-color:rgba(212,168,74,.35);background:rgba(212,168,74,.06)}
+.p-sev-MEDIUM{color:var(--blue2);border-color:rgba(106,176,255,.3);background:rgba(106,176,255,.06)}
+.p-sev-LOW{color:var(--text3);border-color:var(--border)}
+.p-card-bdr-CRITICAL{border-left-color:var(--red2)!important}
+.p-card-bdr-HIGH{border-left-color:var(--accent-gold)!important}
+.p-card-bdr-MEDIUM{border-left-color:var(--blue2)!important}
+.p-card-bdr-LOW{border-left-color:var(--text3)!important}
+.p-soph-chip{padding:2px 7px;border-radius:10px;border:1px solid;font-size:9px;font-family:'Share Tech Mono',monospace;font-weight:700;letter-spacing:.5px}
+.p-score-CRITICAL{color:var(--red2)}.p-score-HIGH{color:var(--accent-gold)}.p-score-MEDIUM{color:var(--blue2)}.p-score-LOW{color:var(--text3)}
+
+/* ── Empty state ── */
+.p-empty{text-align:center;padding:80px 20px;color:var(--text3)}
+.p-empty-icon{font-size:52px;opacity:.25;margin-bottom:16px;line-height:1}
+.p-empty-t{font-family:'Rajdhani',sans-serif;font-size:20px;color:var(--text2);margin-bottom:8px}
+.p-empty-s{font-size:12px;font-family:'Share Tech Mono',monospace;letter-spacing:.8px}
+
+/* ── Dossier wrapper ── */
+.dossier{display:flex;flex-direction:column;gap:12px}
+.dos-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow-sm)}
+
+/* ── Dossier header (identity card) ── */
+.dos-header{padding:20px 22px;border-bottom:1px solid var(--border)}
+.dos-hdr-top{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px}
+.dos-hdr-main{flex:1;min-width:0}
+.dos-ip{font-family:'JetBrains Mono','Share Tech Mono',monospace;font-size:20px;font-weight:700;color:var(--text);letter-spacing:.5px;margin-bottom:4px}
+.dos-subtitle{font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace;letter-spacing:.5px;margin-bottom:10px}
+.dos-badges{display:flex;flex-wrap:wrap;gap:6px}
+.dos-soph-badge{padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-family:'Share Tech Mono',monospace;border:1px solid}
+.soph-apt{color:var(--red2);border-color:rgba(201,61,85,.4);background:rgba(201,61,85,.08)}
+.soph-high{color:var(--accent-gold);border-color:rgba(212,168,74,.4);background:rgba(212,168,74,.08)}
+.soph-intermediate{color:var(--blue2);border-color:rgba(106,176,255,.35);background:rgba(106,176,255,.08)}
+.soph-low{color:var(--text3);border-color:var(--border);background:rgba(154,160,180,.05)}
+.soph-null{color:var(--text3);border-color:var(--border);background:rgba(154,160,180,.04)}
+.dos-gauge{flex-shrink:0;text-align:center}
+.dos-stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-top:12px}
+.dos-stat{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.dos-stat-label{font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px}
+.dos-stat-val{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--text)}
+.dos-disguise{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;font-size:10px;font-family:'Share Tech Mono',monospace;font-weight:700;letter-spacing:.8px;border:1px solid rgba(201,61,85,.4);color:var(--red2);background:rgba(201,61,85,.08)}
+
+/* ── Section headers ── */
+.dos-sec{padding:18px 22px;border-top:1px solid var(--border)}
+.dos-sec-hdr{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.dos-sec-icon{font-size:13px;color:var(--accent-gold);flex-shrink:0}
+.dos-sec-title{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;letter-spacing:1.5px;color:var(--text2);text-transform:uppercase}
+.dos-sec-sub{font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-left:auto}
+
+/* ── Detective narrative ── */
+.dos-narrative-box{position:relative;padding:16px 18px 16px 24px;border-left:3px solid var(--accent-gold);border-radius:0 8px 8px 0;background:rgba(212,168,74,.04);font-style:italic;line-height:1.7;font-size:13.5px;color:var(--text);font-family:'Inter',sans-serif}
+.dos-narrative-box::before{content:'"';position:absolute;top:-4px;left:14px;font-size:60px;color:var(--accent-gold);opacity:.18;font-family:'Georgia',serif;line-height:1;pointer-events:none}
+
+/* ── Behavioral section ── */
+.dos-obj-primary{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:6px;font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700;letter-spacing:.5px;background:var(--gold-glow);border:1px solid var(--border2);color:var(--text);margin-bottom:8px}
+.dos-obj-secondary{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:5px;font-size:11px;font-family:'Share Tech Mono',monospace;color:var(--text2);background:var(--bg3);border:1px solid var(--border);margin-bottom:12px}
+.dos-trait-chip{display:inline-block;padding:4px 10px;margin:3px;border-radius:3px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);letter-spacing:.3px}
+.dos-escalation{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:5px;font-size:11px;font-family:'Share Tech Mono',monospace;font-weight:700;letter-spacing:.8px;border:1px solid rgba(232,184,75,.4);color:var(--yellow);background:rgba(232,184,75,.08)}
+.dos-sig-item{padding:7px 12px;border-radius:5px;font-family:'Share Tech Mono','JetBrains Mono',monospace;font-size:11px;color:var(--text2);background:rgba(0,0,0,.25);border:1px solid var(--border);border-left:2px solid var(--accent-gold);margin-bottom:6px}
+
+/* ── Kill chain ── */
+.dos-kc-bar{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:8px}
+.dos-kc-step{height:32px;border-radius:4px;background:rgba(255,255,255,.03);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;transition:all .2s;text-align:center;padding:0 2px}
+.dos-kc-step.done{border-color:transparent}
+.dos-kc-step.done.sev-CRITICAL{background:var(--red2);color:#fff}
+.dos-kc-step.done.sev-HIGH{background:var(--accent-gold);color:#0B0E18}
+.dos-kc-step.done.sev-MEDIUM{background:var(--blue2);color:#060810}
+.dos-kc-step.done.sev-LOW{background:var(--text3);color:#060810}
+.dos-kc-step.current{box-shadow:0 0 0 2px var(--text) inset;filter:brightness(1.25)}
+.dos-kc-label{font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-top:6px}
+
+/* ── Organized bar ── */
+.dos-org-track{position:relative;height:10px;border-radius:5px;background:rgba(255,255,255,.05);overflow:hidden;border:1px solid var(--border);margin:8px 0}
+.dos-org-fill{position:absolute;top:0;left:0;bottom:0;background:linear-gradient(90deg,var(--blue2),var(--accent-gold),var(--red2));transition:width .4s}
+.dos-org-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── MITRE ATT&CK ── */
+.dos-mitre-groups{display:flex;flex-direction:column;gap:10px}
+.dos-mitre-group{border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+.dos-mitre-group-hdr{padding:6px 12px;font-size:10px;font-family:'Share Tech Mono',monospace;font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.dos-mitre-group-items{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;background:rgba(0,0,0,.2)}
+.dos-mitre-chip{padding:4px 10px;border-radius:4px;border:1px solid;font-family:'Share Tech Mono','JetBrains Mono',monospace;font-size:10px}
+.dos-mitre-chip-id{font-weight:700;margin-right:5px}
+.dos-mitre-string{padding:4px 10px;border-radius:4px;border:1px solid var(--border2);font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--accent-gold);background:rgba(212,168,74,.06)}
+
+/* ── OSINT grid ── */
+.dos-osint-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.dos-osint-grid{grid-template-columns:1fr}}
+.dos-osint-block{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.dos-osint-block-title{font-size:10px;font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.dos-kv{display:grid;grid-template-columns:90px 1fr;gap:4px 10px;font-size:11.5px;margin-bottom:4px;align-items:baseline}
+.dos-kv-k{color:var(--text3);font-family:'Share Tech Mono',monospace;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px}
+.dos-kv-v{color:var(--text);word-break:break-all}
+.dos-abuse-bar{height:8px;border-radius:4px;background:rgba(255,255,255,.05);overflow:hidden;border:1px solid var(--border);margin:4px 0 2px}
+.dos-abuse-fill{height:100%;border-radius:4px;transition:width .4s}
+.dos-anon-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px}
+.dos-anon-icon{width:16px;text-align:center;font-size:13px;flex-shrink:0}
+.dos-anon-label{color:var(--text2);flex:1}
+.dos-anon-val{font-family:'Share Tech Mono',monospace;font-size:10px;font-weight:700}
+.dos-anon-yes{color:var(--red2)}.dos-anon-no{color:var(--text3)}
+.dos-vuln-tag{display:inline-block;padding:2px 7px;margin:2px 3px;border-radius:3px;font-size:9px;font-family:'Share Tech Mono',monospace;font-weight:700;background:rgba(201,61,85,.1);color:var(--red2);border:1px solid rgba(201,61,85,.3)}
+
+/* ── Evidence ── */
+.dos-cred-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.dos-cred-tbl th{font-family:'Share Tech Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border)}
+.dos-cred-tbl td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-family:'JetBrains Mono','Share Tech Mono',monospace;font-size:11px;color:var(--text2)}
+.dos-cred-tbl tr.success td{color:var(--red2);background:rgba(201,61,85,.05)}
+.dos-cred-tbl tr:last-child td{border-bottom:none}
+.dos-cred-success{display:inline-block;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.5px;font-family:'Share Tech Mono',monospace}
+.dos-cred-success.yes{background:rgba(201,61,85,.15);color:var(--red2);border:1px solid rgba(201,61,85,.35)}
+.dos-cred-success.no{background:rgba(255,255,255,.04);color:var(--text3);border:1px solid var(--border)}
+.dos-cmd-line{padding:5px 12px;border-radius:4px;background:rgba(0,0,0,.35);font-family:'JetBrains Mono','Share Tech Mono',monospace;font-size:11px;color:var(--text2);border-left:2px solid var(--border);margin-bottom:4px;display:flex;align-items:baseline;gap:8px}
+.dos-cmd-n{color:var(--text3);font-size:10px;flex-shrink:0;min-width:20px;text-align:right}
+.dos-cmd-danger{border-left-color:var(--red2)!important;color:var(--text)}
+.dos-malware-box{background:rgba(201,61,85,.06);border:1px solid rgba(201,61,85,.25);border-radius:8px;padding:14px 16px}
+.dos-malware-family{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:var(--red2);margin-bottom:6px}
+.dos-vt-bar{height:8px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;margin:4px 0}
+.dos-vt-fill{height:100%;background:linear-gradient(90deg,var(--yellow),var(--red2));border-radius:4px}
+.dos-hash{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);word-break:break-all;padding:6px 10px;background:rgba(0,0,0,.3);border-radius:4px;border:1px solid var(--border);margin-top:6px;cursor:pointer}
+.dos-hash:hover{color:var(--text2)}
+
+/* ── Similar cases ── */
+.dos-similar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.dos-similar-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer;transition:all .2s}
+.dos-similar-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.dos-similar-ip{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px}
+.dos-similar-why{font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--text3);margin-top:8px;padding-top:6px;border-top:1px solid var(--border)}
+
+/* ── Utility ── */
+.dos-no-data{font-size:12px;color:var(--text3);font-family:'Share Tech Mono',monospace;font-style:italic;padding:8px 0}
+.dos-mock-banner{background:rgba(106,176,255,.07);border:1px solid rgba(106,176,255,.25);border-radius:6px;padding:7px 14px;font-size:11px;color:var(--blue2);font-family:'Share Tech Mono',monospace;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+</style>
+
+<script>
+(async function(){
+  const { esc, fmt, $, $$, flag } = FH;
+
+  const STATE = {
+    profiles: [], stats: null,
+    activeSev: 'ALL', activeSoph: 'ALL',
+    sortBy: 'risk_score', activeId: null, search: '', useMock: false,
+  };
+
+  const KC_STEPS = [
+    { key:'reconnaissance',        label:'Recon'    },
+    { key:'weaponization',         label:'Weapon'   },
+    { key:'delivery',              label:'Delivery' },
+    { key:'exploitation',          label:'Exploit'  },
+    { key:'installation',          label:'Install'  },
+    { key:'command_and_control',   label:'C2'       },
+    { key:'lateral_movement',      label:'Lateral'  },
+    { key:'actions_on_objectives', label:'Actions'  },
+  ];
+
+  const SOPH_MAP = {
+    apt:          { cls:'soph-apt',          chip:'soph-apt',          text:'APT / State-Level',  chipText:'APT' },
+    high:         { cls:'soph-high',         chip:'soph-high',         text:'Professional',       chipText:'PRO' },
+    intermediate: { cls:'soph-intermediate', chip:'soph-intermediate', text:'Intermediate',       chipText:'INT' },
+    low:          { cls:'soph-low',          chip:'soph-low',          text:'Script Kiddie',      chipText:'SK'  },
+  };
+
+  const MITRE_KC_MAP = [
+    [['T1595','T1590','T1589'], 'reconnaissance'],
+    [['T1587','T1588'],         'weaponization'],
+    [['T1566'],                 'delivery'],
+    [['T1190','T1110','T1203'],'exploitation'],
+    [['T1547','T1543'],         'installation'],
+    [['T1071','T1095'],         'command_and_control'],
+    [['T1021','T1550'],         'lateral_movement'],
+  ];
+
+  const TACTIC_COLORS = {
+    'Credential Access': { bg:'rgba(212,168,74,.12)', color:'var(--accent-gold)', border:'rgba(212,168,74,.3)' },
+    'Execution':         { bg:'rgba(106,176,255,.10)', color:'var(--blue2)',       border:'rgba(106,176,255,.3)' },
+    'Persistence':       { bg:'rgba(159,106,224,.10)', color:'var(--purple2)',     border:'rgba(159,106,224,.3)' },
+    'Defense Evasion':   { bg:'rgba(0,191,165,.10)',   color:'var(--teal)',        border:'rgba(0,191,165,.3)'   },
+    'Discovery':         { bg:'rgba(106,176,255,.08)', color:'#80CBC4',            border:'rgba(128,203,196,.3)' },
+    'Lateral Movement':  { bg:'rgba(201,61,85,.10)',   color:'var(--red2)',        border:'rgba(201,61,85,.3)'   },
+    'Collection':        { bg:'rgba(159,106,224,.08)', color:'var(--purple2)',     border:'rgba(159,106,224,.25)' },
+    'Command and Control':{ bg:'rgba(201,61,85,.08)',  color:'var(--red2)',        border:'rgba(201,61,85,.25)'  },
+    'Exfiltration':      { bg:'rgba(232,184,75,.10)',  color:'var(--yellow)',      border:'rgba(232,184,75,.3)'  },
+    'Impact':            { bg:'rgba(201,61,85,.12)',   color:'var(--red2)',        border:'rgba(201,61,85,.35)'  },
+    'Initial Access':    { bg:'rgba(140,26,43,.10)',   color:'var(--gold)',        border:'var(--border2)'       },
+    'Privilege Escalation':{ bg:'rgba(232,184,75,.08)','color':'var(--yellow)',   border:'rgba(232,184,75,.25)' },
+  };
+
+  const DANGER_CMDS = /\b(wget|curl|chmod\s*\+x|bash|python|perl\b|nc\b|ncat|mkfifo|crontab|LD_PRELOAD|nohup)\b|\/dev\/tcp|rm\s+-rf/;
+
+  function deriveKCPhase(mitre) {
+    if (!Array.isArray(mitre) || !mitre.length) return null;
+    let best = -1, phase = null;
+    const KC_ORDER = KC_STEPS.map(s => s.key);
+    for (const t of mitre) {
+      const id = typeof t === 'object' ? t.id : String(t);
+      const pfx = id.slice(0,5);
+      for (const [pfxs, ph] of MITRE_KC_MAP) {
+        if (pfxs.includes(pfx)) {
+          const idx = KC_ORDER.indexOf(ph);
+          if (idx > best) { best = idx; phase = ph; }
+        }
+      }
+    }
+    return phase;
+  }
+
+  function sevFromScore(s) {
+    s = Number(s) || 0;
+    return s >= 70 ? 'CRITICAL' : s >= 40 ? 'HIGH' : s >= 20 ? 'MEDIUM' : 'LOW';
+  }
+
+  function normalize(raw) {
+    const p = { ...raw };
+    if (!p.source_ip && p.ip) p.source_ip = p.ip;
+    if (!p.severity) p.severity = sevFromScore(p.risk_score);
+    if (p.organised_score == null && p.organized_score != null) p.organised_score = Number(p.organized_score);
+    if (!Array.isArray(p.signature_behaviors) && Array.isArray(p.signature_indicators)) p.signature_behaviors = p.signature_indicators;
+    if (!p.behavioral_traits && Array.isArray(p.behavioral_traits)) p.behavioral_traits = p.behavioral_traits;
+    if (!p.kill_chain_stage) p.kill_chain_stage = p.kill_chain_phase || deriveKCPhase(p.mitre_techniques);
+    if (!p.recidivism && typeof p.similar_past_cases === 'number') {
+      p.recidivism = { seen_before: p.similar_past_cases > 0, previous_sessions: p.similar_past_cases };
+    }
+    // Map new schema events/sessions counts to old field names
+    if (!p.event_count && p.events_count != null)     p.event_count   = p.events_count;
+    if (!p.session_count && p.sessions_count != null) p.session_count = p.sessions_count;
+    // Map honeypots_targeted → honeypots
+    if (!p.honeypots && Array.isArray(p.honeypots_targeted)) p.honeypots = p.honeypots_targeted;
+    // Flatten enrichment → top-level fields
+    if (p.enrichment) {
+      const e = p.enrichment;
+      if (e.geo) {
+        if (!p.country) { p.country = e.geo.country_code; p.country_name = e.geo.country; }
+        if (!p.city)    p.city = e.geo.city;
+        if (p.lat == null) { p.lat = e.geo.lat; p.lon = e.geo.lon; }
+        if (!p.timezone) p.timezone = e.geo.timezone;
+      }
+      if (e.asn) {
+        if (!p.asn)    p.asn    = e.asn.number;
+        if (!p.as_org) p.as_org = e.asn.organization;
+      }
+      if (e.abuse) {
+        if (p.abuseipdb_score == null) p.abuseipdb_score = e.abuse.score;
+        if (!p.abuse_reports)    p.abuse_reports    = e.abuse.total_reports;
+        if (!p.abuse_categories) p.abuse_categories = e.abuse.categories;
+      }
+      if (e.anonymization) {
+        if (p.is_tor   == null) p.is_tor   = e.anonymization.is_tor;
+        if (p.is_vpn   == null) p.is_vpn   = e.anonymization.is_vpn;
+        if (p.is_proxy == null) p.is_proxy = e.anonymization.is_proxy;
+        if (p.is_hosting == null) p.is_hosting = e.anonymization.is_hosting;
+      }
+      if (e.shodan  && !p.shodan)      p.shodan      = e.shodan;
+      if (e.whois   && !p.whois_data)  p.whois_data  = e.whois;
+    }
+    // Map credentials_attempted → top_usernames / top_passwords + keep raw for table
+    if (Array.isArray(p.credentials_attempted)) {
+      if (!p.top_usernames) p.top_usernames = [...new Set(p.credentials_attempted.map(c=>c.username))].slice(0,10);
+      if (!p.top_passwords) p.top_passwords = [...new Set(p.credentials_attempted.map(c=>c.password))].slice(0,10);
+    }
+    // Map commands_executed → top_commands
+    if (Array.isArray(p.commands_executed) && !p.top_commands) p.top_commands = p.commands_executed;
+    // Map malware block
+    if (p.malware && p.malware.yara_match) {
+      if (!Array.isArray(p.yara_matches) || !p.yara_matches.length) p.yara_matches = [p.malware.yara_match];
+      if (!p.vt_detections) p.vt_detections = p.malware.vt_detections;
+      if (!p.vt_family)     p.vt_family     = p.malware.vt_family;
+      if (!p.malware_sha256) p.malware_sha256 = p.malware.sha256;
+    }
+    // Modus operandi
+    if (!p.modus_operandi) {
+      const mo = {};
+      if (p.primary_objective)   mo.primary_objective   = String(p.primary_objective).replaceAll('_',' ');
+      if (p.secondary_objective) mo.secondary_objective = String(p.secondary_objective).replaceAll('_',' ');
+      if (p.dominant_tactic)     mo.dominant_tactic     = p.dominant_tactic;
+      if (p.escalation_detected) mo.escalation          = 'detected';
+      if (Array.isArray(p.mitre_techniques) && p.mitre_techniques.length) mo.techniques_count = p.mitre_techniques.length;
+      if (Object.keys(mo).length) p.modus_operandi = mo;
+    }
+    if (!p.actor_type) p.actor_type = p.dominant_tactic || p.primary_objective;
+    if (!p.recommended_action) {
+      const s = Number(p.risk_score) || 0;
+      if (s >= 70)      p.recommended_action = 'Block IP immediately · escalate to SOC team · preserve evidence (chain of custody).';
+      else if (s >= 40) p.recommended_action = 'Enhanced monitoring · correlate with other sessions · consider blocking if repeat offender.';
+      else if (s >= 20) p.recommended_action = 'Retain logs · monitor patterns · no immediate action required.';
+      else              p.recommended_action = 'Background noise · archive for statistical analysis.';
+    }
+    return p;
+  }
+
+  /* ──────────────────────────────────────────────────
+     Section renderers — each returns an HTML string
+  ────────────────────────────────────────────────── */
+
+  function scoreGauge(score, sev) {
+    const r = 36, circ = 2 * Math.PI * r;
+    const arc = circ * Math.min(score / 100, 1);
+    const col = { CRITICAL:'var(--red2)', HIGH:'var(--accent-gold)', MEDIUM:'var(--blue2)', LOW:'var(--text3)' }[sev] || 'var(--text3)';
+    return `
+      <div class="dos-gauge">
+        <svg width="90" height="90" viewBox="0 0 90 90">
+          <circle cx="45" cy="45" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="7"/>
+          <circle cx="45" cy="45" r="${r}" fill="none" stroke="${col}" stroke-width="7"
+            stroke-linecap="round"
+            stroke-dasharray="${arc.toFixed(2)} ${(circ-arc).toFixed(2)}"
+            transform="rotate(-90 45 45)"/>
+        </svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;top:0;left:0;width:90px;height:90px">
+          <div style="font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:800;color:${col};line-height:1">${score}</div>
+          <div style="font-size:8px;font-family:'Share Tech Mono',monospace;color:${col};letter-spacing:1px;text-transform:uppercase">${sev}</div>
+        </div>
+      </div>`;
+  }
+
+  function dosHeader(p, sev, score) {
+    const soph = SOPH_MAP[p.sophistication] || null;
+    const confidencePct = p.confidence != null ? Math.round(Number(p.confidence) * 100) : null;
+    const ts = p.last_seen || p.first_seen;
+    const dossierNum = STATE.activeId != null ? `#${STATE.activeId}` : '';
+    const sevColor = { CRITICAL:'var(--red2)', HIGH:'var(--accent-gold)', MEDIUM:'var(--blue2)', LOW:'var(--text3)' }[sev] || 'var(--text3)';
+    const sevBg    = { CRITICAL:'rgba(201,61,85,.06)', HIGH:'rgba(212,168,74,.05)', MEDIUM:'rgba(106,176,255,.05)', LOW:'rgba(154,160,180,.03)' }[sev];
+
+    const geoParts = [];
+    if (p.country) geoParts.push(flag(p.country) + ' ' + esc(p.country_name || p.country));
+    if (p.city)    geoParts.push(esc(p.city));
+    if (p.asn)     geoParts.push('AS' + esc(String(p.asn)));
+    if (p.as_org)  geoParts.push(esc(p.as_org));
+
+    const disguiseHtml = p.disguise_used
+      ? `<span class="dos-disguise">⬤ DISGUISED · ${esc(String(p.disguise_type||'anonymous').toUpperCase())}</span>`
+      : `<span style="font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;padding:4px 10px;border:1px solid var(--border);border-radius:4px">No Anonymization</span>`;
+
+    const stats = [];
+    if (p.event_count)   stats.push(['Events',    fmt.num(p.event_count)]);
+    if (p.session_count) stats.push(['Sessions',  fmt.num(p.session_count)]);
+    if (confidencePct != null) stats.push(['Confidence', confidencePct + '%']);
+    if (p.recidivism && p.recidivism.seen_before) stats.push(['Recidivism', '×' + (p.recidivism.previous_sessions ?? '?')]);
+    if (p.first_seen)    stats.push(['First Seen', fmt.ago(p.first_seen) + ' ago']);
+    if (p.last_seen)     stats.push(['Last Seen',  fmt.ago(p.last_seen)  + ' ago']);
+
+    const statsHtml = stats.length ? `
+      <div class="dos-stats-row">
+        ${stats.map(([l,v])=>`<div class="dos-stat">
+          <div class="dos-stat-label">${l}</div>
+          <div class="dos-stat-val">${v}</div>
+        </div>`).join('')}
+      </div>` : '';
+
+    const orgBar = p.organised_score != null ? (() => {
+      const pct = Math.max(0, Math.min(1, Number(p.organised_score) || 0)) * 100;
+      return `<div style="margin-top:12px">
+        <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px">Organized ← Spectrum → Disorganized</div>
+        <div class="dos-org-track"><div class="dos-org-fill" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="dos-org-labels"><span>Disorganized</span><span style="color:var(--text2)">${pct.toFixed(0)}%</span><span>Organized</span></div>
+      </div>`;
+    })() : '';
+
+    return `
+      <div class="dos-card" style="border-top:3px solid ${sevColor};background:${sevBg}">
+        <div class="dos-header">
+          <div class="dos-hdr-top">
+            <div class="dos-hdr-main">
+              <div class="dos-ip">${esc(p.source_ip || p.ip || '—')}</div>
+              <div class="dos-subtitle">Dossier ${esc(dossierNum)}${ts ? ' · Last activity ' + esc(fmt.ago(ts)) + ' ago' : ''}
+                ${geoParts.length ? ' · ' + geoParts.join(' · ') : ''}
+              </div>
+              <div class="dos-badges">
+                ${soph ? `<span class="dos-soph-badge ${soph.cls}">${soph.text}</span>` : '<span class="dos-soph-badge soph-null">UNKNOWN</span>'}
+                ${disguiseHtml}
+                ${p.escalation_detected ? `<span class="dos-escalation">⚡ ESCALATION DETECTED</span>` : ''}
+              </div>
+            </div>
+            <div style="position:relative;flex-shrink:0">${scoreGauge(score, sev)}</div>
+          </div>
+          ${statsHtml}
+          ${orgBar}
+          ${Array.isArray(p.honeypots) && p.honeypots.length ? `
+            <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:5px">
+              ${p.honeypots.map(hp=>{
+                const col={cowrie:'var(--gold)',dionaea:'var(--red2)',galah:'var(--purple2)',zeek:'var(--blue2)'}[hp]||'var(--text3)';
+                return `<span style="padding:3px 9px;border-radius:4px;font-size:9px;font-family:'Share Tech Mono',monospace;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:${col};border:1px solid;border-color:${col}55;background:${col}11">${esc(hp)}</span>`;
+              }).join('')}
+            </div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function dosNarrative(p) {
+    const text = p.detective_narrative || p.mistral_analysis;
+    if (!text) return '';
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">🕵</span>
+            <span class="dos-sec-title">Behavioral Assessment</span>
+            <span class="dos-sec-sub">Detective Narrative · LLM Analysis</span>
+          </div>
+          <div class="dos-narrative-box">${esc(text)}</div>
+        </div>
+      </div>`;
+  }
+
+  function dosBehavioral(p, sev) {
+    const traits   = p.behavioral_traits || [];
+    const sigs     = p.signature_behaviors || p.signature_indicators || [];
+    const showOrg  = p.organised_score != null;
+    const hasData  = p.primary_objective || traits.length || sigs.length || p.kill_chain_stage;
+    if (!hasData) return '';
+
+    const primary   = p.primary_objective   ? String(p.primary_objective).replaceAll('_',' ')   : null;
+    const secondary = p.secondary_objective ? String(p.secondary_objective).replaceAll('_',' ') : null;
+    const OBJ_ICONS = {
+      'botnet recruitment':'🤖','credential harvesting':'🔑','credential access':'🔑',
+      'reconnaissance':'🔭','data exfiltration':'📤','cryptomining':'⛏',
+      'lateral movement':'↔','persistence':'⚓','opportunistic access':'🎲',
+    };
+    const objIcon = primary ? (OBJ_ICONS[primary.toLowerCase()] || '🎯') : '🎯';
+
+    // Kill Chain
+    const current = p.kill_chain_stage;
+    let currentIdx = KC_STEPS.findIndex(s => s.key === current);
+    if (currentIdx < 0 && current) currentIdx = KC_STEPS.length - 1;
+    const kcHtml = `
+      <div style="margin-bottom:14px">
+        <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Kill Chain Progression</div>
+        <div class="dos-kc-bar">
+          ${KC_STEPS.map((s,i) => {
+            const done = currentIdx >= 0 && i <= currentIdx;
+            const cur  = i === currentIdx;
+            return `<div class="dos-kc-step ${done?'done sev-'+sev:''} ${cur?'current':''}" title="${s.key.replaceAll('_',' ')}">${s.label}</div>`;
+          }).join('')}
+        </div>
+        ${currentIdx >= 0 ? `<div class="dos-kc-label">Current stage: <b>${esc(KC_STEPS[currentIdx].label)}</b> — ${esc(KC_STEPS[currentIdx].key.replaceAll('_',' '))}</div>` : ''}
+      </div>`;
+
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">◈</span>
+            <span class="dos-sec-title">Behavioral Profile</span>
+            <span class="dos-sec-sub">Modus Operandi · Signature Behavior</span>
+          </div>
+          ${primary ? `<div style="margin-bottom:8px"><div class="dos-obj-primary">${objIcon} ${esc(primary)}</div></div>` : ''}
+          ${secondary ? `<div style="margin-bottom:12px"><div class="dos-obj-secondary">↳ Secondary: ${esc(secondary)}</div></div>` : ''}
+          ${traits.length ? `
+            <div style="margin-bottom:14px">
+              <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Behavioral Traits</div>
+              ${traits.map(t=>`<span class="dos-trait-chip">${esc(String(t))}</span>`).join('')}
+            </div>` : ''}
+          ${current ? kcHtml : ''}
+          ${sigs.length ? `
+            <div>
+              <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Signature Indicators — Unique behavioral fingerprints</div>
+              ${sigs.map(s=>`<div class="dos-sig-item">◆ ${esc(String(s))}</div>`).join('')}
+            </div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function dosMitre(p, sev) {
+    const techniques = p.mitre_techniques;
+    if (!Array.isArray(techniques) || !techniques.length) return '';
+
+    // Detect if objects [{id,name,tactic}] or strings
+    const isObjects = typeof techniques[0] === 'object';
+
+    let contentHtml;
+    if (isObjects) {
+      // Group by tactic
+      const groups = {};
+      techniques.forEach(t => {
+        const tactic = t.tactic || 'Other';
+        if (!groups[tactic]) groups[tactic] = [];
+        groups[tactic].push(t);
+      });
+      contentHtml = `<div class="dos-mitre-groups">
+        ${Object.entries(groups).map(([tactic, techs]) => {
+          const style = TACTIC_COLORS[tactic] || { bg:'rgba(255,255,255,.04)', color:'var(--text2)', border:'var(--border)' };
+          return `<div class="dos-mitre-group" style="border-color:${style.border}">
+            <div class="dos-mitre-group-hdr" style="background:${style.bg};color:${style.color}">${esc(tactic)}</div>
+            <div class="dos-mitre-group-items">
+              ${techs.map(t=>`<span class="dos-mitre-chip" style="color:${style.color};background:${style.bg};border-color:${style.border}">
+                <span class="dos-mitre-chip-id">${esc(t.id)}</span>${esc(t.name)}
+              </span>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    } else {
+      contentHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${techniques.map(t=>`<span class="dos-mitre-string">${esc(String(t))}</span>`).join('')}
+      </div>`;
+    }
+
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">⊞</span>
+            <span class="dos-sec-title">Modus Operandi — MITRE ATT&CK</span>
+            <span class="dos-sec-sub">${techniques.length} technique${techniques.length > 1 ? 's' : ''} identified</span>
+          </div>
+          ${contentHtml}
+        </div>
+      </div>`;
+  }
+
+  function dosOsint(p) {
+    const hasGeo    = p.country || p.city || p.as_org;
+    const hasAbuse  = p.abuseipdb_score != null;
+    const hasAnon   = p.is_tor != null || p.is_vpn != null;
+    const hasShodan = p.shodan && (p.shodan.ports || p.shodan.vulns);
+    const hasWhois  = p.whois_data;
+    if (!hasGeo && !hasAbuse && !hasAnon && !hasShodan) return '';
+
+    const abuseColor = (s) => s >= 75 ? 'var(--red2)' : s >= 40 ? 'var(--accent-gold)' : s > 0 ? 'var(--blue2)' : 'var(--text3)';
+
+    const geoBlock = `
+      <div class="dos-osint-block">
+        <div class="dos-osint-block-title">Geographic Profile</div>
+        ${p.country ? `<div class="dos-kv"><span class="dos-kv-k">Country</span><span class="dos-kv-v">${flag(p.country)} ${esc(p.country_name||p.country)} (${esc(p.country)})</span></div>` : ''}
+        ${p.city ? `<div class="dos-kv"><span class="dos-kv-k">City</span><span class="dos-kv-v">${esc(p.city)}</span></div>` : ''}
+        ${p.timezone ? `<div class="dos-kv"><span class="dos-kv-k">Timezone</span><span class="dos-kv-v">${esc(p.timezone)}</span></div>` : ''}
+        ${p.asn ? `<div class="dos-kv"><span class="dos-kv-k">ASN</span><span class="dos-kv-v" style="font-family:'JetBrains Mono',monospace">AS${esc(String(p.asn))}</span></div>` : ''}
+        ${p.as_org ? `<div class="dos-kv"><span class="dos-kv-k">Organization</span><span class="dos-kv-v">${esc(p.as_org)}</span></div>` : ''}
+        ${hasWhois && p.whois_data.cidr ? `<div class="dos-kv"><span class="dos-kv-k">CIDR</span><span class="dos-kv-v" style="font-family:'JetBrains Mono',monospace">${esc(p.whois_data.cidr)}</span></div>` : ''}
+      </div>`;
+
+    const abuseBlock = hasAbuse ? `
+      <div class="dos-osint-block">
+        <div class="dos-osint-block-title">Reputation Intelligence</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="font-family:'Rajdhani',sans-serif;font-size:28px;font-weight:800;color:${abuseColor(p.abuseipdb_score)};line-height:1">${p.abuseipdb_score}</div>
+          <div style="flex:1">
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-bottom:4px">AbuseIPDB CONFIDENCE</div>
+            <div class="dos-abuse-bar"><div class="dos-abuse-fill" style="width:${Math.min(p.abuseipdb_score,100)}%;background:${abuseColor(p.abuseipdb_score)}"></div></div>
+          </div>
+        </div>
+        ${p.abuse_reports != null ? `<div class="dos-kv"><span class="dos-kv-k">Reports</span><span class="dos-kv-v">${fmt.num(p.abuse_reports)} total reports</span></div>` : ''}
+        ${Array.isArray(p.abuse_categories) && p.abuse_categories.length ? `
+          <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+            ${p.abuse_categories.map(c=>`<span style="padding:2px 7px;border-radius:3px;font-size:9px;font-family:'Share Tech Mono',monospace;background:rgba(201,61,85,.08);color:var(--red2);border:1px solid rgba(201,61,85,.25)">${esc(c)}</span>`).join('')}
+          </div>` : ''}
+      </div>` : '';
+
+    const anonBlock = hasAnon ? `
+      <div class="dos-osint-block">
+        <div class="dos-osint-block-title">Disguise Detection — Anonymization</div>
+        ${[
+          ['🧅','Tor Exit Node', p.is_tor],
+          ['🛡','VPN',           p.is_vpn],
+          ['⚡','Proxy',         p.is_proxy],
+          ['🏢','Hosting / DC',  p.is_hosting],
+        ].map(([icon,label,val])=>`
+          <div class="dos-anon-row">
+            <span class="dos-anon-icon">${icon}</span>
+            <span class="dos-anon-label">${label}</span>
+            <span class="dos-anon-val ${val?'dos-anon-yes':'dos-anon-no'}">${val?'YES':'NO'}</span>
+          </div>`).join('')}
+      </div>` : '';
+
+    const shodanBlock = hasShodan ? (() => {
+      const sh = p.shodan;
+      const ports = Array.isArray(sh.ports) && sh.ports.length ? sh.ports : null;
+      const vulns = Array.isArray(sh.vulns) && sh.vulns.length ? sh.vulns : null;
+      return `
+        <div class="dos-osint-block">
+          <div class="dos-osint-block-title">Infrastructure — Shodan</div>
+          ${ports ? `<div class="dos-kv"><span class="dos-kv-k">Open Ports</span><span class="dos-kv-v" style="font-family:'JetBrains Mono',monospace">${ports.join(', ')}</span></div>` : ''}
+          ${vulns ? `<div style="margin-top:8px">
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;margin-bottom:5px;text-transform:uppercase;letter-spacing:.7px">Known CVEs</div>
+            ${vulns.map(v=>`<span class="dos-vuln-tag">${esc(v)}</span>`).join('')}
+          </div>` : '<div class="dos-no-data">No known CVEs</div>'}
+          ${Array.isArray(sh.tags) && sh.tags.length ? `<div style="margin-top:6px;font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace">${sh.tags.map(t=>'['+esc(t)+']').join(' ')}</div>` : ''}
+        </div>`; })() : '';
+
+    const blocks = [geoBlock, abuseBlock, anonBlock, shodanBlock].filter(Boolean);
+    const gridStyle = blocks.length === 1 ? 'grid-template-columns:1fr' : 'grid-template-columns:1fr 1fr';
+
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">🌐</span>
+            <span class="dos-sec-title">OSINT Intelligence</span>
+            <span class="dos-sec-sub">Geographic Profile · Reputation · Infrastructure</span>
+          </div>
+          <div class="dos-osint-grid" style="${gridStyle}">${blocks.join('')}</div>
+        </div>
+      </div>`;
+  }
+
+  function dosEvidence(p, sev) {
+    const creds    = p.credentials_attempted;
+    const cmds     = p.top_commands;
+    const hasYara  = Array.isArray(p.yara_matches) && p.yara_matches.length;
+    const hasCreds = (Array.isArray(creds) && creds.length) || (Array.isArray(p.top_usernames) && p.top_usernames.length);
+    const hasCmds  = Array.isArray(cmds) && cmds.length;
+    if (!hasCreds && !hasCmds && !hasYara) return '';
+
+    const credsHtml = (() => {
+      if (Array.isArray(creds) && creds.length) {
+        return `<table class="dos-cred-tbl" style="margin-bottom:4px">
+          <thead><tr><th>#</th><th>Username</th><th>Password</th><th>Result</th></tr></thead>
+          <tbody>
+            ${creds.map((c,i)=>`<tr class="${c.success?'success':''}">
+              <td style="color:var(--text3)">${i+1}</td>
+              <td>${esc(c.username)}</td>
+              <td>${esc(c.password)}</td>
+              <td><span class="dos-cred-success ${c.success?'yes':'no'}">${c.success?'SUCCESS':'FAILED'}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+      }
+      if (Array.isArray(p.top_usernames) && p.top_usernames.length) {
+        return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Usernames</div>
+            ${p.top_usernames.map(u=>`<span class="dos-trait-chip">${esc(u)}</span>`).join('')}
+          </div>
+          ${Array.isArray(p.top_passwords) && p.top_passwords.length ? `<div>
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Passwords</div>
+            ${p.top_passwords.map(pw=>`<span class="dos-trait-chip" style="color:var(--red2);border-color:rgba(201,61,85,.25)">${esc(pw)}</span>`).join('')}
+          </div>` : ''}
+        </div>`;
+      }
+      return '';
+    })();
+
+    const cmdsHtml = hasCmds ? `
+      <div style="margin-bottom:4px">
+        <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Commands Executed in Session</div>
+        ${cmds.map((cmd,i)=>{
+          const danger = DANGER_CMDS.test(cmd);
+          return `<div class="dos-cmd-line ${danger?'dos-cmd-danger':''}">
+            <span class="dos-cmd-n">${i+1}</span>
+            <span style="color:var(--text3);margin-right:4px">$</span>
+            <span style="${danger?'color:var(--red2)':''}">${esc(cmd)}</span>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    const malwareHtml = (() => {
+      if (!hasYara) return `<div class="dos-no-data">No malware captured in this session</div>`;
+      const vtStr = p.vt_detections || '';
+      let vtNumer = 0, vtDenom = 72;
+      if (vtStr.includes('/')) { const [a,b] = vtStr.split('/'); vtNumer = parseInt(a)||0; vtDenom = parseInt(b)||72; }
+      const vtPct = vtDenom ? (vtNumer / vtDenom * 100) : 0;
+      return `
+        <div class="dos-malware-box">
+          <div class="dos-malware-family">⚠ ${esc(p.vt_family || p.yara_matches[0])}</div>
+          <div style="margin-bottom:6px">
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">VirusTotal Detections</div>
+            ${vtStr ? `<div style="display:flex;align-items:center;gap:10px">
+              <div class="dos-vt-bar" style="flex:1"><div class="dos-vt-fill" style="width:${vtPct.toFixed(1)}%"></div></div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--red2);flex-shrink:0">${vtStr}</div>
+            </div>` : '<div class="dos-no-data">No VT data</div>'}
+          </div>
+          ${p.yara_matches.map(y=>`<div style="margin-bottom:4px"><span style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px">YARA: </span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red2)">${esc(y)}</span></div>`).join('')}
+          ${p.malware_sha256 ? `<div class="dos-hash" title="Click to copy SHA-256" onclick="navigator.clipboard.writeText('${esc(p.malware_sha256)}').then(()=>{this.style.color='var(--blue2)';setTimeout(()=>this.style.color='',1200)})">SHA-256 ${fmt.shortHash(p.malware_sha256)}</div>` : ''}
+        </div>`;
+    })();
+
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">🔬</span>
+            <span class="dos-sec-title">Forensic Evidence</span>
+            <span class="dos-sec-sub">Credentials · Commands · Malware</span>
+          </div>
+          ${hasCreds ? `
+            <div style="margin-bottom:18px">
+              <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Attempted Credentials</div>
+              ${credsHtml}
+            </div>` : ''}
+          ${hasCmds ? `<div style="margin-bottom:18px">${cmdsHtml}</div>` : ''}
+          <div>
+            <div style="font-size:9px;color:var(--text3);font-family:'Share Tech Mono',monospace;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Malware Evidence</div>
+            ${malwareHtml}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function dosSimilar(p) {
+    const count = p.similar_past_cases;
+    if (!count && count !== 0) return '';
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">📂</span>
+            <span class="dos-sec-title">Case File Cross-Reference</span>
+            <span class="dos-sec-sub">VICAP · Similar behavioral signatures</span>
+          </div>
+          ${count > 0 ? `
+            <div style="padding:12px 16px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;gap:14px">
+              <div style="font-family:'Rajdhani',sans-serif;font-size:36px;font-weight:800;color:var(--accent-gold);line-height:1">${count}</div>
+              <div>
+                <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:3px">similar case${count>1?'s':''} in the database</div>
+                <div style="font-size:11px;color:var(--text3);font-family:'Share Tech Mono',monospace">Matching behavioral signatures · Run forensic engine to load full matches</div>
+              </div>
+            </div>` : `<div class="dos-no-data">No similar cases in the database — novel behavioral signature</div>`}
+        </div>
+      </div>`;
+  }
+
+  function dosTimeline(p) {
+    const hasData = (p.event_count && p.event_count > 0) || (Array.isArray(p.honeypots) && p.honeypots.length > 1);
+    if (!hasData) return '';
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">⏱</span>
+            <span class="dos-sec-title">Cross-Honeypot Timeline</span>
+            <span class="dos-sec-sub">Multi-source event correlation</span>
+          </div>
+          <div style="padding:14px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);text-align:center">
+            <div style="font-size:22px;margin-bottom:8px;opacity:.4">◉</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Detailed timeline requires forensic engine run</div>
+            <div style="font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace">
+              ${p.first_seen ? 'First event: ' + esc(fmt.date(p.first_seen)) : ''}
+              ${p.first_seen && p.last_seen ? ' → ' : ''}
+              ${p.last_seen  ? 'Last event: '  + esc(fmt.date(p.last_seen))  : ''}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function dosRecommendation(p) {
+    if (!p.recommended_action) return '';
+    const sevColor = { CRITICAL:'rgba(201,61,85,.1)', HIGH:'rgba(212,168,74,.08)', MEDIUM:'rgba(106,176,255,.08)', LOW:'rgba(154,160,180,.05)' }[p.severity] || '';
+    const borColor = { CRITICAL:'rgba(201,61,85,.35)', HIGH:'rgba(212,168,74,.3)', MEDIUM:'rgba(106,176,255,.25)', LOW:'var(--border)' }[p.severity] || 'var(--border)';
+    return `
+      <div class="dos-card">
+        <div class="dos-sec">
+          <div class="dos-sec-hdr">
+            <span class="dos-sec-icon">⚑</span>
+            <span class="dos-sec-title">Recommended Action</span>
+          </div>
+          <div style="padding:12px 16px;border-radius:6px;background:${sevColor};border:1px solid ${borColor};font-size:13px;color:var(--text)">${esc(p.recommended_action)}</div>
+        </div>
+      </div>`;
+  }
+
+  function dosDump(p) {
+    return `
+      <div class="dos-card">
+        <div class="dos-sec" style="padding-top:12px;padding-bottom:12px">
+          <details>
+            <summary style="cursor:pointer;font-size:10px;color:var(--text3);font-family:'Share Tech Mono',monospace;user-select:none;padding:4px 0">▶ Raw JSON dossier</summary>
+            <pre class="pre" style="max-height:280px;overflow:auto;margin-top:10px;font-size:10px">${esc(JSON.stringify(p, null, 2))}</pre>
+          </details>
+        </div>
+      </div>`;
+  }
+
+  function renderDetail(p) {
+    const sev   = p.severity || 'LOW';
+    const score = Number(p.risk_score) || 0;
+    const mockBanner = STATE.useMock
+      ? `<div class="dos-mock-banner">ℹ DEMO DATA — not connected to live backend · click "Demo Data" in the top bar to toggle</div>`
+      : '';
+    $('#p-detail').innerHTML = mockBanner + `<div class="dossier">
+      ${dosHeader(p, sev, score)}
+      ${dosNarrative(p)}
+      ${dosBehavioral(p, sev)}
+      ${dosMitre(p, sev)}
+      ${dosOsint(p)}
+      ${dosEvidence(p, sev)}
+      ${dosSimilar(p)}
+      ${dosTimeline(p)}
+      ${dosRecommendation(p)}
+      ${dosDump(p)}
+    </div>`;
+  }
+
+  /* ──────────────────────────────────────────────────
+     Left panel — suspect list
+  ────────────────────────────────────────────────── */
+
+  function renderList() {
+    // Suspect Registry: only IPs that actually attacked a honeypot
+    const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+    let filtered = STATE.profiles.filter(p => {
+      const ip = p.source_ip || p.ip;
+      if (!ip || !IPV4.test(ip)) return false;
+      const sc = Number(p.session_count || p.sessions_count) || 0;
+      const hp = p.honeypot || p.honeypots || p.honeypot_list;
+      if (sc <= 0 && !hp) return false;
+      if (STATE.search && !ip.toLowerCase().includes(STATE.search.toLowerCase())) return false;
+      return true;
+    });
+
+    // Sort
+    filtered = [...filtered].sort((a, b) => {
+      if (STATE.sortBy === 'risk_score') return (Number(b.risk_score)||0) - (Number(a.risk_score)||0);
+      if (STATE.sortBy === 'last_seen')  return new Date(b.last_seen||0) - new Date(a.last_seen||0);
+      if (STATE.sortBy === 'sessions')   return (Number(b.session_count||b.sessions_count)||0) - (Number(a.session_count||a.sessions_count)||0);
+      return 0;
+    });
+
+    $('#p-list-count').textContent = filtered.length + ' / ' + STATE.profiles.length;
+
+    if (!filtered.length) {
+      $('#p-list').innerHTML = `<div class="alert info" style="margin:14px">${
+        STATE.profiles.length ? 'No profiles match these filters.' : 'No stored profiles — run the forensic profiler, or load demo data.'
+      }</div>`;
+      return;
+    }
+
+    $('#p-list').innerHTML = filtered.map(p => {
+      const sev  = p.severity || 'LOW';
+      const soph = SOPH_MAP[p.sophistication];
+      const ts   = p.last_seen || p.first_seen;
+      const sc   = Number(p.session_count || p.sessions_count) || 0;
+      return `
+        <div class="p-card p-card-bdr-${sev} ${p.id === STATE.activeId ? 'active' : ''}" data-id="${p.id}">
+          <div class="p-card-top">
+            <div style="min-width:0">
+              <div class="p-card-ip">${esc(p.source_ip || p.ip || '—')}</div>
+              <div class="p-card-meta">
+                <span class="p-sev-tag p-sev-${sev}">${sev}</span>
+                ${soph ? `<span class="p-soph-chip ${soph.chip}" style="border-color:currentColor;opacity:.85">${soph.chipText}</span>` : ''}
+                ${p.country ? `<span>${flag(p.country)}</span>` : ''}
+                ${p.city    ? `<span>${esc(p.city)}</span>` : p.country_name ? `<span>${esc(p.country_name)}</span>` : ''}
+              </div>
+            </div>
+            <div class="p-card-score p-score-${sev}">${Number(p.risk_score)||0}</div>
+          </div>
+          <div class="p-card-meta" style="margin-top:2px">
+            ${ts ? `<span>${esc(fmt.ago(ts))} ago</span>` : ''}
+            ${sc ? `<span>${sc} session${sc>1?'s':''}</span>` : ''}
+            ${p.actor_type ? `<span style="color:var(--text3)">${esc(String(p.actor_type).replaceAll('_',' '))}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+
+    $('#p-list').querySelectorAll('.p-card').forEach(el => {
+      el.addEventListener('click', () => loadDetail(Number(el.dataset.id)));
+    });
+  }
+
+  /* ──────────────────────────────────────────────────
+     Data loading
+  ────────────────────────────────────────────────── */
+
+  async function loadStats() {
+    try {
+      const s = await api.profilingStats();
+      STATE.stats = s;
+      $('#p-k-total').textContent     = s.total ?? 0;
+      $('#p-k-total-d').textContent   = s.total ? 'stored profiles' : 'no profiles yet';
+      $('#p-k-crit').textContent      = s.critical ?? 0;
+      $('#p-k-high').textContent      = s.high ?? 0;
+      $('#p-k-avg').textContent       = s.avg_score ?? 0;
+    } catch(e) {
+      ['#p-k-total','#p-k-crit','#p-k-high','#p-k-avg'].forEach(s => $(s).textContent = '—');
+      $('#p-k-total-d').textContent = 'Backend offline';
+    }
+  }
+
+  async function loadList() {
+    try {
+      const data = await api.profilingList({ limit: 200 });
+      STATE.profiles = Array.isArray(data) ? data.map(normalize) : [];
+      renderList();
+    } catch(e) {
+      STATE.profiles = [];
+      const msg = e.status === 404
+        ? 'Profile list unavailable. Use "Profile an IP" above, or load demo data.'
+        : esc(e.message);
+      $('#p-list').innerHTML = `<div class="alert info" style="margin:14px">${msg}</div>`;
+    }
+  }
+
+  async function loadMock() {
+    if (!window.MOCK_PROFILES) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'assets/mockProfiles.js?v=1';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed to load mock profiles'));
+        document.head.appendChild(s);
+      });
+    }
+    STATE.useMock = true;
+    STATE.profiles = window.MOCK_PROFILES.map(normalize);
+    // Update KPI from mock data
+    const total = STATE.profiles.length;
+    const crit  = STATE.profiles.filter(p => p.severity === 'CRITICAL').length;
+    const high  = STATE.profiles.filter(p => p.severity === 'HIGH').length;
+    const avg   = Math.round(STATE.profiles.reduce((s,p)=>s+(Number(p.risk_score)||0),0)/total);
+    $('#p-k-total').textContent   = total;
+    $('#p-k-total-d').textContent = 'demo profiles loaded';
+    $('#p-k-crit').textContent    = crit;
+    $('#p-k-high').textContent    = high;
+    $('#p-k-avg').textContent     = avg;
+    renderList();
+    // Show first profile automatically
+    if (STATE.profiles.length && STATE.activeId == null) loadDetail(STATE.profiles[0].id);
+  }
+
+  async function lookupIp(ip) {
+    ip = (ip||'').trim();
+    if (!ip) return;
+    if (STATE.useMock) {
+      const m = STATE.profiles.find(p => p.source_ip === ip || p.ip === ip);
+      if (m) { renderDetail(m); return; }
+    }
+    $('#p-detail').innerHTML = `<div class="card"><div class="alert info">Profiling <span class="mono">${esc(ip)}</span> — consulting intelligence databases…</div></div>`;
+    try {
+      const rec = await api.profile(ip);
+      renderDetail(normalize(rec));
+    } catch(e) {
+      if (e.status === 500 || e.status === 422) {
+        const listItem = STATE.profiles.find(p => p.source_ip === ip || p.ip === ip);
+        if (listItem) { renderDetail(listItem); return; }
+      }
+      const body = e.status === 404
+        ? `<div class="alert info"><b>No profile found for ${esc(ip)}.</b><br>Run the forensic engine to generate a dossier, or load demo profiles.</div>`
+        : `<div class="alert err">${esc(e.message)}</div>`;
+      $('#p-detail').innerHTML = `<div class="card">${body}</div>`;
+    }
+  }
+
+  async function loadDetail(id) {
+    STATE.activeId = id;
+    renderList();
+    if (STATE.useMock) {
+      const m = STATE.profiles.find(p => p.id === id);
+      if (m) { renderDetail(m); return; }
+    }
+    $('#p-detail').innerHTML = `<div class="card"><div class="alert info">Loading dossier…</div></div>`;
+    try {
+      const rec = await api.profilingById(id);
+      renderDetail(normalize(rec));
+    } catch(e) {
+      if (e.status === 500 || e.status === 422) {
+        const listItem = STATE.profiles.find(p => p.id === id);
+        if (listItem) { renderDetail(listItem); return; }
+      }
+      $('#p-detail').innerHTML = `<div class="card"><div class="alert err">${esc(e.message)}</div></div>`;
+    }
+  }
+
+  /* ──────────────────────────────────────────────────
+     React charts (keep existing)
+  ────────────────────────────────────────────────── */
+
+  function renderProfileCharts() {
+    const chartEl = document.getElementById('p-charts-root');
+    if (!chartEl || !window.React || !window.ReactDOM || !window.Recharts) return;
+    if (!STATE.profiles.length) return;
+    const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
+    const hh = R.createElement;
+    const TT = { backgroundColor:'var(--surface)',border:'1px solid var(--border)',borderRadius:'6px',fontFamily:"'Share Tech Mono',monospace",fontSize:'11px',color:'var(--text)' };
+    const AT = { fontSize:10,fill:'var(--text3)',fontFamily:"'Share Tech Mono',monospace" };
+    const SEV_C  = { CRITICAL:'#C93D55',HIGH:'#D4A84A',MEDIUM:'#6AB0FF',LOW:'#7d8799' };
+    const SOPH_C = { low:'#7d8799',intermediate:'#6AB0FF',high:'#D4A84A',apt:'#C93D55' };
+    const bySev  = { CRITICAL:0,HIGH:0,MEDIUM:0,LOW:0 };
+    STATE.profiles.forEach(p => { const s=(p.severity||'LOW').toUpperCase(); if(s in bySev) bySev[s]++; });
+    const sevData = Object.entries(bySev).map(([k,v])=>({name:k.charAt(0)+k.slice(1).toLowerCase(),value:v,color:SEV_C[k]}));
+    const sevTotal = STATE.profiles.length||1;
+    const bySoph = { low:0,intermediate:0,high:0,apt:0 };
+    STATE.profiles.forEach(p=>{const s=p.sophistication||'low';if(s in bySoph)bySoph[s]++;});
+    const sophLabels = { low:'Script Kiddie',intermediate:'Intermediate',high:'Professional',apt:'APT / State' };
+    const sophData = Object.entries(bySoph).filter(([,v])=>v>0).map(([k,v])=>({name:sophLabels[k]||k,value:v,color:SOPH_C[k]}));
+    function Charts() {
+      const sevCard = hh('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+        hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text)',marginBottom:10}},'Severity Distribution'),
+        hh('div',{style:{display:'flex',alignItems:'center',gap:16}},
+          hh(RC.PieChart,{width:120,height:120},
+            hh(RC.Pie,{data:sevData,dataKey:'value',cx:56,cy:56,innerRadius:34,outerRadius:52,paddingAngle:2},
+              ...sevData.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'cc',stroke:e.color,strokeWidth:1}))),
+            hh(RC.Tooltip,{contentStyle:TT})),
+          hh('div',{style:{display:'flex',flexDirection:'column',gap:6,flex:1}},
+            ...sevData.map((e,i)=>hh('div',{key:i,style:{display:'flex',alignItems:'center',gap:7}},
+              hh('span',{style:{width:8,height:8,borderRadius:'50%',background:e.color,flexShrink:0,display:'inline-block'}}),
+              hh('span',{style:{fontSize:11,flex:1,color:'var(--text2)'}},e.name),
+              hh('span',{style:{fontFamily:"'Share Tech Mono',monospace",fontSize:11,color:'var(--text3)'}},e.value+' ('+((e.value/sevTotal)*100).toFixed(0)+'%)'))))));
+      const sophCard = hh('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 18px'}},
+        hh('div',{style:{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:'var(--text)',marginBottom:10}},'Sophistication Level'),
+        sophData.length ? hh(RC.ResponsiveContainer,{width:'100%',height:110},
+          hh(RC.BarChart,{data:sophData,layout:'vertical',margin:{top:0,right:10,bottom:0,left:0}},
+            hh(RC.CartesianGrid,{strokeDasharray:'3 3',stroke:'rgba(255,255,255,0.04)',horizontal:false}),
+            hh(RC.XAxis,{type:'number',tick:AT,tickLine:false,axisLine:false,allowDecimals:false}),
+            hh(RC.YAxis,{type:'category',dataKey:'name',width:105,tick:{...AT,fill:'var(--text2)'},tickLine:false,axisLine:false}),
+            hh(RC.Tooltip,{contentStyle:TT,formatter:v=>[v+' profiles','Count']}),
+            hh(RC.Bar,{dataKey:'value',radius:[0,3,3,0],barSize:16},
+              ...sophData.map((e,i)=>hh(RC.Cell,{key:i,fill:e.color+'aa'}))))
+        ) : hh('div',{style:{color:'var(--text3)',fontSize:11,fontFamily:"'Share Tech Mono',monospace"}},'No sophistication data'));
+      return hh('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},sevCard,sophCard);
+    }
+    if (!window.__profChartRoot) window.__profChartRoot = RD.createRoot(chartEl);
+    window.__profChartRoot.render(hh(Charts,null));
+    window.__pageCleanup = ()=>{if(window.__profChartRoot){window.__profChartRoot.unmount();window.__profChartRoot=null;}};
+  }
+
+  /* ──────────────────────────────────────────────────
+     Event handlers
+  ────────────────────────────────────────────────── */
+
+  $('#p-refresh').addEventListener('click', () => {
+    STATE.useMock = false;
+    loadStats();
+    loadList();
+  });
+
+  $('#p-load-mock').addEventListener('click', () => {
+    loadMock().catch(e => {
+      $('#p-detail').innerHTML = `<div class="card"><div class="alert err">Failed to load demo profiles: ${esc(e.message)}</div></div>`;
+    });
+  });
+
+  $('#p-search').addEventListener('input', e => { STATE.search = e.target.value.trim(); renderList(); });
+  $('#p-sort').addEventListener('change', e => { STATE.sortBy = e.target.value; renderList(); });
+  $('#p-lookup-go').addEventListener('click', () => lookupIp($('#p-lookup').value));
+  $('#p-lookup').addEventListener('keydown', e => { if (e.key === 'Enter') lookupIp(e.target.value); });
+
+  /* ── Init ── */
+  await Promise.all([loadStats(), loadList()]);
+})();
+</script>
