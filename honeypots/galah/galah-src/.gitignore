@@ -1,7 +1,0 @@
-.DS_Store
-.vscode
-*.crt
-*.key
-*.pem
-*.db
-/bin
