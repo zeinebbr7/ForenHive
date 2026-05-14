@@ -2,17 +2,43 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px"> Forensic Analysis</div>
     <h2 class="page-title">Attack <span>Reconstruction</span></h2>
-    <div class="page-sub">Step-by-step reconstruction of the Lockheed Martin kill chain for an attack session.</div>
+    <div class="page-sub">Step-by-step reconstruction of the Lockheed Martin kill chain — adapted to each attack's signals.</div>
   </div>
 </div>
 
 <div class="card mb-20">
   <div class="card-h">
     <div class="card-t">Session Selection</div>
-    <div class="card-sub">Select a session to reconstruct the attack</div>
+    <div class="card-sub">Search by IP, session, MITRE technique, or honeypot</div>
   </div>
-  <div class="form-g">
-    <label class="form-l">Session</label>
+
+  <div class="rc-search">
+    <input type="text" class="form-i" id="rc-q" placeholder="🔍  e.g. 192.168.1.10 · T1110 · cowrie · ELEVE" autocomplete="off">
+    <button type="button" class="btn btn-gold btn-search" id="rc-go">Search</button>
+    <button type="button" class="btn btn-gh btn-search" id="rc-clr">Clear</button>
+  </div>
+
+  <div class="rc-filter-row">
+    <div class="rc-filter-group">
+      <span class="rc-filter-lbl">Honeypot:</span>
+      <button class="rc-tab active" data-hp="">All</button>
+      <button class="rc-tab" data-hp="cowrie">Cowrie</button>
+      <button class="rc-tab" data-hp="dionaea">Dionaea</button>
+      <button class="rc-tab" data-hp="galah">Galah</button>
+      <button class="rc-tab" data-hp="zeek">Zeek</button>
+    </div>
+    <div class="rc-filter-group">
+      <span class="rc-filter-lbl">Sort:</span>
+      <select class="form-s rc-sort" id="rc-sort">
+        <option value="date">Most recent</option>
+        <option value="risk">Highest risk</option>
+        <option value="stage">Furthest kill-chain</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-g" style="margin-top:14px">
+    <label class="form-l">Session <span id="rc-count" class="mono" style="color:var(--text3);font-size:11px;text-transform:none;letter-spacing:0"></span></label>
     <select class="form-s" id="rc-sid"><option>Loading…</option></select>
   </div>
 </div>
@@ -20,17 +46,60 @@
 <div id="rc-body"><div class="alert info">Select a session to start the reconstruction.</div></div>
 
 <style>
+.rc-search { display:flex;gap:8px;align-items:center;margin-bottom:12px; }
+.rc-search .form-i { flex:1; }
+.rc-search .btn-search { white-space:nowrap; height:38px; }
+.rc-filter-row { display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px; }
+.rc-filter-group { display:flex;gap:6px;align-items:center;flex-wrap:wrap; }
+.rc-filter-lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-right:4px; }
+.rc-tab { padding:5px 12px;border:1px solid var(--border);border-radius:14px;background:var(--bg3);color:var(--text2);font-family:'Share Tech Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;cursor:pointer;transition:all .15s; }
+.rc-tab:hover { border-color:var(--border2);color:var(--text); }
+.rc-tab.active { border-color:var(--gold);color:var(--gold);background:rgba(140,26,43,.08); }
+.rc-sort { width:auto;min-width:160px;padding:6px 28px 6px 10px;font-size:11px; }
+
 .kc-grid { display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin:12px 0 18px; }
-.kc-cell { background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 8px;text-align:center;opacity:.4;transition:all .25s; }
+.kc-cell { background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 8px;text-align:center;opacity:.4;transition:all .25s;position:relative; }
 .kc-cell.done   { opacity:1;border-color:var(--gold);background:rgba(140,26,43,.06); }
 .kc-cell.active { opacity:1;border-color:var(--red2);background:rgba(198,40,40,.10);box-shadow:0 0 0 2px rgba(198,40,40,.25); }
+.kc-cell.done::after { content:'✓';position:absolute;top:3px;right:5px;color:var(--gold);font-size:10px; }
 .kc-num { font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text3); }
 .kc-lab { font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:600;color:var(--text2);margin-top:3px;letter-spacing:.5px; }
 .kc-cell.done .kc-lab { color:var(--gold); }
 .kc-cell.active .kc-lab { color:var(--red2); }
+
+.kc-prog { height:6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:6px; }
+.kc-prog-bar { height:100%;background:linear-gradient(90deg,var(--gold),var(--red2));transition:width .5s; }
+
 .flow { display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap; }
 .flow-node { padding:8px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text2); }
+.flow-node.src { border-color:var(--red2);color:var(--red2); }
+.flow-node.tgt { border-color:var(--gold);color:var(--gold); }
 .flow-arrow { color:var(--gold);font-size:18px; }
+
+.rc-metrics { display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:12px; }
+.rc-metric { background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px; }
+.rc-metric .lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px; }
+.rc-metric .val { font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:600;color:var(--text);margin-top:4px; }
+.rc-metric.crit .val { color:var(--red2); }
+.rc-metric.warn .val { color:var(--gold); }
+
+.rc-chips { display:flex;flex-wrap:wrap;gap:6px;margin-top:8px; }
+.rc-chip { padding:3px 9px;border:1px solid var(--border);border-radius:12px;background:var(--bg3);font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text2); }
+.rc-chip.hl { border-color:var(--gold);color:var(--gold);background:rgba(140,26,43,.08); }
+.rc-chip.red { border-color:var(--red2);color:var(--red2); }
+
+.rc-hero { display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px; }
+.rc-hero-l { flex:1;min-width:220px; }
+.rc-hero-r { text-align:right; }
+.rc-risk-big { font-family:'Rajdhani',sans-serif;font-size:42px;font-weight:700;line-height:1; }
+.rc-risk-lbl { font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:4px; }
+.rc-2col { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
+.rc-3col { display:grid;grid-template-columns:repeat(3,1fr);gap:14px; }
+@media(max-width:860px){.rc-2col{grid-template-columns:1fr;}.rc-3col{grid-template-columns:1fr 1fr;}}
+.rc-src-badge { display:inline-block;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:.8px;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid; }
+.rc-src-badge.live  { color:#4caf7d;border-color:#4caf7d;background:rgba(76,175,125,.08); }
+.rc-src-badge.cache { color:var(--gold);border-color:var(--gold);background:rgba(140,26,43,.06); }
+.rc-src-badge.none  { color:var(--text3);border-color:var(--border);background:transparent; }
 </style>
 
 <script>
@@ -81,32 +150,155 @@
     return;
   }
 
-  $('#rc-sid').innerHTML = '<option value="">— select —</option>' + sessions.map(s =>
-    `<option value="${esc(s.session_id)}">${esc(s.session_id)}  ${esc(s.honeypot_type)}  ${esc(s.source_ip)}  risk ${s.risk_score||0}</option>`
-  ).join('');
+  // ── Filtering state ──
+  let hpFilter = '';
+  let sortMode = 'date';
+
+  function filteredSessions() {
+    const q = ($('#rc-q').value || '').trim().toLowerCase();
+    let list = sessions.slice();
+    if (hpFilter) list = list.filter(s => (s.honeypot_type||'').toLowerCase() === hpFilter);
+    if (q) {
+      list = list.filter(s => {
+        const hay = [
+          s.session_id, s.source_ip, s.honeypot_type,
+          s.primary_technique, s.kill_chain_phase, s.risk_level,
+          ...(Array.isArray(s.mitre_techniques) ? s.mitre_techniques : []),
+          ...(Array.isArray(s.honeypots_hit) ? s.honeypots_hit : []),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    if (sortMode === 'risk')      list.sort((a,b) => (b.risk_score||0) - (a.risk_score||0));
+    else if (sortMode === 'stage')list.sort((a,b) => (b.kill_chain_stage||0) - (a.kill_chain_stage||0));
+    else                           list.sort((a,b) => new Date(b.started_at||0) - new Date(a.started_at||0));
+    return list;
+  }
+
+  function fillDropdown() {
+    const list = filteredSessions();
+    $('#rc-count').textContent = `${list.length} of ${sessions.length}`;
+    if (!list.length) {
+      $('#rc-sid').innerHTML = '<option value="">— no match —</option>';
+      $('#rc-body').innerHTML = `<div class="alert warn">No session matches the current filters. Try clearing the search or switching the honeypot tab.</div>`;
+      return;
+    }
+    $('#rc-sid').innerHTML = '<option value="">— select —</option>' + list.map(s =>
+      `<option value="${esc(s.session_id)}">[${esc((s.honeypot_type||'?').toUpperCase())}] ${esc(s.source_ip||'?')} · risk ${s.risk_score||0} · ${esc(s.session_id)}</option>`
+    ).join('');
+  }
+
+  function runSearch() {
+    fillDropdown();
+    const list = filteredSessions();
+    if (list.length === 1) {
+      $('#rc-sid').value = list[0].session_id;
+      render(list[0]);
+    } else if (list.length > 1 && ($('#rc-q').value || '').trim()) {
+      $('#rc-sid').value = list[0].session_id;
+      render(list[0]);
+    }
+  }
+
+  fillDropdown();
+
+  $('#rc-q').addEventListener('input', fillDropdown);
+  $('#rc-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
+  $('#rc-go').addEventListener('click', runSearch);
+  $('#rc-clr').addEventListener('click', () => {
+    $('#rc-q').value = '';
+    hpFilter = '';
+    document.querySelectorAll('.rc-tab').forEach(t => t.classList.toggle('active', !t.dataset.hp));
+    fillDropdown();
+    $('#rc-body').innerHTML = `<div class="alert info">Select a session to start the reconstruction.</div>`;
+  });
+  document.querySelectorAll('.rc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.rc-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      hpFilter = tab.dataset.hp || '';
+      fillDropdown();
+    });
+  });
+  $('#rc-sort').addEventListener('change', () => { sortMode = $('#rc-sort').value; fillDropdown(); });
+
+  function attackPath(s) {
+    const hits = Array.isArray(s.honeypots_hit) && s.honeypots_hit.length
+      ? s.honeypots_hit
+      : [s.honeypot_type].filter(Boolean);
+    return ['Zeek', ...hits.map(h => h.charAt(0).toUpperCase() + h.slice(1))];
+  }
+
+  function metricTiles(s) {
+    const tiles = [];
+    const push = (lbl, val, cls='') => {
+      if (val === null || val === undefined || val === '') return;
+      if (val === 0 && !['Risk Score','Login Attempts'].includes(lbl)) return;
+      tiles.push(`<div class="rc-metric ${cls}"><div class="lbl">${esc(lbl)}</div><div class="val">${esc(String(val))}</div></div>`);
+    };
+    const rs = s.risk_score || 0;
+    push('Risk Score', rs, rs >= 70 ? 'crit' : rs >= 40 ? 'warn' : '');
+    push('Risk Level', s.risk_level);
+    push('Confidence', s.confidence);
+    push('Honeypots Hit', s.honeypot_count);
+    push('Sub-sessions', s.sessions_count);
+    push('Login Attempts', s.login_attempts);
+    push('Successful Auth', s.success_count, (s.success_count||0) > 0 ? 'crit' : '');
+    if (s.attack_velocity) push('Velocity (ev/s)', Number(s.attack_velocity).toFixed(2));
+    return tiles.length ? `<div class="rc-metrics">${tiles.join('')}</div>` : '';
+  }
+
+  function riskColor(rs) {
+    if (rs >= 80) return 'var(--red2)';
+    if (rs >= 50) return 'var(--gold)';
+    if (rs >= 20) return '#a98a3a';
+    return 'var(--text3)';
+  }
 
   function render(s) {
     const stage = Math.max(0, Math.min(8, s.kill_chain_stage || 0));
+    const pct = (stage / 8) * 100;
     const cells = KC.map((lab, i) => {
       const cls = i < stage - 1 ? 'done' : (i === stage - 1 ? 'active' : '');
       return `<div class="kc-cell ${cls}"><div class="kc-num">0${i+1}</div><div class="kc-lab">${lab}</div></div>`;
     }).join('');
 
-    const hp = (s.honeypot_type || '').toLowerCase();
-    const path = hp === 'dionaea' ? ['Zeek','Dionaea'] : hp === 'galah' ? ['Zeek','Galah'] : hp === 'cowrie' ? ['Zeek','Cowrie'] : ['Zeek', s.honeypot_type || '?'];
+    const path = attackPath(s);
+    const pathHTML = `<span class="flow-node src">${esc(s.source_ip||'?')}</span>` +
+      path.map((p, i) => `<span class="flow-arrow">→</span><span class="flow-node ${i===path.length-1?'tgt':''}">${esc(p)}</span>`).join('');
+
+    const mitre = Array.isArray(s.mitre_techniques) ? s.mitre_techniques : [];
+    const mitreChips = mitre.length
+      ? `<div class="rc-chips" style="margin-top:14px">${mitre.map(t => `<span class="rc-chip ${t===s.primary_technique?'hl':''}">${esc(t)}</span>`).join('')}</div>`
+      : '';
+
+    const durStr = (s.started_at && s.ended_at)
+      ? (() => { const ms = new Date(s.ended_at) - new Date(s.started_at); return ms > 0 ? `${(ms/1000).toFixed(1)} s` : '—'; })()
+      : '—';
+
+    const rs = s.risk_score || 0;
 
     $('#rc-body').innerHTML = `
       <div class="card mb-20">
-        <div class="card-h">
-          <div class="card-t">Kill chain · step ${stage} / 8</div>
-          <div class="card-sub">${esc(s.kill_chain_phase || 'unknown phase')}</div>
+        <div class="rc-hero">
+          <div class="rc-hero-l">
+            <div class="card-t">${esc(s.kill_chain_phase || 'Kill chain in progress')}</div>
+            <div class="card-sub">Step ${stage} / 8 · ${esc((s.honeypot_type||'unknown').toUpperCase())} · ${esc(s.source_ip||'?')}</div>
+          </div>
+          <div class="rc-hero-r">
+            <div class="rc-risk-big" style="color:${riskColor(rs)}">${rs}</div>
+            <div class="rc-risk-lbl">Risk · ${esc(s.risk_level || (rs >= 80 ? 'CRITICAL' : rs >= 50 ? 'HIGH' : rs >= 20 ? 'MEDIUM' : 'LOW'))}</div>
+          </div>
         </div>
+
+        <div class="kc-prog"><div class="kc-prog-bar" style="width:${pct}%"></div></div>
         <div class="kc-grid">${cells}</div>
+
         <div class="card-sub" style="margin-top:14px">ATTACK PATH</div>
-        <div class="flow">
-          <span class="flow-node"> ${esc(s.source_ip)}</span>
-          ${path.map(p => `<span class="flow-arrow"></span><span class="flow-node">${esc(p)}</span>`).join('')}
-        </div>
+        <div class="flow">${pathHTML}</div>
+
+        ${metricTiles(s)}
+        ${mitreChips}
       </div>
 
       <div class="card mb-20">
@@ -118,23 +310,253 @@
           <tr><th style="width:200px">Session ID</th><td class="mono">${esc(s.session_id)}</td></tr>
           <tr><th>Honeypot</th><td>${esc(s.honeypot_type)}</td></tr>
           <tr><th>Source IP</th><td class="mono">${esc(s.source_ip)}</td></tr>
-          <tr><th>Risk score</th><td><span class="score ${fmt.scoreClass(s.risk_score)}">${s.risk_score||0}</span></td></tr>
+          <tr><th>Risk score</th><td><span class="score ${fmt.scoreClass(rs)}">${rs}</span>${s.risk_level?` <span class="rc-chip">${esc(s.risk_level)}</span>`:''}${s.confidence?` <span class="rc-chip">conf: ${esc(s.confidence)}</span>`:''}</td></tr>
           <tr><th>Phase</th><td>${esc(s.kill_chain_phase||'—')}</td></tr>
           <tr><th>Primary Technique</th><td class="mono">${esc(s.primary_technique||'—')}</td></tr>
           <tr><th>Started</th><td class="mono">${fmt.date(s.started_at)}</td></tr>
+          <tr><th>Ended</th><td class="mono">${s.ended_at ? fmt.date(s.ended_at) : '—'}</td></tr>
+          <tr><th>Duration</th><td class="mono">${esc(durStr)}</td></tr>
         </table>
       </div>
 
+      <div id="rc-enrich"><div class="card mb-20"><div class="card-sub">Loading threat intelligence…</div></div></div>
+
       <div class="card">
-        <div class="card-h"><div class="card-t">Conclusion</div></div>
-        <div class="alert ${stage>=7?'err':stage>=4?'warn':'info'}" style="margin:0">
-          <b>Attack reached stage ${stage} / 8</b> — ${stage>=8?'objectives accomplished (action on target).':stage>=7?'lateral movement detected — pivot likely.':stage>=4?'exploitation confirmed — binary or command deployed.':stage>=2?'attack preparation — potential delivery.':`reconnaissance only at this stage.`}
-        </div>
-        <div style="margin-top:10px">
-          <a class="btn btn-gold btn-sm" href="#timeline">View detailed timeline </a>
-          <a class="btn btn-gh btn-sm" href="${api.forensicReportPreviewUrl(s.session_id)}" target="_blank" style="margin-left:8px">HTML Report Preview</a>
+        <div class="card-h"><div class="card-t">Actions</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn btn-gold btn-sm" href="#timeline">View detailed timeline →</a>
+          <a class="btn btn-gh btn-sm" href="${api.forensicReportPreviewUrl(s.session_id)}" target="_blank">HTML report preview</a>
+          <a class="btn btn-gh btn-sm" href="#profiling?ip=${encodeURIComponent(s.source_ip||'')}">Profile this IP</a>
         </div>
       </div>`;
+
+    loadEnrichment(s);
+  }
+
+  // ── Threat intelligence panels ──
+  async function loadEnrichment(s) {
+    const target = document.getElementById('rc-enrich');
+    if (!target) return;
+    let data;
+    try {
+      data = await api.forensicSessionEnrichment(s.session_id);
+    } catch (e) {
+      target.innerHTML = `<div class="card mb-20"><div class="alert warn" style="margin:0">Threat intelligence unavailable: ${esc(e.message||'error')}</div></div>`;
+      return;
+    }
+    target.innerHTML = renderEnrichment(data, s);
+  }
+
+  function panel(title, sub, bodyHTML, klass='') {
+    return `<div class="card mb-20 ${klass}"><div class="card-h"><div class="card-t">${esc(title)}</div>${sub?`<div class="card-sub">${esc(sub)}</div>`:''}</div>${bodyHTML}</div>`;
+  }
+
+  function kvTable(rows) {
+    const cells = rows
+      .filter(([_, v]) => v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0))
+      .map(([k, v]) => {
+        let val;
+        if (Array.isArray(v)) val = `<div class="rc-chips" style="margin-top:0">${v.map(x => `<span class="rc-chip">${esc(String(x))}</span>`).join('')}</div>`;
+        else if (typeof v === 'boolean') val = v ? '<span class="rc-chip red">yes</span>' : '<span class="rc-chip">no</span>';
+        else val = `<span class="mono">${esc(String(v))}</span>`;
+        return `<tr><th style="width:170px">${esc(k)}</th><td>${val}</td></tr>`;
+      }).join('');
+    return cells ? `<table class="tbl">${cells}</table>` : '<div class="card-sub">No data.</div>';
+  }
+
+  function srcBadge(src) {
+    if (src === 'live')  return `<span class="rc-src-badge live">LIVE</span>`;
+    if (src === 'cache') return `<span class="rc-src-badge cache">CACHED</span>`;
+    return `<span class="rc-src-badge none">NO DATA</span>`;
+  }
+
+  function noDataMsg(tool) {
+    const msgs = {
+      shodan:    'No Shodan data — requires the forensic engine to have run this IP through InternetDB.',
+      whois:     'No WHOIS record — requires the forensic engine to have cached registration data.',
+      virustotal:'No VirusTotal result — only available when Dionaea captured a binary file from this session.',
+      yara:      'No YARA matches — no artifact was captured or no rule matched.',
+    };
+    return `<div class="alert info" style="margin:0;font-size:12px">${msgs[tool] || 'No data available for this session.'}</div>`;
+  }
+
+  function hasValues(obj, keys) {
+    return obj && keys.some(k => {
+      const v = obj[k];
+      return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+    });
+  }
+
+  function renderEnrichment(d, s) {
+    const hp = (s.honeypot_type || '').toLowerCase();
+    const parts = [];
+
+    // ── Section header ──
+    parts.push(`<div style="margin:18px 0 14px">
+      <div style="font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:700;color:var(--gold);letter-spacing:.5px">Threat Intelligence & Tool Outputs</div>
+      <div class="card-sub" style="margin-top:2px">All enrichment tools are shown — sources: <span class="rc-src-badge live">LIVE</span> real-time API · <span class="rc-src-badge cache">CACHED</span> forensic engine · <span class="rc-src-badge none">NO DATA</span> not available</div>
+    </div>`);
+
+    // ── 2-column layout for smaller panels ──
+    // IPLocate + AbuseIPDB side by side
+    const ipSrc  = (d.iplocate  || {})._source || 'none';
+    const abSrc  = (d.abuseipdb || {})._source || 'none';
+
+    const ip = d.iplocate || {};
+    const flags = [
+      ip.is_tor  && '<span class="rc-chip red">TOR</span>',
+      ip.is_vpn  && '<span class="rc-chip red">VPN</span>',
+      ip.is_proxy&& '<span class="rc-chip red">PROXY</span>',
+      ip.is_hosting   && '<span class="rc-chip">HOSTING</span>',
+      ip.is_datacenter&& '<span class="rc-chip">DATACENTER</span>',
+      ip.is_bogon     && '<span class="rc-chip">BOGON</span>',
+    ].filter(Boolean).join(' ');
+
+    const ipBody = hasValues(ip, ['country','city','region','asn','as_org'])
+      ? kvTable([
+          ['Country',       ip.country ? `${ip.country}${ip.country_iso?` (${ip.country_iso})`:''}` : null],
+          ['City',          ip.city],
+          ['Region',        ip.region],
+          ['Coordinates',   (ip.lat && ip.lon) ? `${ip.lat}, ${ip.lon}` : null],
+          ['ASN',           ip.asn],
+          ['AS Org',        ip.as_org],
+        ]) + (flags ? `<div class="rc-chips" style="margin-top:10px">${flags}</div>` : '')
+      : noDataMsg('iplocate');
+
+    const a = d.abuseipdb || {};
+    const abScore = a.abuse_score != null ? a.abuse_score : null;
+    const abColor = abScore >= 50 ? 'var(--red2)' : abScore >= 20 ? 'var(--gold)' : 'var(--text)';
+    const abBody = hasValues(a, ['abuse_score','total_reports','usage_type','isp','domain'])
+      ? (abScore != null ? `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div style="font-family:'Rajdhani',sans-serif;font-size:38px;font-weight:700;color:${abColor};line-height:1">${abScore}</div>
+          <div><div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase">Abuse Score / 100</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">${(a.total_reports||0)} community report${(a.total_reports||0)!==1?'s':''}</div></div>
+        </div>` : '')
+        + kvTable([
+          ['Usage type',    a.usage_type],
+          ['ISP',           a.isp],
+          ['Domain',        a.domain],
+          ['Country',       a.country],
+          ['Last reported', a.last_reported],
+        ])
+      : noDataMsg('abuseipdb');
+
+    parts.push(`<div class="rc-2col mb-20">
+      <div class="card">${panelHead('IPLocate', 'Geolocation, ASN & privacy', srcBadge(ipSrc))}${ipBody}</div>
+      <div class="card">${panelHead('AbuseIPDB', 'Community abuse reputation', srcBadge(abSrc))}${abBody}</div>
+    </div>`);
+
+    // ── Shodan (full width) — only show if data exists ──
+    const sh = d.shodan || {};
+    const shHasData = sh.ports?.length || sh.vulns?.length || sh.tags?.length || sh.hostnames?.length;
+    if (shHasData) {
+      const shSrc = sh._source || 'cache';
+      const shBody = `<div class="rc-3col" style="margin-bottom:10px">
+          ${sh.ports?.length ? `<div><div class="card-sub" style="margin-bottom:6px">OPEN PORTS</div><div class="rc-chips" style="margin-top:0">${sh.ports.map(p => `<span class="rc-chip hl">${esc(String(p))}</span>`).join('')}</div></div>` : ''}
+          ${sh.vulns?.length ? `<div><div class="card-sub" style="margin-bottom:6px">CVEs</div><div class="rc-chips" style="margin-top:0">${sh.vulns.map(v => `<span class="rc-chip red">${esc(v)}</span>`).join('')}</div></div>` : ''}
+          ${sh.tags?.length  ? `<div><div class="card-sub" style="margin-bottom:6px">TAGS</div><div class="rc-chips" style="margin-top:0">${sh.tags.map(t => `<span class="rc-chip">${esc(t)}</span>`).join('')}</div></div>` : ''}
+        </div>
+        ${sh.hostnames?.length ? kvTable([['Hostnames', sh.hostnames]]) : ''}`;
+      parts.push(`<div class="card mb-20">${panelHead('Shodan InternetDB', 'Internet exposure — open ports, CVEs, tags', srcBadge(shSrc))}${shBody}</div>`);
+    }
+
+    // ── WHOIS (full width) — only show if data exists ──
+    const w = d.whois || {};
+    const wHasData = hasValues(w, ['registrar','organization','country','created','updated','abuse_email','net_range','asn']);
+    if (wHasData) {
+      const wSrc = w._source || 'cache';
+      const wBody = kvTable([
+        ['Registrar',     w.registrar],
+        ['Organization',  w.organization],
+        ['Country',       w.country],
+        ['Net range',     w.net_range],
+        ['ASN',           w.asn],
+        ['Created',       w.created],
+        ['Updated',       w.updated],
+        ['Abuse contact', w.abuse_email],
+      ]);
+      parts.push(`<div class="card mb-20">${panelHead('WHOIS', 'Network registration record', srcBadge(wSrc))}${wBody}</div>`);
+    }
+
+    // ── VirusTotal + YARA — Dionaea only ──
+    const isDionaea = hp === 'dionaea';
+    if (isDionaea) {
+      const vt = d.virustotal;
+      let vtBody;
+      if (vt) {
+        const vc = vt.malicious >= 5 ? 'var(--red2)' : vt.malicious > 0 ? 'var(--gold)' : 'var(--text3)';
+        vtBody = `<div class="rc-metrics" style="margin:0 0 14px">
+          <div class="rc-metric ${vt.malicious>=5?'crit':vt.malicious>0?'warn':''}"><div class="lbl">Malicious</div><div class="val" style="color:${vc}">${vt.malicious||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Suspicious</div><div class="val">${vt.suspicious||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Harmless</div><div class="val">${vt.harmless||0}</div></div>
+          <div class="rc-metric"><div class="lbl">Undetected</div><div class="val">${vt.undetected||0}</div></div>
+          ${vt.engines ? `<div class="rc-metric"><div class="lbl">Total engines</div><div class="val">${vt.engines}</div></div>` : ''}
+        </div>` +
+        kvTable([
+          ['SHA-256',    vt.sha256],
+          ['Family',     vt.family],
+          ['Known names',vt.names],
+          ['First seen', vt.first_seen ? new Date((Number(vt.first_seen)||0)*1000).toISOString().slice(0,10) : null],
+        ]) +
+        (vt.permalink ? `<div style="margin-top:10px"><a class="btn btn-gh btn-sm" href="${esc(vt.permalink)}" target="_blank">Open on VirusTotal →</a></div>` : '');
+      } else {
+        vtBody = noDataMsg('virustotal');
+      }
+
+      let yaraBody;
+      if (d.yara && d.yara.length) {
+        const rows = d.yara.map(y => `
+          <tr>
+            <td class="mono"><b>${esc(y.rule||'?')}</b>${y.namespace?`<br><span style="font-size:10px;color:var(--text3)">${esc(y.namespace)}</span>`:''}</td>
+            <td>${(y.tags||[]).map(t => `<span class="rc-chip red">${esc(t)}</span>`).join(' ')||'—'}</td>
+            <td class="mono" style="font-size:11px">${esc((y.meta&&(y.meta.description||y.meta.author))||'—')}</td>
+          </tr>`).join('');
+        yaraBody = `<table class="tbl"><thead><tr><th>Rule</th><th>Tags</th><th>Meta</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } else {
+        yaraBody = noDataMsg('yara');
+      }
+
+      let capturedBody = '';
+      if (d.captured_files && d.captured_files.length) {
+        capturedBody = `<div style="margin-bottom:14px">` + d.captured_files.map(f =>
+          kvTable([
+            ['SHA-256', f.sha256],
+            ['Size',    f.size != null ? `${f.size} bytes` : null],
+            ['Type',    f.type],
+          ])
+        ).join('') + '</div>';
+      }
+
+      parts.push(`<div class="rc-2col mb-20">
+        <div class="card">${panelHead('VirusTotal — Dionaea Sample', 'AV engine consensus on captured binary', '')}${capturedBody}${vtBody}</div>
+        <div class="card">${panelHead('YARA Rules', `${d.yara?.length||0} rule${(d.yara?.length||0)!==1?'s':''} matched`, '')}${yaraBody}</div>
+      </div>`);
+    }
+
+    // ── MITRE ──
+    if (d.mitre && d.mitre.length) {
+      const rows = d.mitre.map(m => `
+        <tr>
+          <td class="mono" style="width:90px"><a href="${esc(m.url)}" target="_blank" style="color:var(--gold)">${esc(m.id)}</a></td>
+          <td>${esc(m.name)}</td>
+          <td><span class="rc-chip">${esc(m.tactic)}</span></td>
+        </tr>`).join('');
+      parts.push(`<div class="card mb-20">${panelHead('MITRE ATT&CK', `${d.mitre.length} technique${d.mitre.length>1?'s':''} mapped from observed behaviour`, '')}
+        <table class="tbl"><thead><tr><th style="width:90px">ID</th><th>Technique</th><th>Tactic</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>`);
+    }
+
+    return parts.join('');
+  }
+
+  function panelHead(title, sub, badge) {
+    return `<div class="card-h" style="padding-bottom:12px">
+      <div>
+        <div class="card-t">${esc(title)}</div>
+        ${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}
+      </div>
+      ${badge ? `<div>${badge}</div>` : ''}
+    </div>`;
   }
 
   $('#rc-sid').addEventListener('change', () => {
