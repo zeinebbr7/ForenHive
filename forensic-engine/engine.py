@@ -25,7 +25,6 @@ import logging
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 import psycopg2
@@ -38,7 +37,7 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
+from risk_score_optimized import RiskScorer, risk_level, score_session_from_data
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -75,18 +74,12 @@ def _send_whatsapp_alert(ip: str, score: int) -> None:
     )
     from twilio.rest import Client
     client = Client(sid, token)
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(
-                client.messages.create,
-                from_=f"whatsapp:{from_}",
-                to=to,
-                body=body,
-            )
-            msg = future.result(timeout=5)
-        log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
-    except Exception as e:
-        log.warning(f"WhatsApp alert failed for {ip}: {e}")
+    msg = client.messages.create(
+        from_=f"whatsapp:{from_}",
+        to=to,
+        body=body,
+    )
+    log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
 
 
 def _now_utc():
@@ -108,28 +101,6 @@ def _build_es_client() -> Elasticsearch:
         f"http://{config.ES_HOST}:{config.ES_PORT}",
         request_timeout=30,
     )
-
-
-def _query_distinct_scored_ips(hours_back: int) -> list:
-    """Get distinct IPs that were scored in the time window from PG."""
-    try:
-        conn = _pg_conn()
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
-            cur.execute(
-                """
-                SELECT DISTINCT source_ip FROM forensic_sessions
-                WHERE created_at >= %s AND source_ip IS NOT NULL
-                ORDER BY source_ip
-                """,
-                (since,),
-            )
-            rows = cur.fetchall()
-        conn.close()
-        return [row["source_ip"] for row in rows] if rows else []
-    except Exception as e:
-        log.warning(f"Query distinct scored IPs failed: {e}")
-        return []
 
 
 def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
@@ -167,7 +138,7 @@ def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"Cowrie session query failed: {e}")
+        log.warning(f"Cowrie session query failed: {e}")
         return []
     sessions = []
     for bucket in resp.get("aggregations", {}).get("by_session", {}).get("buckets", []):
@@ -220,7 +191,7 @@ def _query_dionaea_sessions(es: Elasticsearch, hours_back: int) -> list:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"Dionaea session query failed: {e}")
+        log.warning(f"Dionaea session query failed: {e}")
         return []
 
     sessions = []
@@ -274,7 +245,7 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"Galah session query failed: {e}")
+        log.warning(f"Galah session query failed: {e}")
         return []
 
     sessions = []
@@ -347,7 +318,7 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"SHA256 query failed: {e}")
+        log.warning(f"SHA256 query failed: {e}")
         return []
     return [b["key"] for b in resp.get("aggregations", {}).get("hashes", {}).get("buckets", [])]
 
@@ -378,7 +349,7 @@ def _query_ip_to_sha256(es: Elasticsearch, hours_back: int) -> dict:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"IP→SHA256 query failed: {e}")
+        log.warning(f"IP→SHA256 query failed: {e}")
         return {}
     result = {}
     for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
@@ -405,7 +376,7 @@ def _query_ip_honeypot_types(es: Elasticsearch, hours_back: int) -> dict:
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
     except Exception as e:
-        log.error(f"IP→honeypot_types query failed: {e}")
+        log.warning(f"IP→honeypot_types query failed: {e}")
         return {}
     result = {}
     for b in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
@@ -501,82 +472,52 @@ def _compute_time_metrics(started_at, ended_at, attempts: int) -> dict:
 
 # ── Session persistence ──────────────────────────────────────────────────────
 
-_SESSION_INSERT_SQL = """
-INSERT INTO forensic_sessions
-    (session_id, honeypot_type, source_ip, started_at, ended_at,
-     risk_score, mitre_techniques, enrichment_data,
-     kill_chain_phase, kill_chain_stage,
-     primary_technique, forensic_narrative,
-     login_attempts, success_count, attack_velocity,
-     created_at, updated_at)
-VALUES %s
-ON CONFLICT (session_id) DO UPDATE
-    SET risk_score         = EXCLUDED.risk_score,
-        enrichment_data    = EXCLUDED.enrichment_data,
-        mitre_techniques   = EXCLUDED.mitre_techniques,
-        kill_chain_phase   = EXCLUDED.kill_chain_phase,
-        kill_chain_stage   = EXCLUDED.kill_chain_stage,
-        primary_technique  = EXCLUDED.primary_technique,
-        forensic_narrative = EXCLUDED.forensic_narrative,
-        login_attempts     = EXCLUDED.login_attempts,
-        success_count      = EXCLUDED.success_count,
-        attack_velocity    = EXCLUDED.attack_velocity,
-        updated_at         = NOW()
-"""
-
-_SESSION_ROW_TEMPLATE = (
-    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"
-)
-
-
-def _session_row(session: dict) -> tuple:
-    return (
-        session["session_id"],
-        session.get("honeypot_type"),
-        session.get("source_ip"),
-        session.get("started_at"),
-        session.get("ended_at"),
-        session.get("risk_score"),
-        json.dumps(session.get("mitre_techniques", [])),
-        json.dumps(session.get("enrichment_data", {})),
-        session.get("kill_chain_phase"),
-        session.get("kill_chain_stage"),
-        session.get("primary_technique"),
-        session.get("forensic_narrative"),
-        session.get("login_attempts", 0),
-        session.get("success_count", 0),
-        session.get("attack_velocity", 0.0),
-    )
-
-
-def _save_sessions_batch(sessions: list):
-    """Bulk upsert sessions in one transaction. ~100x faster than per-row."""
-    if not sessions:
-        return
-    rows = [_session_row(s) for s in sessions]
-    try:
-        with _pg_conn() as conn:
-            with conn.cursor() as cur:
-                psycopg2.extras.execute_values(
-                    cur, _SESSION_INSERT_SQL, rows,
-                    template=_SESSION_ROW_TEMPLATE, page_size=200,
-                )
-            conn.commit()
-    except Exception as e:
-        log.warning(f"Batch save failed ({len(sessions)} sessions): {e}; "
-                    "falling back to per-row upsert")
-        for s in sessions:
-            _save_session(s)
-
-
 def _save_session(session: dict):
-    """Single-session upsert. Prefer _save_sessions_batch() in hot loops."""
     try:
         with _pg_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    _SESSION_INSERT_SQL.replace("VALUES %s", "VALUES " + _SESSION_ROW_TEMPLATE),
-                    _session_row(session),
+                    """
+                    INSERT INTO forensic_sessions
+                        (session_id, honeypot_type, source_ip, started_at, ended_at,
+                         risk_score, signal_breakdown, mitre_techniques, enrichment_data,
+                         kill_chain_phase, kill_chain_stage,
+                         primary_technique, forensic_narrative,
+                         login_attempts, success_count, attack_velocity,
+                         created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (session_id) DO UPDATE
+                        SET risk_score         = EXCLUDED.risk_score,
+                            signal_breakdown   = EXCLUDED.signal_breakdown,
+                            enrichment_data    = EXCLUDED.enrichment_data,
+                            mitre_techniques   = EXCLUDED.mitre_techniques,
+                            kill_chain_phase   = EXCLUDED.kill_chain_phase,
+                            kill_chain_stage   = EXCLUDED.kill_chain_stage,
+                            primary_technique  = EXCLUDED.primary_technique,
+                            forensic_narrative = EXCLUDED.forensic_narrative,
+                            login_attempts     = EXCLUDED.login_attempts,
+                            success_count      = EXCLUDED.success_count,
+                            attack_velocity    = EXCLUDED.attack_velocity,
+                            updated_at         = NOW()
+                    """,
+                    (
+                        session["session_id"],
+                        session.get("honeypot_type"),
+                        session.get("source_ip"),
+                        session.get("started_at"),
+                        session.get("ended_at"),
+                        session.get("risk_score"),
+                        json.dumps(session.get("enrichment_data", {}).get("signal_breakdown", {})),
+                        json.dumps(session.get("mitre_techniques", [])),
+                        json.dumps(session.get("enrichment_data", {})),
+                        session.get("kill_chain_phase"),
+                        session.get("kill_chain_stage"),
+                        session.get("primary_technique"),
+                        session.get("forensic_narrative"),
+                        session.get("login_attempts", 0),
+                        session.get("success_count", 0),
+                        session.get("attack_velocity", 0.0),
+                    )
                 )
             conn.commit()
     except Exception as e:
@@ -599,7 +540,6 @@ class ForensicEngine:
         self.timeline = TimelineBuilder(self.es, _pg_conn)
         self.ioc      = IOCExtractor(_pg_conn)
         self.coc      = ChainOfCustody(_pg_conn)
-        self.profiler = AttackerProfiler(self.es, _pg_conn)
 
     # ── Phase 0: SMB analysis ─────────────────────────────────────────────────
 
@@ -612,6 +552,9 @@ class ForensicEngine:
             return 0
         try:
             dionaea_data = smb_analyzer.extract_dionaea(db_path)
+        except SystemExit:
+            log.warning("SMB analysis: extract_dionaea exited early — skipping")
+            return 0
         except Exception as e:
             log.warning(f"SMB analysis: extraction failed — {e}")
             return 0
@@ -916,20 +859,10 @@ class ForensicEngine:
                             vt_was_available: bool = True):
         log.info(f"=== Phase 3: Session Scoring + MITRE (last {hours_back}h) ===")
 
-        # Gather sessions + correlation data from ES in parallel (independent queries)
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            f_cowrie         = pool.submit(_query_cowrie_sessions, self.es, hours_back)
-            f_dionaea        = pool.submit(_query_dionaea_sessions, self.es, hours_back)
-            f_galah          = pool.submit(_query_galah_sessions, self.es, hours_back)
-            f_ip_to_sha256   = pool.submit(_query_ip_to_sha256, self.es, hours_back)
-            f_honeypot_types = pool.submit(_query_ip_honeypot_types, self.es, hours_back)
-            f_file_analysis  = pool.submit(_load_file_analysis_from_pg, max(hours_back, 168))
-            cowrie_sessions  = f_cowrie.result()
-            dionaea_sessions = f_dionaea.result()
-            galah_sessions   = f_galah.result()
-            ip_to_sha256     = f_ip_to_sha256.result()
-            honeypot_types   = f_honeypot_types.result()
-            file_analysis    = f_file_analysis.result()
+        # Gather sessions from ALL honeypots
+        cowrie_sessions  = _query_cowrie_sessions(self.es, hours_back)
+        dionaea_sessions = _query_dionaea_sessions(self.es, hours_back)
+        galah_sessions   = _query_galah_sessions(self.es, hours_back)
 
         all_sessions = cowrie_sessions + dionaea_sessions + galah_sessions
         log.info(
@@ -938,24 +871,42 @@ class ForensicEngine:
             f"Total={len(all_sessions)}"
         )
 
+        # Skip sessions already scored — prevents score drift when new sessions
+        # from the same IP arrive and recidivism/honeypot data changes the result.
+        already_scored: set = set()
+        try:
+            with _pg_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT session_id FROM forensic_sessions WHERE risk_score IS NOT NULL"
+                    )
+                    already_scored = {row[0] for row in cur.fetchall()}
+        except Exception as e:
+            log.warning(f"Could not load already-scored sessions: {e}")
+
+        before = len(all_sessions)
+        all_sessions = [s for s in all_sessions if s.get("session_id") not in already_scored]
+        log.info(f"Skipping {before - len(all_sessions)} already-scored sessions, "
+                 f"{len(all_sessions)} new to score")
+
         enrichment_cache = enrichment_cache or {}
 
+        # Load YARA/VT from PG and map to IPs via ES
+        file_analysis   = _load_file_analysis_from_pg(hours_back=max(hours_back, 168))
+        ip_to_sha256    = _query_ip_to_sha256(self.es, hours_back)
         log.info(f"File analysis: {len(file_analysis)} entries, "
                  f"{len(ip_to_sha256)} IPs with file hashes")
 
-        # Cross-correlation data (SMB depends on all_ips; recidivism uses PG)
+        # Cross-correlation data
         all_ips = list({s.get("source_ip") for s in all_sessions if s.get("source_ip")})
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f_smb        = pool.submit(self._query_smb_profiles, all_ips)
-            f_recidivism = pool.submit(_query_recidivism)
-            smb_profiles = f_smb.result()
-            recidivism   = f_recidivism.result()
+        smb_profiles   = self._query_smb_profiles(all_ips)
+        honeypot_types = _query_ip_honeypot_types(self.es, hours_back)
+        recidivism     = _query_recidivism()
         log.info(f"SMB profiles: {len(smb_profiles)}, "
                  f"Honeypot-type correlation: {len(honeypot_types)} IPs, "
                  f"Recidivists: {len(recidivism)}")
 
         scored = []
-        sessions_to_save = []
 
         for session in all_sessions:
             source_ip  = session.get("source_ip", "")
@@ -1095,8 +1046,8 @@ class ForensicEngine:
                 **time_metrics,
             }
 
-            # ── Deterministic risk scoring (18 signals) ───────────────────────
-            result = calculate_risk_score(session_data)
+            # ── Risk scoring (6 signals) ──────────────────────────────────────
+            result = score_session_from_data(session_data)
             score  = result["score"]
             level  = result["level"]
 
@@ -1124,15 +1075,7 @@ class ForensicEngine:
                 **enrich,
                 "risk_level":          level,
                 "confidence":          result["confidence"],
-                "attack_types":        result["attack_types"],
-                "lateral_movement":    result["lateral_movement"],
                 "signal_breakdown":    result["signal_breakdown"],
-                "data_quality":        result["data_quality"],
-                "notes":               result["notes"],
-                "narrative":           result["narrative"],
-                "recommended_actions": result["recommended_actions"],
-                "iocs":                result["iocs"],
-                "attribution":         result["attribution"],
                 "mitre_techniques":    mitre_techniques,
                 "kill_chain_phase":    kill_chain_phase,
                 "kill_chain_stage":    kill_chain_stage,
@@ -1146,14 +1089,12 @@ class ForensicEngine:
                 "vt_available":        vt_was_available,
             }
 
-            sessions_to_save.append(session)
+            _save_session(session)
             scored.append((session["session_id"], source_ip, score, level,
                            session.get("honeypot_type", "")))
 
             if score >= 40:
                 flags = ""
-                if result["lateral_movement"]:
-                    flags += " [LATERAL]"
                 if kill_chain_phase:
                     flags += f" [{kill_chain_phase}]"
                 log.info(
@@ -1161,11 +1102,6 @@ class ForensicEngine:
                     f"Session {session['session_id'][:12]}... "
                     f"IP={source_ip} score={score}{flags}"
                 )
-
-        # Bulk upsert all scored sessions in one transaction.
-        if sessions_to_save:
-            log.info(f"Persisting {len(sessions_to_save)} sessions to PostgreSQL ...")
-            _save_sessions_batch(sessions_to_save)
 
         return scored
 
@@ -1176,16 +1112,6 @@ class ForensicEngine:
         log.info(f"{'='*60}")
         log.info(f"  ForenHive Full Forensic Analysis (last {hours_back}h)")
         log.info(f"{'='*60}")
-
-        # Fail fast if Elasticsearch is unreachable — otherwise every query
-        # silently returns [] and we'd score an empty corpus.
-        try:
-            if not self.es.ping():
-                log.error("Elasticsearch ping returned False — aborting full analysis")
-                return
-        except Exception as e:
-            log.error(f"Elasticsearch unreachable — aborting full analysis: {e}")
-            return
 
         # Phase 1 — IP enrichment
         enrichment_cache = self.run_enrichment(hours_back)

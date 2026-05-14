@@ -2,617 +2,1062 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>ForenHive SOC Report — {{ report_id }}</title>
+<title>ForenHive SOC Report &#8212; {{ report_id }}</title>
 <style>
+  /* ═══════════════════════════════════════════════════
+     FORENHIVE &#8212; Honeypot Forensic Report
+     Theme: honey amber + terminal teal (T-Pot inspired)
+     ═══════════════════════════════════════════════════ */
+
   /* ── PAGE & PRINT ── */
   @page {
     size: A4;
-    margin: 20mm 18mm 22mm 18mm;
-    @bottom-center {
-      content: "ForenHive — {{ report_id }} — Page " counter(page) " / " counter(pages);
-      font-family: 'Courier New', monospace;
-      font-size: 7.5pt;
-      color: #64748b;
-    }
+    margin: 16mm 14mm 18mm 14mm;
+    @bottom-left  { content: "FORENHIVE // {{ report_id }}"; font-family: 'Courier New', monospace; font-size: 7pt; color: #92400e; letter-spacing: 1px; }
+    @bottom-right { content: counter(page) " / " counter(pages); font-family: 'Courier New', monospace; font-size: 7pt; color: #92400e; letter-spacing: 1px; }
   }
-  @page :first { @bottom-center { content: none; } }
+  @page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
 
-  /* ── VARIABLES ── */
+  /* ── TOKENS ── */
   :root {
-    --fg: #0f172a; --fg-muted: #475569; --bg: #ffffff; --bg-alt: #f8fafc;
-    --accent: #991b1b; --accent-lt: #fef2f2; --border: #e2e8f0;
-    --gold: #b45309; --green: #166534; --blue: #1e40af;
-    --mono: 'Courier New', 'Consolas', monospace;
-    --sans: 'Helvetica Neue', 'Arial', sans-serif;
+    --paper:      #faf8f2;
+    --paper-2:    #f3ecd8;
+    --paper-3:    #ede4cb;
+    --ink:        #0d1117;
+    --ink-2:      #1f2937;
+    --muted:      #6b6356;
+    --rule:       #d8cfb8;
+    --rule-soft:  #ebe3cc;
+
+    /* Honey &#8212; primary */
+    --honey:      #c2570a;
+    --honey-deep: #7c2d12;
+    --honey-glow: #fbbf24;
+    --honey-wash: #fef3c7;
+    --honey-tint: #fdf6e3;
+
+    /* Teal accent */
+    --teal:       #0e7490;
+    --teal-deep:  #155e75;
+    --teal-wash:  #cffafe;
+
+    /* Threat scale */
+    --crit:       #991b1b;
+    --high:       #c2410c;
+    --med:        #b45309;
+    --low:        #166534;
+
+    /* Terminal palette */
+    --term-bg:    #0a0e14;
+    --term-bg-2:  #11161f;
+    --term-fg:    #d1d5db;
+    --term-green: #4ade80;
+    --term-cyan:  #22d3ee;
+    --term-amber: #fbbf24;
+    --term-red:   #f87171;
+    --term-muted: #6b7280;
+
+    --mono: 'Courier New', Consolas, monospace;
+    --sans: 'Helvetica Neue', Arial, sans-serif;
   }
 
   /* ── RESET ── */
   *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
   body {
-    font-family: var(--sans); font-size: 9.5pt; line-height: 1.55;
-    color: var(--fg); background: var(--bg); margin: 0;
+    font-family: var(--sans);
+    font-size: 9.5pt;
+    line-height: 1.55;
+    color: var(--ink);
+    background: var(--paper);
   }
 
-  /* ── COVER ── */
+  /* ═══════ COVER ═══════ */
   .cover {
-    page-break-after: always; display: flex; flex-direction: column;
-    justify-content: center; min-height: 100vh; text-align: center; padding: 40mm 20mm;
+    page-break-after: always;
+    background: var(--term-bg);
+    color: var(--term-fg);
+    margin: -16mm -14mm 0 -14mm;
+    padding: 28mm 18mm 24mm 18mm;
+    min-height: 260mm;
+    position: relative;
+    overflow: hidden;
+    font-family: var(--mono);
   }
-  .cover-logo { font-family: var(--mono); font-size: 36pt; font-weight: 700; color: var(--accent); letter-spacing: 2px; margin-bottom: 6mm; }
-  .cover-subtitle { font-size: 11pt; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 18mm; }
-  .cover-meta { font-size: 9pt; color: var(--fg-muted); line-height: 2; }
-  .cover-meta strong { color: var(--fg); }
-  .cover-line { width: 60mm; height: 2px; background: var(--accent); margin: 10mm auto; }
-  .cover-classification { margin-top: 14mm; display: inline-block; padding: 3mm 8mm; border: 2px solid var(--accent); font-family: var(--mono); font-size: 10pt; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
+  .cover::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 80% 10%, rgba(251,191,36,.10), transparent 40%),
+      radial-gradient(circle at 10% 90%, rgba(34,211,238,.06), transparent 40%);
+    pointer-events: none;
+  }
+  .cover-hex {
+    position: absolute; top: 0; right: -40mm;
+    width: 160mm; height: 100%; opacity: .14; pointer-events: none;
+  }
+  .cover-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 12mm 12mm;
+    pointer-events: none;
+  }
+  .cover-inner { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
 
-  /* ── HEADINGS ── */
-  h1 { font-size: 16pt; font-weight: 700; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 2mm; margin-top: 8mm; margin-bottom: 5mm; page-break-after: avoid; }
-  h2 { font-size: 11pt; font-weight: 700; color: var(--fg); margin-top: 6mm; margin-bottom: 3mm; page-break-after: avoid; }
-  h3 { font-size: 9.5pt; font-weight: 700; color: var(--fg-muted); margin-top: 4mm; margin-bottom: 2mm; }
+  .cover-topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 7.5pt; color: var(--term-muted); letter-spacing: 2px; text-transform: uppercase;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    padding-bottom: 4mm; margin-bottom: 18mm;
+  }
+  .cover-topbar .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--term-green); margin-right: 6px; }
+  .cover-topbar .right span + span { margin-left: 6mm; }
 
-  /* ── TOC ── */
-  .toc { page-break-after: always; padding-top: 10mm; }
-  .toc h1 { text-align: center; border: none; }
-  .toc-entry { display: flex; justify-content: space-between; align-items: baseline; padding: 1.5mm 0; border-bottom: 1px dotted var(--border); font-size: 9.5pt; }
-  .toc-entry.level-1 { font-weight: 700; }
-  .toc-entry.level-2 { padding-left: 8mm; color: var(--fg-muted); }
+  .cover-eyebrow { color: var(--term-amber); font-size: 9pt; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 6mm; }
+  .cover-eyebrow::before { content: "// "; color: var(--term-muted); }
 
-  /* ── TABLES ── */
-  table { width: 100%; border-collapse: collapse; margin: 3mm 0 5mm 0; font-size: 8.5pt; }
-  th, td { border: 1px solid var(--border); padding: 2mm 3mm; text-align: left; vertical-align: top; }
-  th { background: var(--accent); color: #fff; font-weight: 600; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; }
-  tr:nth-child(even) td { background: var(--bg-alt); }
+  .cover-title { font-size: 48pt; font-weight: 700; line-height: .95; letter-spacing: -1px; margin: 0 0 4mm 0; color: #fff; }
+  .cover-title em { font-style: normal; color: var(--term-amber); }
 
-  /* ── SPECIAL BLOCKS ── */
-  .info-box { background: var(--bg-alt); border-left: 3px solid var(--accent); padding: 3mm 4mm; margin: 3mm 0; font-size: 8.5pt; }
-  .disclaimer-box { background: #fffbeb; border-left: 3px solid var(--gold); padding: 3mm 4mm; margin: 3mm 0; font-size: 8pt; color: var(--gold); }
-  .disclaimer-box strong { color: #92400e; }
+  .cover-subtitle {
+    font-family: var(--sans); font-size: 12pt; font-weight: 400;
+    color: var(--term-fg); max-width: 130mm; line-height: 1.5; margin-bottom: 16mm;
+  }
 
-  .score-badge { display: inline-block; padding: 1mm 4mm; border-radius: 3px; font-family: var(--mono); font-size: 10pt; font-weight: 700; color: #fff; }
-  .score-critical { background: #991b1b; }
-  .score-high { background: #c2410c; }
-  .score-medium { background: #b45309; }
-  .score-low { background: #166534; }
+  .cover-meta-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    border-top: 1px solid rgba(255,255,255,.10);
+    border-bottom: 1px solid rgba(255,255,255,.10);
+    margin-bottom: 14mm;
+  }
+  .cover-meta-cell { padding: 6mm 5mm 6mm 0; border-right: 1px solid rgba(255,255,255,.08); }
+  .cover-meta-cell:last-child { border-right: none; padding-right: 0; }
+  .cover-meta-label { font-size: 7pt; letter-spacing: 2px; color: var(--term-muted); text-transform: uppercase; margin-bottom: 3mm; }
+  .cover-meta-value { font-size: 11pt; color: #fff; font-weight: 500; }
+  .cover-meta-value .small { font-size: 8.5pt; color: var(--term-fg); }
 
-  .tag { display: inline-block; padding: 0.5mm 2.5mm; border-radius: 2px; font-family: var(--mono); font-size: 7.5pt; margin-right: 1.5mm; margin-bottom: 1mm; }
-  .tag-mitre { background: #dbeafe; color: var(--blue); }
-  .tag-yara { background: #dcfce7; color: var(--green); }
-  .tag-ioc { background: #fef2f2; color: var(--accent); }
+  .cover-verdict { margin-top: auto; display: flex; gap: 4mm; align-items: stretch; }
+  .verdict-block {
+    flex: 1; background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-left: 3px solid var(--term-amber);
+    padding: 5mm 6mm;
+  }
+  .verdict-block.crit { border-left-color: var(--term-red); }
+  .verdict-label { font-size: 7pt; color: var(--term-muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 2mm; }
+  .verdict-value { font-size: 13pt; color: #fff; font-weight: 600; font-family: var(--sans); }
+  .verdict-value.score { color: var(--term-red); font-family: var(--mono); }
 
-  /* ── CODE ── */
-  code { font-family: var(--mono); font-size: 8pt; background: var(--bg-alt); padding: 0.5mm 1.5mm; border-radius: 2px; }
-  pre { font-family: var(--mono); font-size: 7.5pt; background: #1e293b; color: #e2e8f0; padding: 3mm 4mm; border-radius: 3px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; margin: 3mm 0; }
+  .cover-footer {
+    margin-top: 14mm; display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 7.5pt; color: var(--term-muted); letter-spacing: 1.5px;
+  }
+  .tlp-stamp {
+    display: inline-block; background: #fef3c7; color: var(--honey-deep);
+    padding: 2mm 5mm; font-family: var(--mono); font-size: 9pt; font-weight: 700; letter-spacing: 3px;
+  }
 
-  /* ── SIGNAL BREAKDOWN BARS ── */
-  .signal-row { display: flex; align-items: center; margin: 1mm 0; }
-  .signal-name { flex: 0 0 180px; font-size: 8pt; color: var(--fg-muted); }
-  .signal-bar-bg { flex: 1; height: 5mm; background: var(--bg-alt); border-radius: 2px; overflow: hidden; margin: 0 2mm; }
-  .signal-bar { height: 100%; background: var(--accent); border-radius: 2px; }
-  .signal-pts { flex: 0 0 40px; text-align: right; font-family: var(--mono); font-size: 8pt; font-weight: 700; }
+  /* ═══════ SECTION CHROME ═══════ */
+  .section { padding-top: 8mm; }
+  .section-bar {
+    display: flex; align-items: baseline; gap: 4mm;
+    margin: 0 0 6mm 0; padding-bottom: 3mm;
+    border-bottom: 2px solid var(--ink);
+    page-break-after: avoid;
+  }
+  .section-num {
+    font-family: var(--mono); font-size: 9pt; font-weight: 700;
+    color: var(--honey); letter-spacing: 1px;
+    background: var(--honey-wash); padding: 1.5mm 3mm;
+    border: 1px solid var(--honey); border-radius: 1px;
+  }
+  .section-title { font-size: 18pt; font-weight: 700; line-height: 1.1; color: var(--ink); margin: 0; flex: 1; }
+  .section-tag { font-family: var(--mono); font-size: 7.5pt; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
 
-  /* ── TIMELINE ── */
-  .tl-row { display: flex; border-bottom: 1px solid var(--border); padding: 1.2mm 0; font-size: 8pt; }
-  .tl-ts { flex: 0 0 65px; font-family: var(--mono); color: var(--fg-muted); font-size: 7.5pt; }
-  .tl-type { flex: 0 0 70px; font-weight: 600; }
-  .tl-detail { flex: 1; word-break: break-word; }
+  h2 {
+    font-family: var(--mono); font-size: 9.5pt; font-weight: 600;
+    color: var(--ink); margin: 7mm 0 3mm 0;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    page-break-after: avoid;
+  }
+  h2::before { content: "\25B8 "; color: var(--honey); font-weight: 700; }
+  h3 { font-family: var(--sans); font-size: 9pt; font-weight: 700; color: var(--ink-2); margin: 5mm 0 2mm 0; page-break-after: avoid; }
+  p { margin: 0 0 3mm 0; }
+
+  /* ═══════ TOC ═══════ */
+  .toc { page-break-after: always; padding-top: 4mm; }
+  .toc-heading { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 2mm; }
+  .toc-title { font-size: 32pt; font-weight: 700; line-height: 1; margin: 0 0 10mm 0; letter-spacing: -1px; }
+  .toc-title em { font-style: normal; color: var(--honey); }
+  .toc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10mm; }
+  .toc-entry {
+    display: flex; align-items: baseline; gap: 3mm;
+    padding: 2.5mm 0; border-bottom: 1px dotted var(--rule); font-size: 10pt;
+  }
+  .toc-num { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--honey); flex: 0 0 14mm; letter-spacing: 1px; }
+  .toc-label { flex: 1; }
+  .toc-entry.sub { padding-left: 14mm; font-size: 9pt; color: var(--muted); border-bottom-style: dashed; }
+  .toc-entry.sub .toc-num { color: var(--teal); font-size: 7.5pt; }
+
+  /* ═══════ TABLES ═══════ */
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm 0; font-size: 8.5pt; background: var(--paper); }
+  th, td { padding: 2.2mm 3mm; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-soft); }
+  th {
+    background: var(--ink); color: var(--honey-glow);
+    font-family: var(--mono); font-weight: 600; font-size: 7.5pt;
+    text-transform: uppercase; letter-spacing: 1.2px;
+    border-bottom: 2px solid var(--honey);
+  }
+  tr:nth-child(even) td { background: var(--honey-tint); }
+  td code { font-family: var(--mono); font-size: 8pt; color: var(--ink); }
+
+  /* compact key/value table */
+  .kv th, .kv td { padding: 2mm 3mm; border-bottom: 1px solid var(--rule-soft); }
+  .kv th { background: var(--paper-2); color: var(--ink-2); font-family: var(--sans); text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--rule-soft); width: 40%; }
+  .kv tr td { background: var(--paper); }
+
+  /* ═══════ BLOCKS ═══════ */
+  .callout { background: var(--honey-tint); border-left: 3px solid var(--honey); padding: 3mm 4mm; margin: 3mm 0; font-size: 9pt; }
+  .callout.teal { background: var(--teal-wash); border-left-color: var(--teal); }
+  .callout.warn { background: #fef3c7; border-left-color: var(--high); color: var(--honey-deep); font-size: 8.5pt; }
+
+  .disclaimer {
+    border: 1px dashed var(--honey);
+    background: repeating-linear-gradient(45deg, var(--honey-tint), var(--honey-tint) 6px, var(--paper) 6px, var(--paper) 12px);
+    padding: 4mm 5mm; margin: 3mm 0 5mm 0; font-size: 8.5pt; color: var(--ink-2);
+  }
+  .disclaimer strong { color: var(--honey-deep); font-family: var(--mono); letter-spacing: 1px; }
+
+  /* ── TERMINAL CODE ── */
+  pre {
+    font-family: var(--mono); font-size: 7.5pt;
+    background: var(--term-bg); color: var(--term-fg);
+    padding: 4mm 5mm; margin: 3mm 0;
+    border-left: 3px solid var(--term-amber);
+    white-space: pre-wrap; word-break: break-all; line-height: 1.55;
+  }
+  code { font-family: var(--mono); font-size: 8pt; background: var(--paper-2); padding: .3mm 1.5mm; border-radius: 1px; color: var(--ink); }
+
+  /* ═══════ TAGS / BADGES ═══════ */
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: 7pt; font-weight: 600;
+    padding: .5mm 2.5mm; margin: 0 1mm 1mm 0; letter-spacing: .5px;
+    border: 1px solid currentColor; border-radius: 1px;
+  }
+  .tag-mitre { color: var(--teal-deep); background: var(--teal-wash); border-color: var(--teal); }
+  .tag-yara  { color: #14532d; background: #dcfce7; border-color: #16a34a; }
+  .tag-ioc   { color: var(--honey-deep); background: var(--honey-wash); border-color: var(--honey); }
+
+  .score-badge {
+    display: inline-block; font-family: var(--mono); font-size: 8pt; font-weight: 700;
+    padding: 1mm 3mm; color: #fff; letter-spacing: 1px; border-radius: 1px;
+  }
+  .score-critical { background: var(--crit); }
+  .score-high     { background: var(--high); }
+  .score-medium   { background: var(--med); }
+  .score-low      { background: var(--low); }
+
+  /* ═══════ KPI TILES ═══════ */
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    border: 1px solid var(--rule); margin: 0 0 5mm 0; background: var(--paper);
+  }
+  .kpi { padding: 4mm 4mm; border-right: 1px solid var(--rule); position: relative; }
+  .kpi:last-child { border-right: none; }
+  .kpi-label { font-family: var(--mono); font-size: 7pt; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2mm; }
+  .kpi-value { font-size: 16pt; font-weight: 700; color: var(--ink); line-height: 1; letter-spacing: -.5px; }
+  .kpi-value.mono { font-family: var(--mono); font-size: 13pt; }
+  .kpi-sub { font-size: 8pt; color: var(--muted); margin-top: 2mm; }
+  .kpi.accent { background: var(--honey); color: #fff; }
+  .kpi.accent .kpi-label { color: rgba(255,255,255,.85); }
+  .kpi.accent .kpi-value, .kpi.accent .kpi-sub { color: #fff; }
+
+  /* ═══════ RISK GAUGE ═══════ */
+  .risk-panel {
+    display: grid; grid-template-columns: 70mm 1fr; gap: 8mm; align-items: center;
+    padding: 5mm 6mm; background: var(--paper-2); border: 1px solid var(--rule); margin: 3mm 0 5mm 0;
+  }
+  .gauge { position: relative; width: 60mm; height: 36mm; }
+  .gauge svg { width: 100%; height: 100%; }
+  .gauge-readout { position: absolute; left: 0; right: 0; bottom: 4mm; text-align: center; }
+  .gauge-readout .num { font-family: var(--mono); font-size: 22pt; font-weight: 700; color: var(--ink); line-height: 1; }
+  .gauge-readout .denom { font-family: var(--mono); font-size: 10pt; color: var(--muted); }
+  .gauge-readout .lvl { display: block; font-family: var(--mono); font-size: 8pt; letter-spacing: 2px; margin-top: 1mm; color: var(--crit); font-weight: 700; }
+  .risk-meta { font-size: 9pt; }
+  .risk-meta dt { font-family: var(--mono); font-size: 7pt; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2mm; }
+  .risk-meta dd { margin: 0 0 1mm 0; font-weight: 500; color: var(--ink); }
+
+  /* ── SIGNAL BARS ── */
+  .signal-row { display: grid; grid-template-columns: 50mm 1fr 18mm; align-items: center; gap: 3mm; padding: 1.5mm 0; border-bottom: 1px dotted var(--rule-soft); }
+  .signal-row:last-child { border-bottom: none; }
+  .signal-name { font-size: 8.5pt; color: var(--ink-2); }
+  .signal-name .sub { display: block; font-family: var(--mono); font-size: 6.5pt; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-top: .5mm; }
+  .signal-track { height: 5mm; background: #ddd6c4; border: 1px solid #c4b99e; position: relative; overflow: hidden; border-radius: 1px; }
+  .signal-fill { height: 100%; }
+  .signal-fill.c-zero  { background: transparent; }
+  .signal-fill.c-low   { background: #166534; }
+  .signal-fill.c-med   { background: #c2570a; }
+  .signal-fill.c-high  { background: #991b1b; }
+  .signal-pts { font-family: var(--mono); font-size: 8.5pt; font-weight: 700; text-align: right; color: var(--ink); }
+  .signal-pts .max { color: var(--muted); font-weight: 400; }
+
+  /* ═══════ VISUAL TIMELINE ═══════ */
+  .timeline { position: relative; padding-left: 14mm; margin: 3mm 0 5mm 0; }
+  .timeline::before {
+    content: ""; position: absolute; left: 6mm; top: 0; bottom: 0; width: 2px;
+    background: linear-gradient(to bottom, var(--honey) 0%, var(--honey) 80%, var(--rule) 100%);
+  }
+  .tl-item { position: relative; padding: 0 0 5mm 0; }
+  .tl-item::before {
+    content: ""; position: absolute; left: -8.5mm; top: 1.5mm;
+    width: 3mm; height: 3mm; background: var(--honey);
+    border: 2px solid var(--paper); border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--honey);
+  }
+  .tl-item.crit::before { background: var(--crit); box-shadow: 0 0 0 1px var(--crit); }
+  .tl-ts { font-family: var(--mono); font-size: 7.5pt; color: var(--muted); letter-spacing: 1px; }
+  .tl-head { display: flex; align-items: baseline; gap: 3mm; margin-bottom: 1mm; font-family: var(--mono); font-size: 8pt; }
+  .tl-type { color: var(--honey-deep); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .tl-body { font-size: 9pt; color: var(--ink-2); }
+  .tl-body code { font-size: 7.5pt; }
+
+  /* ── LOG ROWS (appendix) ── */
+  .log-row { display: grid; grid-template-columns: 30mm 28mm 1fr; gap: 3mm; padding: 1mm 0; border-bottom: 1px solid var(--rule-soft); font-size: 7.5pt; }
+  .log-row .ts { font-family: var(--mono); color: var(--muted); }
+  .log-row .ty { font-family: var(--mono); color: var(--honey-deep); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .log-row .dt { font-family: var(--mono); word-break: break-all; }
 
   /* ── REFERENCES ── */
   .ref-list { list-style: none; padding: 0; counter-reset: ref; }
-  .ref-list li { counter-increment: ref; padding: 1mm 0 1mm 8mm; text-indent: -8mm; font-size: 8pt; color: var(--fg-muted); }
-  .ref-list li::before { content: "[" counter(ref) "] "; font-weight: 700; color: var(--accent); }
-  sup.ref { font-size: 7pt; color: var(--accent); font-weight: 700; }
+  .ref-list li {
+    counter-increment: ref; padding: 1.5mm 0 1.5mm 10mm; text-indent: -10mm;
+    font-size: 8pt; color: var(--ink-2); border-bottom: 1px dotted var(--rule-soft);
+  }
+  .ref-list li::before { content: "[" counter(ref) "]"; display: inline-block; width: 8mm; font-family: var(--mono); font-weight: 700; color: var(--honey); margin-right: 2mm; }
+  sup.ref { font-family: var(--mono); font-size: 6.5pt; color: var(--honey); font-weight: 700; }
 
-  /* ── UTILITY ── */
+  /* ── STATUS PILLS ── */
+  .pill {
+    display: inline-flex; align-items: center; gap: 2mm;
+    font-family: var(--mono); font-size: 7.5pt; padding: .8mm 2.5mm;
+    background: var(--paper-2); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 1px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .pill .ind { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .pill.safe  { background: #f0fdf4; border-color: #16a34a; color: #15803d; }
+  .pill.safe .ind  { background: #16a34a; }
+  .pill.danger { color: var(--crit); border-color: var(--crit); background: #fef2f2; }
+  .pill.danger .ind { background: var(--crit); }
+
+  /* ── UTILITIES ── */
   .page-break { page-break-before: always; }
   .no-break { page-break-inside: avoid; }
-  .text-muted { color: var(--fg-muted); }
-  .text-mono { font-family: var(--mono); }
-  .two-col { display: flex; gap: 4mm; }
-  .two-col > * { flex: 1; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; }
 </style>
 </head>
 <body>
 
 {# ═══ COVER ═══ #}
-<div class="cover">
-  <div class="cover-logo">ForenHive</div>
-  <div class="cover-subtitle">Honeypot Forensic Analysis Report</div>
-  <div class="cover-line"></div>
-  <div class="cover-meta">
-    <strong>Report ID:</strong> {{ report_id }}<br>
-    <strong>Session ID:</strong> {{ session_id }}<br>
-    <strong>Generated:</strong> {{ generated_at }}<br>
-    <strong>Analyst:</strong> ForenHive Automated Engine v{{ engine_version | default("1.0") }}<br>
-    <strong>Classification:</strong>
-    {% if risk_level == "CRITICAL" %}<span class="score-badge score-critical">{{ risk_level }}</span>
-    {% elif risk_level == "HIGH" %}<span class="score-badge score-high">{{ risk_level }}</span>
-    {% elif risk_level == "MEDIUM" %}<span class="score-badge score-medium">{{ risk_level }}</span>
-    {% else %}<span class="score-badge score-low">{{ risk_level | default("INFO") }}</span>{% endif %}
+<section class="cover">
+  <svg class="cover-hex" viewBox="0 0 200 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <pattern id="hex" x="0" y="0" width="24" height="28" patternUnits="userSpaceOnUse">
+        <polygon points="12,2 22,8 22,20 12,26 2,20 2,8" fill="none" stroke="#fbbf24" stroke-width=".6"/>
+      </pattern>
+    </defs>
+    <rect width="200" height="300" fill="url(#hex)"/>
+  </svg>
+  <div class="cover-grid"></div>
+
+  <div class="cover-inner">
+    <div class="cover-topbar">
+      <div><span class="dot"></span>FORENHIVE // FORENSIC ENGINE v{{ engine_version | default("1.0") }}</div>
+      <div class="right"><span>SESSION CAPTURED</span><span>{{ session_start }}</span></div>
+    </div>
+
+    <div class="cover-eyebrow">Honeypot Forensic Analysis</div>
+    <h1 class="cover-title">SOC <em>Incident</em><br>Report</h1>
+    <p class="cover-subtitle">
+      Automated forensic dossier for a single inbound session captured by the
+      ForenHive honeypot cluster. Synthesizes session telemetry, threat-intel
+      enrichment, MITRE&nbsp;ATT&amp;CK mapping, malware triage and behavioral
+      profiling into a single chain-of-custody document.
+    </p>
+
+    <div class="cover-meta-grid">
+      <div class="cover-meta-cell">
+        <div class="cover-meta-label">Report ID</div>
+        <div class="cover-meta-value">{{ report_id }}</div>
+      </div>
+      <div class="cover-meta-cell">
+        <div class="cover-meta-label">Session</div>
+        <div class="cover-meta-value mono">{{ session_id }}</div>
+      </div>
+      <div class="cover-meta-cell">
+        <div class="cover-meta-label">Source IP</div>
+        <div class="cover-meta-value mono">{{ source_ip }}</div>
+      </div>
+      <div class="cover-meta-cell">
+        <div class="cover-meta-label">Honeypot</div>
+        <div class="cover-meta-value">{{ honeypot_type | default("Cowrie SSH") }}<br>
+          <span class="small">{{ protocol | default("SSH") | lower }}/{{ honeypot_port | default("22") }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cover-verdict">
+      <div class="verdict-block {% if risk_score >= 60 %}crit{% endif %}">
+        <div class="verdict-label">Verdict</div>
+        <div class="verdict-value">{{ verdict | default("Pending analysis") }}</div>
+      </div>
+      <div class="verdict-block {% if risk_score >= 60 %}crit{% endif %}">
+        <div class="verdict-label">Risk Score</div>
+        <div class="verdict-value score">{{ risk_score }} / 100</div>
+      </div>
+      <div class="verdict-block">
+        <div class="verdict-label">Classification</div>
+        <div class="verdict-value" style="font-family:var(--mono);font-size:11pt;letter-spacing:2px;">{{ risk_level | default("INFO") }}</div>
+      </div>
+      <div class="verdict-block">
+        <div class="verdict-label">Confidence</div>
+        <div class="verdict-value">{{ risk_confidence | default("N/A") }}</div>
+      </div>
+    </div>
+
+    <div class="cover-footer">
+      <div>
+        Analyst: ForenHive Automated Engine v{{ engine_version | default("1.0") }}<br>
+        Generated: {{ generated_at }}
+      </div>
+      <div class="tlp-stamp">{{ classification | default("TLP:AMBER") }}</div>
+    </div>
   </div>
-  <div class="cover-classification">{{ classification | default("TLP:AMBER") }}</div>
-</div>
+</section>
 
 {# ═══ TOC ═══ #}
-<div class="toc">
-  <h1>Table of Contents</h1>
-  <div class="toc-entry level-1"><span>1. Executive Summary</span></div>
-  <div class="toc-entry level-1"><span>2. Methodology</span></div>
-  <div class="toc-entry level-2"><span>2.1 Data Sources</span></div>
-  <div class="toc-entry level-2"><span>2.2 Analysis Pipeline</span></div>
-  <div class="toc-entry level-2"><span>2.3 Risk Scoring Model (6 Signals)</span></div>
-  <div class="toc-entry level-1"><span>3. Session Identity</span></div>
-  <div class="toc-entry level-1"><span>4. Attack Timeline</span></div>
-  <div class="toc-entry level-1"><span>5. Threat Analysis</span></div>
-  <div class="toc-entry level-2"><span>5.1 MITRE ATT&amp;CK Mapping</span></div>
-  <div class="toc-entry level-2"><span>5.2 Malware Analysis (YARA &amp; VirusTotal)</span></div>
-  <div class="toc-entry level-2"><span>5.3 Composite Risk Score &amp; Signal Breakdown</span></div>
-  <div class="toc-entry level-1"><span>6. Behavioral Profile</span></div>
-  <div class="toc-entry level-1"><span>7. Indicators of Compromise</span></div>
-  <div class="toc-entry level-1"><span>8. Chain of Custody</span></div>
-  <div class="toc-entry level-1"><span>9. Recommendations</span></div>
-  <div class="toc-entry level-1"><span>10. References</span></div>
-  <div class="toc-entry level-1"><span>Appendix A — Full Session Log</span></div>
-</div>
+<section class="toc">
+  <div class="toc-heading">// Contents</div>
+  <h1 class="toc-title">Inside this <em>dossier</em></h1>
+  <div class="toc-cols">
+    <div>
+      <div class="toc-entry"><span class="toc-num">01</span><span class="toc-label">Executive Brief</span></div>
+      <div class="toc-entry"><span class="toc-num">02</span><span class="toc-label">Methodology</span></div>
+      <div class="toc-entry sub"><span class="toc-num">2.1</span><span class="toc-label">Data Sources</span></div>
+      <div class="toc-entry sub"><span class="toc-num">2.2</span><span class="toc-label">Analysis Pipeline</span></div>
+      <div class="toc-entry sub"><span class="toc-num">2.3</span><span class="toc-label">Risk Scoring Model</span></div>
+      <div class="toc-entry"><span class="toc-num">03</span><span class="toc-label">Session Fingerprint</span></div>
+      <div class="toc-entry sub"><span class="toc-num">3.1</span><span class="toc-label">Network Identity</span></div>
+      <div class="toc-entry sub"><span class="toc-num">3.2</span><span class="toc-label">WHOIS Registry</span></div>
+      <div class="toc-entry sub"><span class="toc-num">3.3</span><span class="toc-label">Threat Classification</span></div>
+      <div class="toc-entry sub"><span class="toc-num">3.4</span><span class="toc-label">Passive Scan (Shodan)</span></div>
+      <div class="toc-entry"><span class="toc-num">04</span><span class="toc-label">Attack Timeline</span></div>
+    </div>
+    <div>
+      <div class="toc-entry"><span class="toc-num">05</span><span class="toc-label">Threat Analysis</span></div>
+      <div class="toc-entry sub"><span class="toc-num">5.1</span><span class="toc-label">MITRE ATT&amp;CK Mapping</span></div>
+      <div class="toc-entry sub"><span class="toc-num">5.2</span><span class="toc-label">Malware (YARA &amp; VirusTotal)</span></div>
+      <div class="toc-entry sub"><span class="toc-num">5.3</span><span class="toc-label">Composite Risk Score</span></div>
+      <div class="toc-entry"><span class="toc-num">06</span><span class="toc-label">Behavioral Profile</span></div>
+      <div class="toc-entry"><span class="toc-num">07</span><span class="toc-label">Indicators of Compromise</span></div>
+      <div class="toc-entry"><span class="toc-num">08</span><span class="toc-label">Chain of Custody</span></div>
+      <div class="toc-entry"><span class="toc-num">09</span><span class="toc-label">Recommendations</span></div>
+      <div class="toc-entry sub"><span class="toc-num">9.1</span><span class="toc-label">AI-Generated (Mistral 7B)</span></div>
+      <div class="toc-entry sub"><span class="toc-num">9.2</span><span class="toc-label">Deterministic Rules</span></div>
+      <div class="toc-entry"><span class="toc-num">10</span><span class="toc-label">References</span></div>
+      <div class="toc-entry"><span class="toc-num">A</span><span class="toc-label">Appendix &#8212; Full Session Log</span></div>
+    </div>
+  </div>
+</section>
 
-{# ═══ 1. EXECUTIVE SUMMARY ═══ #}
-<h1>1. Executive Summary</h1>
-<div class="info-box">
-  <strong>Verdict:</strong> {{ verdict | default("Pending analysis") }} &nbsp;|&nbsp;
-  <strong>Risk Score:</strong>
-  <span class="score-badge {% if risk_score >= 80 %}score-critical{% elif risk_score >= 60 %}score-high{% elif risk_score >= 40 %}score-medium{% else %}score-low{% endif %}">{{ risk_score }}/100</span> &nbsp;|&nbsp;
-  <strong>Source IP:</strong> <code>{{ source_ip }}</code> &nbsp;|&nbsp;
-  <strong>Duration:</strong> {{ session_duration | default("N/A") }}
-</div>
-<p>
-  On <strong>{{ session_date }}</strong>, the ForenHive honeypot cluster recorded a session from
-  <code>{{ source_ip }}</code> ({{ geo_city }}, {{ geo_country }}, ASN {{ asn }}{% if isp %}, {{ isp }}{% endif %}).
-  {% if abuse_score is defined and abuse_score is not none %}
-    AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> confidence of abuse.<sup class="ref">1</sup>
+{# ═══ 01 EXECUTIVE BRIEF ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">01</span>
+    <h1 class="section-title">Executive Brief</h1>
+    <span class="section-tag">~/exec_summary</span>
+  </div>
+
+  <div class="kpi-grid no-break">
+    <div class="kpi accent">
+      <div class="kpi-label">Risk Score</div>
+      <div class="kpi-value mono">{{ risk_score }}/100</div>
+      <div class="kpi-sub">{{ risk_level }} &middot; conf {{ risk_confidence | default("N/A") }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Events Logged</div>
+      <div class="kpi-value">{{ event_count }}</div>
+      <div class="kpi-sub">across {{ honeypot_type | default("Cowrie SSH") }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Auth Attempts</div>
+      <div class="kpi-value">{{ auth_attempts | default([]) | length }}</div>
+      <div class="kpi-sub">{% if auth_success %}brute force &middot; 1 success{% else %}brute force &middot; 0 success{% endif %}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Session Duration</div>
+      <div class="kpi-value">{{ session_duration | default("N/A") }}</div>
+      <div class="kpi-sub">UTC</div>
+    </div>
+  </div>
+
+  <p>
+    On <strong>{{ session_date }}</strong>, the ForenHive honeypot cluster recorded a session originating
+    from <code>{{ source_ip }}</code> ({{ geo_city }}, {{ geo_country }} &middot; AS{{ asn }}{% if isp %} &middot; {{ isp }}{% endif %}).
+    {% if abuse_score is defined and abuse_score is not none %}
+      AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> confidence of abuse{% if abuse_reports %} across {{ abuse_reports }} reports{% endif %}.<sup class="ref">1</sup>
+    {% endif %}
+  </p>
+
+  <p>
+    The session comprised <strong>{{ event_count }}</strong> logged events across <strong>{{ honeypot_type | default("Cowrie SSH") }}</strong>.
+    {% if auth_attempts is defined and auth_attempts | length > 0 %}
+      The attacker performed <strong>{{ auth_attempts | length }}</strong> authentication
+      {{ "attempt" if auth_attempts | length == 1 else "attempts" }}, using credentials such as
+      {% for a in auth_attempts[:3] %}<code>{{ a.username }}/{{ a.password }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if auth_attempts | length > 3 %} (and {{ auth_attempts | length - 3 }} others){% endif %}.
+    {% endif %}
+    {% if exec_narrative is defined and exec_narrative %}{{ exec_narrative }}{% endif %}
+  </p>
+
+  <p>
+    {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
+      <strong>{{ mitre_techniques | length }} MITRE ATT&amp;CK technique{{ "s" if mitre_techniques | length > 1 else "" }}</strong> were identified
+      ({% for t in mitre_techniques[:4] %}<span class="tag tag-mitre">{{ t.tid }}</span>{% endfor %}{% if mitre_techniques | length > 4 %}&hellip;{% endif %}).
+    {% endif %}
+    {% if yara_matches is defined and yara_matches | length > 0 %}
+      YARA scanning flagged <strong>{{ yara_matches | length }}</strong> signature match{{ "es" if yara_matches | length > 1 else "" }}.
+    {% elif yara_rules_used is defined %}
+      No YARA signatures matched from the {{ yara_rules_used }} rules evaluated (see &sect;5.2).
+    {% endif %}
+    {% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %}
+      VirusTotal reports <strong>{{ vt_malicious }}/{{ vt_total | default("?") }}</strong> AV detections.
+    {% endif %}
+    {% if malware_family is defined and malware_family %}
+      Behavioral indicators are consistent with <strong>{{ malware_family }}</strong>.<sup class="ref">2</sup>
+    {% endif %}
+  </p>
+
+  {% if bottom_line is defined and bottom_line %}
+  <div class="callout"><strong>Bottom line.</strong> {{ bottom_line }}</div>
   {% endif %}
-</p>
-<p>
-  The session comprised <strong>{{ event_count }}</strong> logged events across {{ honeypot_type | default("Cowrie SSH") }}.
-  {% if auth_attempts is defined and auth_attempts | length > 0 %}
-    The attacker attempted <strong>{{ auth_attempts | length }}</strong> authentication
-    {{ "attempt" if auth_attempts | length == 1 else "attempts" }},
-    using credentials such as
-    {% for a in auth_attempts[:3] %}<code>{{ a.username }}/{{ a.password }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if auth_attempts | length > 3 %} (and {{ auth_attempts | length - 3 }} others){% endif %}.
+</section>
+
+{# ═══ 02 METHODOLOGY ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">02</span>
+    <h1 class="section-title">Methodology</h1>
+    <span class="section-tag">~/method</span>
+  </div>
+
+  <h2>Data sources</h2>
+  <table>
+    <tr><th style="width:30mm">Source</th><th>Description</th><th>Purpose</th></tr>
+    <tr><td>{{ honeypot_type | default("Cowrie") }}</td><td>SSH/Telnet medium-interaction honeypot</td><td>Session logs, auth attempts, commands, dropped files</td></tr>
+    <tr><td>AbuseIPDB</td><td>Crowd-sourced IP reputation</td><td>Abuse confidence score, report count</td></tr>
+    <tr><td>MaxMind GeoLite2 / IPLocate</td><td>IP geolocation &amp; classification</td><td>Country, city, ASN, ISP, Tor/VPN/proxy flags</td></tr>
+    <tr><td>Shodan InternetDB</td><td>Passive scan API (free tier)</td><td>Open ports, CVEs, CPEs, tags</td></tr>
+    <tr><td>VirusTotal</td><td>Multi-engine AV (free tier &middot; 4 req/day)</td><td>SHA-256 hash lookup for dropped binaries</td></tr>
+    <tr><td>WHOIS / RDAP</td><td>Network registry</td><td>CIDR ownership, abuse contact, registration dates</td></tr>
+  </table>
+
+  <p>
+    The MITRE ATT&amp;CK mapping uses a <strong>hybrid</strong> approach:
+    <strong>15 deterministic rules</strong> map observed commands and protocol behaviour to
+    technique IDs, supplemented by an LLM-generated narrative (Mistral 7B, temperature 0.3,
+    max 80 tokens) that contextualizes the attack chain without introducing unverified
+    technique IDs.<sup class="ref">3</sup>
+  </p>
+
+  <h2>Risk scoring model &#8212; 6 signals</h2>
+  <table>
+    <tr><th style="width:50mm">Signal</th><th style="width:22mm">Max pts</th><th>Description</th></tr>
+    <tr><td>IP Reputation</td><td class="mono">25</td><td>AbuseIPDB abuse confidence (thresholded). Skipped for private IPs.</td></tr>
+    <tr><td>Compromise Confirmed</td><td class="mono">25</td><td>Binary &#8212; successful auth or exploit activation on any honeypot.</td></tr>
+    <tr><td>Brute Force / Automation</td><td class="mono">20</td><td>Aggregate login volume and velocity. Bonus for targeted wordlists.</td></tr>
+    <tr><td>Malware Detected</td><td class="mono">15</td><td>YARA severity (CRITICAL / HIGH / match) + VT detection count.</td></tr>
+    <tr><td>Anonymization / Evasion</td><td class="mono">10</td><td>Tor / VPN / proxy usage + critical-port targeting (conditional).</td></tr>
+    <tr><td>Attack Sophistication</td><td class="mono">5</td><td>Kill-chain depth (0-8 stages) + multi-honeypot coordination bonus.</td></tr>
+  </table>
+</section>
+
+{# ═══ 03 SESSION FINGERPRINT ═══ #}
+<section class="section page-break">
+  <div class="section-bar">
+    <span class="section-num">03</span>
+    <h1 class="section-title">Session Fingerprint</h1>
+    <span class="section-tag">~/identity</span>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h2>3.1 Network identity</h2>
+      <table class="kv">
+        <tr><th>Source IP</th><td class="mono"><code>{{ source_ip }}</code></td></tr>
+        <tr><th>Country</th><td>{{ geo_country }}</td></tr>
+        <tr><th>City</th><td>{{ geo_city }}</td></tr>
+        <tr><th>ASN</th><td class="mono">AS{{ asn }}</td></tr>
+        <tr><th>ISP / Org</th><td>{{ isp | default("N/A") }}</td></tr>
+        <tr><th>AbuseIPDB Score</th><td>
+          {% if abuse_score is defined and abuse_score is not none %}
+            <strong style="color:var(--crit)">{{ abuse_score }}%</strong><sup class="ref">1</sup>
+          {% else %}N/A{% endif %}
+        </td></tr>
+        <tr><th>AbuseIPDB Reports</th><td class="mono">{{ abuse_reports | default("N/A") }}</td></tr>
+      </table>
+    </div>
+    <div>
+      <h2>Session metadata</h2>
+      <table class="kv">
+        <tr><th>Session ID</th><td class="mono"><code>{{ session_id }}</code></td></tr>
+        <tr><th>Honeypot</th><td>{{ honeypot_type | default("Cowrie") }}</td></tr>
+        <tr><th>Protocol</th><td>{{ protocol | default("SSH") }}</td></tr>
+        <tr><th>Start Time</th><td class="mono">{{ session_start }}</td></tr>
+        <tr><th>End Time</th><td class="mono">{{ session_end }}</td></tr>
+        <tr><th>Duration</th><td>{{ session_duration | default("N/A") }}</td></tr>
+        <tr><th>Total Events</th><td class="mono">{{ event_count }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  {% if whois_data is defined and whois_data %}
+  <h2>3.2 WHOIS &#8212; network registry</h2>
+  <table class="kv">
+    {% if whois_data.get('network_name') %}<tr><th>Network Name</th><td class="mono">{{ whois_data.get('network_name') }}</td></tr>{% endif %}
+    {% if whois_data.get('cidr') %}<tr><th>Network CIDR</th><td class="mono">{{ whois_data.get('cidr') }}</td></tr>{% endif %}
+    {% if whois_data.get('asn') %}<tr><th>ASN</th><td class="mono">AS{{ whois_data.get('asn') }}{% if whois_data.get('asn_description') %} &#8212; {{ whois_data.get('asn_description') }}{% endif %}</td></tr>{% endif %}
+    {% if whois_data.get('asn_registry') %}<tr><th>Registry</th><td>{{ whois_data.get('asn_registry') | upper }}</td></tr>{% endif %}
+    {% if whois_data.get('network_type') %}<tr><th>Network Type</th><td>{{ whois_data.get('network_type') }}</td></tr>{% endif %}
+    {% if whois_data.get('registration') %}<tr><th>Registered</th><td class="mono">{{ whois_data.get('registration')[:10] }}</td></tr>{% endif %}
+    {% if whois_data.get('last_changed') %}<tr><th>Last Updated</th><td class="mono">{{ whois_data.get('last_changed')[:10] }}</td></tr>{% endif %}
+    {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="mono" style="color:var(--crit)">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
+    {% if ptr_hostname is defined and ptr_hostname %}<tr><th>PTR (rDNS)</th><td class="mono">{{ ptr_hostname }}</td></tr>{% endif %}
+  </table>
   {% endif %}
-</p>
-<p>
+
+  {% if iplocate_data is defined and iplocate_data %}
+  <h2>3.3 IPLocate &#8212; threat classification</h2>
+  <div class="three-col" style="margin-bottom:3mm">
+    <div class="pill {% if iplocate_data.is_tor %}danger{% else %}safe{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_vpn or iplocate_data.is_proxy %}danger{% else %}safe{% endif %}"><span class="ind"></span>VPN / Proxy &middot; {% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_hosting %}danger{% else %}safe{% endif %}"><span class="ind"></span>Hosting &middot; {% if iplocate_data.is_hosting %}Yes{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_abuser %}danger{% else %}safe{% endif %}"><span class="ind"></span>Known Abuser &middot; {% if iplocate_data.is_abuser %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_bogon %}danger{% else %}safe{% endif %}"><span class="ind"></span>Bogon &middot; {% if iplocate_data.is_bogon %}YES{% else %}No{% endif %}</div>
+    <div class="pill {% if iplocate_data.is_datacenter %}danger{% else %}safe{% endif %}"><span class="ind"></span>Datacenter &middot; {% if iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</div>
+  </div>
+  {% if iplocate_data.company_name or iplocate_data.asn_name %}
+  <table class="kv">
+    {% if iplocate_data.company_name %}<tr><th>Operator</th><td>{{ iplocate_data.company_name }}</td></tr>{% endif %}
+    {% if iplocate_data.asn_name %}<tr><th>ASN Name</th><td>{{ iplocate_data.asn_name }}{% if iplocate_data.asn_number %} ({{ iplocate_data.asn_number }}){% endif %}</td></tr>{% endif %}
+    {% if iplocate_data.asn_type %}<tr><th>ASN Type</th><td>{{ iplocate_data.asn_type }}</td></tr>{% endif %}
+  </table>
+  {% endif %}
+  {% endif %}
+
+  {% if shodan_data is defined and shodan_data %}
+  <h2>3.4 Shodan InternetDB &#8212; passive scan</h2>
+  <table class="kv">
+    <tr><th>Open Ports</th><td class="mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "&#8212;" }}</td></tr>
+    <tr><th>Hostnames</th><td class="mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "&#8212;" }}</td></tr>
+    <tr><th>Known CVEs</th><td class="mono" style="color:var(--crit)">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "&#8212;" }}</td></tr>
+    <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "&#8212;" }}</td></tr>
+  </table>
+  {% endif %}
+</section>
+
+{# ═══ 04 ATTACK TIMELINE ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">04</span>
+    <h1 class="section-title">Attack Timeline</h1>
+    <span class="section-tag">~/kill_chain</span>
+  </div>
+  <p>Key events from the session ({{ event_count }} total). Full chronological log is in <strong>Appendix&nbsp;A</strong>.</p>
+
+  <div class="timeline">
+    {% for ev in timeline_summary | default([]) %}
+    <div class="tl-item{% if ev.severity == 'CRITICAL' or ev.severity == 'HIGH' %} crit{% endif %}">
+      <div class="tl-head">
+        <span class="tl-ts">{{ ev.timestamp }}</span>
+        <span class="tl-type">{{ ev.event_type }}</span>
+        {% if ev.mitre_tid %}<span class="tag tag-mitre">{{ ev.mitre_tid }}</span>{% endif %}
+      </div>
+      <div class="tl-body">{{ ev.details | safe }}</div>
+    </div>
+    {% else %}
+    <div class="tl-item"><div class="tl-body muted">No timeline events recorded.</div></div>
+    {% endfor %}
+  </div>
+</section>
+
+{# ═══ 05 THREAT ANALYSIS ═══ #}
+<section class="section page-break">
+  <div class="section-bar">
+    <span class="section-num">05</span>
+    <h1 class="section-title">Threat Analysis</h1>
+    <span class="section-tag">~/threat_intel</span>
+  </div>
+
+  <h2>5.1 MITRE ATT&amp;CK mapping</h2>
   {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
-    <strong>{{ mitre_techniques | length }}</strong> MITRE ATT&amp;CK techniques were identified
-    ({% for t in mitre_techniques[:4] %}<span class="tag tag-mitre">{{ t.tid }}</span>{% endfor %}{% if mitre_techniques | length > 4 %}&hellip;{% endif %}).
+  <table>
+    <tr><th style="width:24mm">Technique</th><th style="width:50mm">Name</th><th style="width:38mm">Tactic</th><th>Evidence</th></tr>
+    {% for t in mitre_techniques %}
+    <tr>
+      <td><span class="tag tag-mitre">{{ t.tid }}</span></td>
+      <td>{{ t.name }}</td>
+      <td>{{ t.tactic }}</td>
+      <td>{{ t.evidence }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No MITRE ATT&amp;CK techniques identified.</p>
   {% endif %}
+
+  {% if mitre_narrative is defined and mitre_narrative %}
+  <div class="callout teal">
+    <strong>Attack-chain narrative</strong> <span class="muted mono" style="font-size:7pt">(Mistral 7B, T=0.3)</span><br>
+    {{ mitre_narrative }}
+  </div>
+  {% endif %}
+
+  <h2>5.2 Malware analysis &#8212; YARA &amp; VirusTotal</h2>
+  <h3>YARA</h3>
   {% if yara_matches is defined and yara_matches | length > 0 %}
-    YARA scanning flagged <strong>{{ yara_matches | length }}</strong> signature match(es).
-  {% elif yara_rules_used is defined %}
-    No YARA signatures matched from the {{ yara_rules_used }} rules evaluated (see &sect;5.2).
-  {% endif %}
-  {% if malware_family is defined and malware_family %}
-    Behavioral indicators are consistent with <strong>{{ malware_family }}</strong>.<sup class="ref">2</sup>
-  {% endif %}
-</p>
-
-{# ═══ 2. METHODOLOGY ═══ #}
-<h1>2. Methodology</h1>
-<h2>2.1 Data Sources</h2>
-<table>
-  <tr><th>Source</th><th>Description</th><th>Purpose</th></tr>
-  <tr><td>{{ honeypot_type | default("Cowrie") }}</td><td>SSH/Telnet honeypot</td><td>Session logs, auth attempts, commands, file captures</td></tr>
-  <tr><td>AbuseIPDB</td><td>Crowd-sourced IP reputation</td><td>Abuse confidence score, report count</td></tr>
-  <tr><td>MaxMind GeoLite2 / IPLocate</td><td>IP geolocation</td><td>Country, city, ASN, ISP attribution</td></tr>
-  <tr><td>Shodan InternetDB</td><td>Free passive scan API</td><td>Open ports, CVEs, CPEs, tags</td></tr>
-  <tr><td>VirusTotal</td><td>Multi-engine malware scanner (free tier)</td><td>SHA-256 hash lookup for dropped files</td></tr>
-</table>
-
-<h2>2.2 Analysis Pipeline</h2>
-<div class="info-box">
-  <strong>Pipeline:</strong> Honeypot Logs &rarr; Filebeat &rarr; Logstash &rarr; Elasticsearch &rarr;
-  ForenHive Forensic Engine (<code>engine.py</code>) &rarr; IOC Extraction, YARA Scan,
-  VT Lookup, MITRE Mapping (hybrid: deterministic + Mistral 7B narrative),
-  Risk Scoring, Suspect Profiling, Timeline Construction &rarr; Report Generation (WeasyPrint).
-</div>
-<p>
-  The MITRE ATT&amp;CK mapping uses a hybrid approach: <strong>15 deterministic rules</strong>
-  map observed commands to technique IDs, supplemented by an <strong>LLM-generated narrative</strong>
-  (Mistral 7B, temperature&nbsp;0.3, max&nbsp;80 tokens) that contextualizes the attack chain
-  without introducing unverified technique IDs.<sup class="ref">3</sup>
-</p>
-
-<h2>2.3 Risk Scoring Model (6 Signals)</h2>
-<p>
-  The composite risk score is computed from <strong>6 deterministic signals</strong>,
-  each contributing a defined maximum point value. The final score is capped at 100
-  and aggregates data across all honeypots hit by the same source IP within a 24-hour window.
-</p>
-<table>
-  <tr><th>Signal</th><th>Max Pts</th><th>Description</th></tr>
-  <tr><td>IP Reputation</td><td>25</td><td>AbuseIPDB abuse confidence score (thresholded). Skipped for private IPs.</td></tr>
-  <tr><td>Compromise Confirmed</td><td>25</td><td>Binary: successful authentication or exploit activation on any honeypot.</td></tr>
-  <tr><td>Brute Force / Automation</td><td>20</td><td>Aggregate login attempt volume and velocity. Bonus for targeted wordlists.</td></tr>
-  <tr><td>Malware Detected</td><td>15</td><td>YARA severity (CRITICAL/HIGH/match) and VirusTotal detection count.</td></tr>
-  <tr><td>Anonymization / Evasion</td><td>10</td><td>Tor/VPN/proxy usage + critical port targeting (conditional).</td></tr>
-  <tr><td>Attack Sophistication</td><td>5</td><td>Kill chain depth (0-8 stages) + multi-honeypot coordination bonus.</td></tr>
-</table>
-
-{# ═══ 3. SESSION IDENTITY ═══ #}
-<div class="page-break"></div>
-<h1>3. Session Identity</h1>
-<div class="two-col">
-  <div>
-    <table>
-      <tr><th colspan="2">Network Identity</th></tr>
-      <tr><td><strong>Source IP</strong></td><td><code>{{ source_ip }}</code></td></tr>
-      <tr><td><strong>Country</strong></td><td>{{ geo_country }}</td></tr>
-      <tr><td><strong>City</strong></td><td>{{ geo_city }}</td></tr>
-      <tr><td><strong>ASN</strong></td><td>{{ asn }}</td></tr>
-      <tr><td><strong>ISP / Org</strong></td><td>{{ isp | default("N/A") }}</td></tr>
-      <tr><td><strong>AbuseIPDB Score</strong></td><td>{{ abuse_score | default("N/A") }}%<sup class="ref">1</sup></td></tr>
-      <tr><td><strong>AbuseIPDB Reports</strong></td><td>{{ abuse_reports | default("N/A") }}</td></tr>
-    </table>
+  <table>
+    <tr><th>Rule</th><th>Severity</th></tr>
+    {% for y in yara_matches %}
+    <tr>
+      <td><span class="tag tag-yara">{{ y.name if y.name is defined else y }}</span></td>
+      <td><span class="score-badge {% if y.severity == 'CRITICAL' %}score-critical{% elif y.severity == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ y.severity | default("HIGH") }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="callout warn">
+    <strong>YARA :</strong> Aucune signature ne correspond au ruleset actuel ({{ yara_rules_used | default("10") }} r&egrave;gles).
+    Cela n&rsquo;exclut pas un malware connu &#8212; le ruleset peut manquer de signatures sp&eacute;cifiques &agrave; cette famille.<sup class="ref">2</sup>
   </div>
-  <div>
-    <table>
-      <tr><th colspan="2">Session Metadata</th></tr>
-      <tr><td><strong>Session ID</strong></td><td><code>{{ session_id }}</code></td></tr>
-      <tr><td><strong>Honeypot</strong></td><td>{{ honeypot_type | default("Cowrie") }}</td></tr>
-      <tr><td><strong>Protocol</strong></td><td>{{ protocol | default("SSH") }}</td></tr>
-      <tr><td><strong>Start Time</strong></td><td>{{ session_start }}</td></tr>
-      <tr><td><strong>End Time</strong></td><td>{{ session_end }}</td></tr>
-      <tr><td><strong>Duration</strong></td><td>{{ session_duration | default("N/A") }}</td></tr>
-      <tr><td><strong>Total Events</strong></td><td>{{ event_count }}</td></tr>
-    </table>
+  {% endif %}
+
+  {% if dropped_files is defined and dropped_files | length > 0 %}
+  <h3>Fichiers captur&eacute;s</h3>
+  <table>
+    <tr><th>Fichier</th><th>SHA-256</th><th>YARA hits</th><th>VT D&eacute;tections</th></tr>
+    {% for f in dropped_files %}
+    <tr>
+      <td class="mono"><code>{{ f.filename }}</code></td>
+      <td style="font-size:6.5pt;word-break:break-all" class="mono"><code>{{ f.sha256 }}</code></td>
+      <td>{% if f.yara_hits %}{% for y in f.yara_hits %}<span class="tag tag-yara">{{ y }}</span>{% endfor %}{% else %}&#8212;{% endif %}</td>
+      <td class="mono">{% if f.vt_detections is defined and f.vt_detections is not none %}<strong style="color:var(--crit)">{{ f.vt_detections }}/{{ f.vt_total | default("?") }}</strong>{% else %}N/A{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h3>VirusTotal</h3>
+  {% if not vt_available %}
+  <div class="callout warn">
+    <strong>&#9888; Quota VirusTotal &eacute;puis&eacute;</strong> &#8212; Le r&eacute;sultat VT est indisponible pour cette session.
+    Relancer l&rsquo;analyse quand le quota est restaur&eacute; (4 req/jour &#8212; tier gratuit).
   </div>
-</div>
-{% if whois_data is defined and whois_data %}
-<h2>3.2 WHOIS — Network Registry</h2>
-<table>
-  {% if whois_data.get('network_name') %}<tr><th>Network Name</th><td class="text-mono">{{ whois_data.get('network_name') }}</td></tr>{% endif %}
-  {% if whois_data.get('cidr') %}<tr><th>Network CIDR</th><td class="text-mono">{{ whois_data.get('cidr') }}</td></tr>{% endif %}
-  {% if whois_data.get('asn') %}<tr><th>ASN</th><td class="text-mono">AS{{ whois_data.get('asn') }}{% if whois_data.get('asn_description') %} — {{ whois_data.get('asn_description') }}{% endif %}</td></tr>{% endif %}
-  {% if whois_data.get('asn_registry') %}<tr><th>Registry</th><td>{{ whois_data.get('asn_registry') | upper }}</td></tr>{% endif %}
-  {% if whois_data.get('network_type') %}<tr><th>Network Type</th><td>{{ whois_data.get('network_type') }}</td></tr>{% endif %}
-  {% if whois_data.get('registration') %}<tr><th>Registered</th><td class="text-mono">{{ whois_data.get('registration')[:10] }}</td></tr>{% endif %}
-  {% if whois_data.get('last_changed') %}<tr><th>Last Updated</th><td class="text-mono">{{ whois_data.get('last_changed')[:10] }}</td></tr>{% endif %}
-  {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="text-mono" style="color:#8C1A2B;">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
-  {% if ptr_hostname is defined and ptr_hostname %}<tr><th>PTR (rDNS)</th><td class="text-mono">{{ ptr_hostname }}</td></tr>{% endif %}
-</table>
-{% endif %}
+  {% elif dropped_files is defined and dropped_files | length > 0 %}
+    {% if vt_malicious is defined and vt_malicious > 0 %}
+    <div class="callout" style="border-left-color:var(--crit);background:#fef2f2">
+      <strong>Malware d&eacute;tect&eacute; :</strong> {{ vt_malicious }} moteur(s) AV ont signal&eacute; ce fichier.
+      {% if vt_family %} Famille identifi&eacute;e : <strong>{{ vt_family }}</strong>.{% endif %}
+      {% if vt_top_engines %} Top engines : {{ vt_top_engines | join(', ') }}.{% endif %}
+    </div>
+    {% else %}
+    <div class="callout">
+      <strong>VirusTotal :</strong> Aucun moteur AV n&rsquo;a signal&eacute; le fichier captur&eacute; ({{ dropped_files | length }} fichier(s) analys&eacute;(s)).
+    </div>
+    {% endif %}
+  {% else %}
+  <div class="callout">
+    <strong>VirusTotal :</strong> Aucun fichier captur&eacute; durant cette session &#8212; l&rsquo;analyse VT par hash SHA-256 n&rsquo;est pas applicable.
+    VirusTotal est utilis&eacute; pour les binaires d&eacute;pos&eacute;s par les honeypots Dionaea / Cowrie (wget, curl, tftp).
+  </div>
+  {% endif %}
 
-{% if iplocate_data is defined and iplocate_data %}
-<h2>3.3 IPLocate — Threat Classification</h2>
-<table>
-  {% if iplocate_data.company_name %}<tr><th>Operator</th><td>{{ iplocate_data.company_name }}</td></tr>{% endif %}
-  {% if iplocate_data.asn_name %}<tr><th>ASN Name</th><td>{{ iplocate_data.asn_name }}{% if iplocate_data.asn_number %} ({{ iplocate_data.asn_number }}){% endif %}</td></tr>{% endif %}
-  {% if iplocate_data.asn_type %}<tr><th>ASN Type</th><td>{{ iplocate_data.asn_type }}</td></tr>{% endif %}
-  <tr><th>Tor Exit Node</th><td>{% if iplocate_data.is_tor %}<strong style="color:#8C1A2B;">YES</strong>{% else %}No{% endif %}</td></tr>
-  <tr><th>VPN / Proxy</th><td>{% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</td></tr>
-  <tr><th>Hosting / Datacenter</th><td>{% if iplocate_data.is_hosting or iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</td></tr>
-  <tr><th>Known Abuser</th><td>{% if iplocate_data.is_abuser %}<strong style="color:#8C1A2B;">YES</strong>{% else %}No{% endif %}</td></tr>
-  {% if iplocate_data.is_bogon %}<tr><th>Bogon / Reserved</th><td><strong style="color:#8C1A2B;">YES — unallocated space (spoofed?)</strong></td></tr>{% endif %}
-</table>
-{% endif %}
+  <h2>5.3 Composite risk score &amp; signal breakdown</h2>
+  <div class="risk-panel no-break">
+    <div class="gauge">
+      <svg viewBox="0 0 200 120" aria-hidden="true">
+        <path d="M 20 110 A 80 80 0 0 1 180 110" stroke="#ede4cb" stroke-width="16" fill="none" stroke-linecap="butt"/>
+        <path d="M 20 110 A 80 80 0 0 1 180 110"
+              stroke="url(#riskgrad)" stroke-width="16" fill="none"
+              stroke-dasharray="{{ (risk_score / 100 * 251) | round(1) }} 251" stroke-linecap="butt"/>
+        <defs>
+          <linearGradient id="riskgrad" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%"   stop-color="#166534"/>
+            <stop offset="33%"  stop-color="#b45309"/>
+            <stop offset="66%"  stop-color="#c2410c"/>
+            <stop offset="100%" stop-color="#991b1b"/>
+          </linearGradient>
+        </defs>
+        <g transform="translate(100,110) rotate({{ -180 + (risk_score / 100 * 180) }})">
+          <line x1="0" y1="0" x2="0" y2="-78" stroke="#0d1117" stroke-width="2"/>
+          <circle cx="0" cy="0" r="4" fill="#0d1117"/>
+        </g>
+        <text x="20"  y="118" font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">0</text>
+        <text x="100" y="40"  font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">50</text>
+        <text x="180" y="118" font-family="Courier New,monospace" font-size="8" fill="#6b6356" text-anchor="middle">100</text>
+      </svg>
+      <div class="gauge-readout">
+        <span class="num">{{ risk_score }}</span><span class="denom"> / 100</span>
+        <span class="lvl">{{ risk_level }}</span>
+      </div>
+    </div>
+    <dl class="risk-meta">
+      <dt>Verdict</dt><dd>{{ verdict | default("Pending analysis") }}</dd>
+      <dt>Confidence</dt><dd>{{ risk_confidence | default("N/A") }}</dd>
+      <dt>Risk Level</dt><dd style="color:var(--crit);font-weight:700">{{ risk_level | default("INFO") }}</dd>
+      {% if risk_warnings is defined and risk_warnings | length > 0 %}
+      <dt>Warnings</dt><dd>{{ risk_warnings | join(' &middot; ') }}</dd>
+      {% endif %}
+    </dl>
+  </div>
 
-{% if shodan_data is defined and shodan_data %}
-<h2>3.4 Shodan InternetDB — Passive Scan</h2>
-<table>
-  <tr><th>Open Ports</th><td class="text-mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "—" }}</td></tr>
-  <tr><th>Hostnames</th><td class="text-mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "—" }}</td></tr>
-  <tr><th>Known CVEs</th><td class="text-mono" style="color:#8C1A2B;">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "—" }}</td></tr>
-  <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "—" }}</td></tr>
-</table>
-{% endif %}
-
-{# ═══ 4. ATTACK TIMELINE (key events only) ═══ #}
-<h1>4. Attack Timeline</h1>
-<p>Key events from the session ({{ event_count }} total). Full log in <strong>Appendix&nbsp;A</strong>.</p>
-<table>
-  <tr>
-    <th style="width:80px">Timestamp</th>
-    <th style="width:80px">Event Type</th>
-    <th>Details</th>
-    <th style="width:70px">ATT&amp;CK</th>
-  </tr>
-  {% for ev in timeline_summary %}
-  <tr>
-    <td class="text-mono" style="font-size:7.5pt">{{ ev.timestamp }}</td>
-    <td>{{ ev.event_type }}</td>
-    <td>{{ ev.details }}</td>
-    <td>{% if ev.mitre_tid %}<span class="tag tag-mitre">{{ ev.mitre_tid }}</span>{% else %}—{% endif %}</td>
-  </tr>
-  {% endfor %}
-</table>
-
-{# ═══ 5. THREAT ANALYSIS ═══ #}
-<div class="page-break"></div>
-<h1>5. Threat Analysis</h1>
-
-<h2>5.1 MITRE ATT&amp;CK Mapping</h2>
-{% if mitre_techniques is defined and mitre_techniques | length > 0 %}
-<table>
-  <tr><th style="width:80px">Technique</th><th>Name</th><th>Tactic</th><th>Evidence</th></tr>
-  {% for t in mitre_techniques %}
-  <tr>
-    <td><span class="tag tag-mitre">{{ t.tid }}</span></td>
-    <td>{{ t.name }}</td>
-    <td>{{ t.tactic }}</td>
-    <td style="font-size:8pt">{{ t.evidence }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% if mitre_narrative is defined and mitre_narrative %}
-<div class="info-box">
-  <strong>Attack Chain Narrative</strong> (LLM-generated, Mistral 7B):<br>{{ mitre_narrative }}
-</div>
-{% endif %}
-{% else %}
-<p class="text-muted">No MITRE ATT&amp;CK techniques identified.</p>
-{% endif %}
-
-<h2>5.2 Malware Analysis — YARA &amp; VirusTotal</h2>
-
-{# ── YARA ── #}
-{% if yara_matches is defined and yara_matches | length > 0 %}
-<table>
-  <tr><th>YARA Rule</th><th>Severity</th></tr>
-  {% for y in yara_matches %}
-  <tr><td><span class="tag tag-yara">{{ y }}</span></td><td>HIGH</td></tr>
-  {% endfor %}
-</table>
-{% else %}
-<div class="info-box">
-  <strong>YARA :</strong> Aucune signature ne correspond au ruleset actuel
-  ({{ yara_rules_used | default("10") }} règles). Cela n'exclut pas un malware connu —
-  le ruleset peut manquer de signatures spécifiques à cette famille.
-  <sup class="ref">2</sup>
-</div>
-{% endif %}
-
-{# ── Dropped files table ── #}
-{% if dropped_files is defined and dropped_files | length > 0 %}
-<h3>Fichiers capturés</h3>
-<table>
-  <tr><th>Fichier</th><th>SHA-256</th><th>YARA</th><th>VT Détections</th></tr>
-  {% for f in dropped_files %}
-  <tr>
-    <td><code>{{ f.filename }}</code></td>
-    <td style="font-size:7pt; word-break:break-all"><code>{{ f.sha256 }}</code></td>
-    <td>{% if f.yara_hits %}{% for y in f.yara_hits %}<span class="tag tag-yara">{{ y }}</span>{% endfor %}{% else %}—{% endif %}</td>
-    <td>{% if f.vt_detections is defined and f.vt_detections is not none %}{{ f.vt_detections }}/{{ f.vt_total | default("?") }}{% else %}N/A{% endif %}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% endif %}
-
-{# ── VirusTotal status — always visible ── #}
-<h3>VirusTotal</h3>
-{% if not vt_available %}
-<div class="info-box" style="border-left: 3px solid #e67e22;">
-  <strong>⚠ Quota VirusTotal épuisé</strong> — Le résultat VT est indisponible pour cette session.
-  Relancer l'analyse quand le quota est restauré (4 req/jour — tier gratuit).
-</div>
-{% elif dropped_files is defined and dropped_files | length > 0 %}
-  {% if vt_malicious > 0 %}
-  <div class="info-box" style="border-left: 3px solid #c0392b;">
-    <strong>Malware détecté :</strong> {{ vt_malicious }} moteur(s) AV ont signalé ce fichier.
-    {% if vt_family %} Famille identifiée : <strong>{{ vt_family }}</strong>.{% endif %}
+  <h3>Signal breakdown</h3>
+  {% if signal_breakdown is defined and signal_breakdown | length > 0 %}
+  <div class="no-break">
+    {% for sig in signal_breakdown %}
+    <div class="signal-row">
+      <div class="signal-name">{{ sig.name }}{% if sig.value %}<span class="sub">{{ sig.value }}</span>{% endif %}</div>
+      <div class="signal-track">
+        <div class="signal-fill
+          {%- if sig.points == 0 %} c-zero
+          {%- elif sig.max_points > 0 and (sig.points / sig.max_points) >= 0.7 %} c-high
+          {%- elif sig.max_points > 0 and (sig.points / sig.max_points) >= 0.4 %} c-med
+          {%- else %} c-low{%- endif %}"
+             style="width:{% if sig.max_points > 0 %}{{ (sig.points / sig.max_points * 100) | round }}{% else %}0{% endif %}%"></div>
+      </div>
+      <div class="signal-pts">{{ sig.points }}<span class="max">/{{ sig.max_points }}</span></div>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
-  <div class="info-box">
-    <strong>VirusTotal :</strong> Aucun moteur AV n'a signalé le fichier capturé ({{ dropped_files | length }} fichier(s) analysé(s)).
-  </div>
+  <p class="muted">Signal breakdown not available. See &sect;2.3 for scoring criteria.</p>
   {% endif %}
-{% else %}
-<div class="info-box">
-  <strong>VirusTotal :</strong> Aucun fichier capturé durant cette session — l'analyse VT par hash SHA-256 n'est pas applicable.
-  VirusTotal est utilisé pour les binaires déposés par les honeypots Dionaea / Cowrie (wget, curl, tftp).
-</div>
-{% endif %}
+</section>
 
-<h2>5.3 Composite Risk Score &amp; Signal Breakdown</h2>
-<div class="info-box" style="text-align:center; padding:4mm;">
-  <span style="font-size:14pt; font-weight:700; color:var(--accent);">{{ risk_score }}/100</span>
-  &nbsp;&nbsp;
-  <span class="score-badge {% if risk_score >= 80 %}score-critical{% elif risk_score >= 60 %}score-high{% elif risk_score >= 40 %}score-medium{% else %}score-low{% endif %}">{{ risk_level }}</span>
-  &nbsp;&nbsp;
-  <span class="text-muted" style="font-size:8.5pt">Confidence: {{ risk_confidence | default("N/A") }}</span>
-</div>
-<h3>Signal Breakdown</h3>
-{% if signal_breakdown is defined and signal_breakdown | length > 0 %}
-  {% for sig in signal_breakdown %}
-  <div class="signal-row no-break">
-    <span class="signal-name">{{ sig.name }}</span>
-    <div class="signal-bar-bg">
-      <div class="signal-bar" style="width: {% if sig.max_points > 0 %}{{ (sig.points / sig.max_points * 100) | round }}{% else %}0{% endif %}%"></div>
+{# ═══ 06 BEHAVIORAL PROFILE ═══ #}
+<section class="section page-break">
+  <div class="section-bar">
+    <span class="section-num">06</span>
+    <h1 class="section-title">Behavioral Profile</h1>
+    <span class="section-tag">~/profile</span>
+  </div>
+
+  <div class="disclaimer">
+    <strong>&#9888; DISCLAIMER &#8212;</strong> The following profile is generated using an exploratory
+    framework inspired by FBI BAU criminological profiling concepts (Ressler &amp; Douglas,
+    1988; Turvey BEA; Canter, 2004), adapted for cyber-threat analysis (Zatyko &amp; Bay,
+    2014).<sup class="ref">4</sup> This profile represents a <em>hypothesis</em> derived from
+    observed session behaviour &#8212; it is <strong>not</strong> a conclusive attribution and
+    should be treated as an analytical aid, not as evidence.
+  </div>
+
+  {% if profile is defined and profile %}
+  <div class="two-col">
+    <div>
+      <table class="kv">
+        <tr><th colspan="2" style="background:var(--ink);color:var(--honey-glow);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;font-size:7.5pt">Profile summary</th></tr>
+        <tr><th>Sophistication</th><td>{{ profile.sophistication | default("N/A") }}</td></tr>
+        <tr><th>Confidence</th><td>{{ profile.confidence | default("N/A") }}%</td></tr>
+        <tr><th>Objective</th><td>{{ profile.objective | default("N/A") }}</td></tr>
+        <tr><th>Organized score</th><td>{{ profile.organized_score | default("N/A") }} / 10</td></tr>
+        {% if profile.persistence %}<tr><th>Persistence</th><td>{{ profile.persistence }}</td></tr>{% endif %}
+        {% if profile.operator_type %}<tr><th>Operator type</th><td>{{ profile.operator_type }}</td></tr>{% endif %}
+      </table>
     </div>
-    <span class="signal-pts">{{ sig.points }}/{{ sig.max_points }}</span>
+    <div>
+      <table>
+        <tr><th>Behavioral traits</th></tr>
+        {% for trait in profile.behavioral_traits | default([]) %}
+        <tr><td>{{ trait }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
   </div>
-  {% if sig.value %}<p class="text-muted" style="font-size:7.5pt;margin:0 0 2mm 0;padding-left:4mm;">&#8627; {{ sig.value }}</p>{% endif %}
-  {% endfor %}
-{% else %}
-<p class="text-muted">Signal breakdown not available. See &sect;2.3 for scoring criteria.</p>
-{% endif %}
-{% if risk_warnings is defined and risk_warnings | length > 0 %}
-<h3>Warnings</h3>
-<ul>{% for w in risk_warnings %}<li style="font-size:8.5pt">{{ w }}</li>{% endfor %}</ul>
-{% endif %}
 
-{# ═══ 6. BEHAVIORAL PROFILE (with disclaimer) ═══ #}
-<div class="page-break"></div>
-<h1>6. Behavioral Profile</h1>
-<div class="disclaimer-box">
-  <strong>&#9888; Disclaimer:</strong> The following behavioral profile is generated using
-  an exploratory framework inspired by FBI BAU criminological profiling concepts
-  (Ressler &amp; Douglas, 1988; Turvey BEA; Canter, 2004), adapted for cyber-threat
-  analysis (Zatyko &amp; Bay, 2014).<sup class="ref">4</sup>
-  This profile represents a <em>hypothesis</em> based on observed session behavior
-  and is <strong>not</strong> a conclusive attribution. It should be treated as
-  an analytical aid, not as evidence.
-</div>
-{% if profile is defined and profile %}
-<div class="two-col">
-  <div>
-    <table>
-      <tr><th colspan="2">Profile Summary</th></tr>
-      <tr><td><strong>Sophistication</strong></td><td>{{ profile.sophistication | default("N/A") }}</td></tr>
-      <tr><td><strong>Confidence</strong></td><td>{{ profile.confidence | default("N/A") }}%</td></tr>
-      <tr><td><strong>Objective</strong></td><td>{{ profile.objective | default("N/A") }}</td></tr>
-      <tr><td><strong>Organized Score</strong></td><td>{{ profile.organized_score | default("N/A") }}/10</td></tr>
-    </table>
+  {% if profile.detective_narrative is defined and profile.detective_narrative %}
+  <h2>Analytical narrative</h2>
+  <div class="callout">{{ profile.detective_narrative }}</div>
+  {% endif %}
+
+  {% if profile.es_reference_cases is defined and profile.es_reference_cases | length > 0 %}
+  <h2>Similar historical sessions (ES memory)</h2>
+  <table>
+    <tr><th>Session</th><th>IP</th><th>Similarity basis</th><th>Date</th></tr>
+    {% for rc in profile.es_reference_cases[:5] %}
+    <tr>
+      <td><code>{{ rc.session_id }}</code></td>
+      <td><code>{{ rc.ip }}</code></td>
+      <td>{{ rc.match_reason }}</td>
+      <td>{{ rc.date }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% else %}
+  <p class="muted">Behavioral profile not available for this session.</p>
+  {% endif %}
+</section>
+
+{# ═══ 07 IOCs ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">07</span>
+    <h1 class="section-title">Indicators of Compromise</h1>
+    <span class="section-tag">~/iocs</span>
   </div>
-  <div>
-    <table>
-      <tr><th>Behavioral Traits</th></tr>
-      {% for trait in profile.behavioral_traits | default([]) %}
-      <tr><td>{{ trait }}</td></tr>
-      {% endfor %}
-    </table>
+
+  {% if iocs is defined and iocs | length > 0 %}
+  <table>
+    <tr><th style="width:24mm">Type</th><th>Value</th><th style="width:60mm">Context</th></tr>
+    {% for ioc in iocs %}
+    <tr>
+      <td><span class="tag tag-ioc">{{ ioc.type }}</span></td>
+      <td class="mono" style="font-size:7.5pt;word-break:break-all"><code>{{ ioc.value }}</code></td>
+      <td>{{ ioc.context | default("") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No IOCs extracted.</p>
+  {% endif %}
+  {% if stix_export_path is defined and stix_export_path %}
+  <div class="callout"><strong>STIX 2.1 Bundle:</strong> <code>{{ stix_export_path }}</code></div>
+  {% endif %}
+</section>
+
+{# ═══ 08 CHAIN OF CUSTODY ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">08</span>
+    <h1 class="section-title">Chain of Custody</h1>
+    <span class="section-tag">~/custody</span>
   </div>
-</div>
-{% if profile.detective_narrative is defined and profile.detective_narrative %}
-<h2>Analytical Narrative</h2>
-<div class="info-box">{{ profile.detective_narrative }}</div>
-{% endif %}
-{% if profile.es_reference_cases is defined and profile.es_reference_cases | length > 0 %}
-<h2>Similar Historical Sessions (ES Memory)</h2>
-<table>
-  <tr><th>Session</th><th>IP</th><th>Similarity Basis</th><th>Date</th></tr>
-  {% for rc in profile.es_reference_cases[:5] %}
-  <tr>
-    <td><code>{{ rc.session_id }}</code></td>
-    <td><code>{{ rc.ip }}</code></td>
-    <td>{{ rc.match_reason }}</td>
-    <td>{{ rc.date }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% endif %}
-{% else %}
-<p class="text-muted">Behavioral profile not available for this session.</p>
-{% endif %}
 
-{# ═══ 7. IOCs ═══ #}
-<h1>7. Indicators of Compromise</h1>
-{% if iocs is defined and iocs | length > 0 %}
-<table>
-  <tr><th>Type</th><th>Value</th><th>Context</th></tr>
-  {% for ioc in iocs %}
-  <tr>
-    <td><span class="tag tag-ioc">{{ ioc.type }}</span></td>
-    <td style="font-size:7.5pt; word-break:break-all"><code>{{ ioc.value }}</code></td>
-    <td style="font-size:8pt">{{ ioc.context | default("") }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p class="text-muted">No IOCs extracted.</p>
-{% endif %}
-{% if stix_export_path is defined and stix_export_path %}
-<div class="info-box"><strong>STIX 2.1 Bundle:</strong> <code>{{ stix_export_path }}</code></div>
-{% endif %}
+  <p>
+    All evidence artifacts are integrity-protected using SHA-256 hashing.
+    {% if coc_timestamp_authority is defined and coc_timestamp_authority %}
+      Timestamps anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>
+    {% endif %}
+  </p>
 
-{# ═══ 8. CHAIN OF CUSTODY ═══ #}
-<h1>8. Chain of Custody</h1>
-<p>
-  All evidence artifacts are integrity-protected using SHA-256 hashing.
-  {% if coc_timestamp_authority is defined and coc_timestamp_authority %}Timestamps anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>{% endif %}
-</p>
-{% if chain_of_custody is defined and chain_of_custody | length > 0 %}
-<table>
-  <tr><th>Artifact</th><th>SHA-256 Hash</th><th>Timestamp</th><th>TSA</th></tr>
-  {% for coc in chain_of_custody %}
-  <tr>
-    <td>{{ coc.artifact }}</td>
-    <td style="font-size:7pt; word-break:break-all"><code>{{ coc.sha256 }}</code></td>
-    <td class="text-mono" style="font-size:7.5pt">{{ coc.timestamp }}</td>
-    <td style="font-size:7.5pt">{{ coc.tsa | default("freeTSA.org") }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p class="text-muted">Chain of custody records not available.</p>
-{% endif %}
+  {% if chain_of_custody is defined and chain_of_custody | length > 0 %}
+  <table>
+    <tr><th>Artifact</th><th>SHA-256</th><th>Timestamp</th><th style="width:22mm">TSA</th></tr>
+    {% for coc in chain_of_custody %}
+    <tr>
+      <td>{{ coc.artifact }}</td>
+      <td style="font-size:6.5pt;word-break:break-all" class="mono"><code>{{ coc.sha256 }}</code></td>
+      <td class="mono" style="font-size:7pt">{{ coc.timestamp }}</td>
+      <td>{{ coc.tsa | default("freeTSA.org") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Chain of custody records not available.</p>
+  {% endif %}
+</section>
 
-{# ═══ 9. RECOMMENDATIONS ═══ #}
-<h1>9. Recommendations</h1>
-
-{# ── 9.1 Ollama (Mistral 7B) ── #}
-<h2>9.1 AI-Generated Recommendations <span style="font-size:8pt;font-weight:400;color:var(--fg-muted);font-family:var(--mono);">(Mistral 7B · Ollama · local)</span></h2>
-{% if ollama_recommendations is defined and ollama_recommendations | length > 0 %}
-<div class="info-box" style="margin-bottom:3mm;">
-  <strong>&#x1F916; Generated by Mistral 7B</strong> — These recommendations are produced by the local
-  LLM based on the full attack context. They complement, but do not replace, the deterministic
-  recommendations below.
-</div>
-<table>
-  <tr><th style="width:25px">#</th><th style="width:80px">Priority</th><th>Action</th><th>Rationale</th></tr>
-  {% for rec in ollama_recommendations %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td><span class="score-badge {% if rec.priority == 'IMMEDIATE' %}score-critical{% elif rec.priority == 'HIGH' %}score-high{% else %}score-medium{% endif %}" style="font-size:7pt">{{ rec.priority }}</span></td>
-    <td>{{ rec.action }}</td>
-    <td style="font-size:8pt;color:var(--fg-muted)">{{ rec.rationale }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<div class="disclaimer-box">
-  Mistral 7B recommendations not available for this session (Ollama timeout or model unavailable).
-</div>
-{% endif %}
-
-{# ── 9.2 Deterministic ── #}
-<h2>9.2 Deterministic Recommendations <span style="font-size:8pt;font-weight:400;color:var(--fg-muted);font-family:var(--mono);">(Rule-based · ForenHive engine)</span></h2>
-{% if recommendations is defined and recommendations | length > 0 %}
-<table>
-  <tr><th style="width:25px">#</th><th style="width:80px">Priority</th><th>Action</th><th>Rationale</th></tr>
-  {% for rec in recommendations %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td><span class="score-badge {% if rec.priority == 'IMMEDIATE' %}score-critical{% elif rec.priority == 'HIGH' %}score-high{% else %}score-medium{% endif %}" style="font-size:7pt">{{ rec.priority }}</span></td>
-    <td>{{ rec.action }}</td>
-    <td style="font-size:8pt;color:var(--fg-muted)">{{ rec.rationale }}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p>No deterministic recommendations generated. Review threat analysis for manual assessment.</p>
-{% endif %}
-
-{# ═══ 10. REFERENCES ═══ #}
-<h1>10. References</h1>
-<ol class="ref-list">
-  <li>AbuseIPDB. "IP Address Lookup &mdash; {{ source_ip }}." <em>abuseipdb.com/check/{{ source_ip }}</em>. Accessed {{ generated_at[:10] | default("2026") }}.</li>
-  <li>US-CERT. "Alert TA17-132A: Indicators Associated With WannaCry Ransomware." <em>cisa.gov/news-events/alerts/2017/05/12/indicators-associated-wannacry-ransomware</em>. Published May 2017.</li>
-  <li>MITRE ATT&amp;CK. "Enterprise Techniques." <em>attack.mitre.org/techniques/enterprise</em>. {% for t in mitre_techniques | default([]) %}{{ t.tid }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
-  <li>Zatyko, K. &amp; Bay, J. (2014). Turvey, B. (2011). <em>Criminal Profiling: BEA</em>. Ressler &amp; Douglas (1988). Canter, D. (2004).</li>
-  <li>FreeTSA. "RFC 3161 Time-Stamp Authority." <em>freetsa.org</em>.</li>
-  {% for ref in extra_references | default([]) %}
-  <li>{{ ref }}</li>
-  {% endfor %}
-</ol>
-
-{# ═══ APPENDIX A ═══ #}
-<div class="page-break"></div>
-<h1>Appendix A &mdash; Full Session Log</h1>
-<p class="text-muted" style="font-size:8pt">
-  Complete chronological log of all {{ event_count }} events.
-  Timestamps are UTC with millisecond precision.
-</p>
-{% if full_timeline is defined and full_timeline %}
-<div style="font-size:7.5pt;">
-  {% for ev in full_timeline %}
-  <div class="tl-row">
-    <span class="tl-ts">{{ ev.timestamp }}</span>
-    <span class="tl-type">{{ ev.event_type }}</span>
-    <span class="tl-detail">{{ ev.details }}</span>
+{# ═══ 09 RECOMMENDATIONS ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">09</span>
+    <h1 class="section-title">Recommendations</h1>
+    <span class="section-tag">~/mitigations</span>
   </div>
-  {% endfor %}
-</div>
-{% else %}
-<pre>{{ raw_log | default("Full session log not available.") }}</pre>
-{% endif %}
+
+  <h2>9.1 AI-generated <span style="font-weight:400;color:var(--muted)">(Mistral 7B &middot; Ollama &middot; local)</span></h2>
+  {% if ollama_recommendations is defined and ollama_recommendations | length > 0 %}
+  <table>
+    <tr><th style="width:10mm">#</th><th style="width:24mm">Priority</th><th>Action</th><th>Rationale</th></tr>
+    {% for rec in ollama_recommendations %}
+    <tr>
+      <td class="mono">{{ loop.index }}</td>
+      <td><span class="score-badge {% if rec.priority == 'IMMEDIATE' %}score-critical{% elif rec.priority == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ rec.priority }}</span></td>
+      <td>{{ rec.action | safe }}</td>
+      <td>{{ rec.rationale }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="callout warn">Mistral 7B recommendations not available for this session (Ollama timeout or model unavailable).</div>
+  {% endif %}
+
+  <h2>9.2 Deterministic rules <span style="font-weight:400;color:var(--muted)">(ForenHive engine)</span></h2>
+  {% if recommendations is defined and recommendations | length > 0 %}
+  <table>
+    <tr><th style="width:10mm">#</th><th style="width:24mm">Priority</th><th>Action</th><th>Rationale</th></tr>
+    {% for rec in recommendations %}
+    <tr>
+      <td class="mono">{{ loop.index }}</td>
+      <td><span class="score-badge {% if rec.priority == 'IMMEDIATE' %}score-critical{% elif rec.priority == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ rec.priority }}</span></td>
+      <td>{{ rec.action | safe }}</td>
+      <td>{{ rec.rationale }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>No deterministic recommendations generated. Review threat analysis for manual assessment.</p>
+  {% endif %}
+</section>
+
+{# ═══ 10 REFERENCES ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">10</span>
+    <h1 class="section-title">References</h1>
+    <span class="section-tag">~/refs</span>
+  </div>
+  <ol class="ref-list">
+    <li>AbuseIPDB. &#8220;IP Address Lookup &#8212; {{ source_ip }}.&#8221; <em>abuseipdb.com/check/{{ source_ip }}</em>. Accessed {{ generated_at[:10] | default("2026") }}.</li>
+    <li>US-CERT. &#8220;Alert TA17-132A: Indicators Associated With WannaCry Ransomware.&#8221; <em>cisa.gov</em>. Published May 2017.</li>
+    <li>MITRE ATT&amp;CK. &#8220;Enterprise Techniques.&#8221; <em>attack.mitre.org/techniques/enterprise</em>. {% for t in mitre_techniques | default([]) %}{{ t.tid }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
+    <li>Zatyko, K. &amp; Bay, J. (2014). Turvey, B. (2011). <em>Criminal Profiling: BEA</em>. Ressler &amp; Douglas (1988). Canter, D. (2004).</li>
+    <li>FreeTSA. &#8220;RFC 3161 Time-Stamp Authority.&#8221; <em>freetsa.org</em>.</li>
+    {% for ref in extra_references | default([]) %}
+    <li>{{ ref }}</li>
+    {% endfor %}
+  </ol>
+</section>
+
+{# ═══ APPENDIX A &#8212; FULL SESSION LOG ═══ #}
+<section class="section page-break">
+  <div class="section-bar">
+    <span class="section-num">A</span>
+    <h1 class="section-title">Appendix &#8212; Full Session Log</h1>
+    <span class="section-tag">~/appendix_a</span>
+  </div>
+  <p class="muted" style="font-size:8pt">
+    Complete chronological log of all {{ event_count }} events. Timestamps are UTC with millisecond precision.
+  </p>
+
+  {% if full_timeline is defined and full_timeline %}
+  <div style="margin-top:3mm">
+    {% for ev in full_timeline %}
+    <div class="log-row">
+      <span class="ts">{{ ev.timestamp }}</span>
+      <span class="ty">{{ ev.event_type }}</span>
+      <span class="dt">{{ ev.details }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <pre>{{ raw_log | default("Full session log not available.") }}</pre>
+  {% endif %}
+</section>
 
 </body>
 </html>

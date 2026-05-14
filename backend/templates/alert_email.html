@@ -3,126 +3,150 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ForenHive Alert</title>
+<meta name="x-apple-disable-message-reformatting" />
+<title>ForenHive Alert &#8212; {{ severity }}</title>
 </head>
-<body style="margin:0;padding:0;background:#EDE9E0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1A1208;">
+<body style="margin:0;padding:0;background:#0a0e14;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0d1117;-webkit-font-smoothing:antialiased;">
 
-<!-- outer wrapper -->
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EDE9E0;padding:24px 0;">
+<!-- preview text (hidden) -->
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
+  [{{ severity }}] {{ threat_type }} &middot; {{ source_ip }} &middot; risk {{ risk_score }}/100 &middot; {{ honeypot }}
+</div>
+
+<!-- outer -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0a0e14;padding:28px 0;">
 <tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
 
-  <!-- ── BRAND BAR ── -->
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
+
+  <!-- TERMINAL BRAND BAR -->
   <tr>
-    <td style="padding:0 4px 16px 4px;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <td style="background:#0a0e14;border:1px solid rgba(251,191,36,0.20);border-bottom:none;border-radius:6px 6px 0 0;padding:14px 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
-          <td style="font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#8C1A2B;">
-            FOREN<span style="color:#1A1208;">HIVE</span>
+          <td style="font-family:'Courier New',Consolas,monospace;font-size:13px;font-weight:700;letter-spacing:2px;color:#fbbf24;">
+            <span style="display:inline-block;width:7px;height:7px;background:#4ade80;border-radius:50%;vertical-align:middle;margin-right:8px;box-shadow:0 0 6px #4ade80;"></span>FOREN<span style="color:#22d3ee;">HIVE</span>
           </td>
-          <td align="right" style="font-size:11px;color:#7A6E5A;font-family:'Courier New',monospace;">
-            {{ timestamp }}
+          <td align="right" style="font-family:'Courier New',Consolas,monospace;font-size:10px;color:#6b7280;letter-spacing:1.5px;text-transform:uppercase;">
+            // alert.engine
           </td>
         </tr>
       </table>
     </td>
   </tr>
 
-  <!-- ── CARD ── -->
+  <!-- SEVERITY STRIP -->
   <tr>
-    <td style="background:#FBF9F5;border:1px solid rgba(140,26,43,0.15);border-radius:10px;overflow:hidden;box-shadow:0 4px 16px rgba(62,47,18,0.10);">
+    <td align="center" style="
+      font-family:'Courier New',Consolas,monospace;
+      font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;
+      padding:8px 0;
+      border-left:1px solid rgba(251,191,36,0.20);border-right:1px solid rgba(251,191,36,0.20);
+      {% if severity == 'CRITICAL' %}background:#991b1b;color:#fee2e2;
+      {% elif severity == 'HIGH' %}background:#c2410c;color:#ffedd5;
+      {% elif severity == 'MEDIUM' %}background:#b45309;color:#fef3c7;
+      {% elif severity == 'LOW' %}background:#166534;color:#dcfce7;
+      {% else %}background:#1f2937;color:#d1d5db;{% endif %}
+    ">
+      &#9656; {{ severity }} ALERT{% if is_test %} &nbsp;&middot;&nbsp; TEST MODE{% endif %} &#9656;
+    </td>
+  </tr>
 
-      <!-- severity strip -->
-      <table width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td align="center" style="
-            padding:5px 0;
-            font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-            {% if severity == 'CRITICAL' %}background:#9B1B1B;color:#fff;
-            {% elif severity == 'HIGH' %}background:#92400e;color:#fef3c7;
-            {% elif severity == 'MEDIUM' %}background:#1e40af;color:#dbeafe;
-            {% elif severity == 'LOW' %}background:#065f46;color:#d1fae5;
-            {% else %}background:#E5E0D5;color:#7A6E5A;{% endif %}
-          ">{{ severity }}{% if is_test %} &nbsp;·&nbsp; TEST MODE{% endif %}</td>
-        </tr>
-      </table>
+  <!-- BODY CARD -->
+  <tr>
+    <td style="background:#faf8f2;border:1px solid #d8cfb8;border-top:none;border-radius:0 0 6px 6px;">
 
-      <!-- body -->
-      <table width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="padding:24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="padding:26px 28px 22px 28px;">
 
-          {% if is_internal %}
-          <!-- insider threat banner -->
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
+          <!-- eyebrow -->
+          <p style="margin:0 0 6px 0;font-family:'Courier New',Consolas,monospace;font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#c2570a;">
+            // honeypot incident
+          </p>
+
+          <!-- title + risk score widget -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
             <tr>
-              <td style="background:#7c0a1e;border-radius:6px;padding:12px 16px;">
-                <p style="margin:0 0 4px 0;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#ffd6d6;">INSIDER THREAT — Internal Network</p>
-                <p style="margin:0;font-size:12px;color:#ffe0e0;line-height:1.5;">
-                  This attack originates from <strong style="color:#fff;">inside the network</strong>
-                  ({{ network_class.replace('_', ' ') }}).
-                  The source IP is an RFC1918 private address — no external geolocation available.
-                  Immediate investigation and containment required.
+              <td style="vertical-align:top;padding-right:14px;">
+                <p style="margin:0 0 6px 0;font-size:22px;font-weight:700;color:#0d1117;line-height:1.25;letter-spacing:-0.3px;">{{ threat_type }}</p>
+                <p style="margin:0;font-size:12px;color:#6b6356;">
+                  Detected on <strong style="color:#0d1117;font-weight:600;">{{ honeypot }}</strong>
+                  <span style="color:#d8cfb8;">&nbsp;&middot;&nbsp;</span>
+                  <span style="font-family:'Courier New',Consolas,monospace;font-size:11px;">{{ timestamp }}</span>
                 </p>
               </td>
-            </tr>
-          </table>
-          {% endif %}
-
-          <!-- threat title + risk pill -->
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
-            <tr>
-              <td style="vertical-align:top;">
-                <p style="margin:0 0 4px 0;font-size:19px;font-weight:700;color:#8C1A2B;line-height:1.3;">{{ threat_type }}</p>
-                <p style="margin:0;font-size:12px;color:#7A6E5A;">Detected on {{ honeypot }}</p>
-              </td>
-              <td width="90" align="center" style="vertical-align:top;">
-                <table cellpadding="0" cellspacing="0" border="0" style="background:#F5F3EE;border:1px solid rgba(140,26,43,0.25);border-radius:8px;width:90px;">
+              <td width="96" align="right" style="vertical-align:top;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="background:#0a0e14;border:1px solid #fbbf24;border-radius:4px;width:96px;">
                   <tr>
-                    <td align="center" style="padding:10px 8px 4px 8px;font-size:28px;font-weight:800;line-height:1;
-                      {% if severity == 'CRITICAL' %}color:#9B1B1B;
-                      {% elif severity == 'HIGH' %}color:#92400e;
-                      {% elif severity == 'MEDIUM' %}color:#1e40af;
-                      {% elif severity == 'LOW' %}color:#065f46;
-                      {% else %}color:#7A6E5A;{% endif %}
+                    <td align="center" style="padding:10px 6px 2px 6px;font-family:'Courier New',Consolas,monospace;font-size:30px;font-weight:700;line-height:1;color:
+                      {% if severity == 'CRITICAL' %}#f87171;
+                      {% elif severity == 'HIGH' %}#fb923c;
+                      {% elif severity == 'MEDIUM' %}#fbbf24;
+                      {% elif severity == 'LOW' %}#4ade80;
+                      {% else %}#d1d5db;{% endif %}
                     ">{{ risk_score }}</td>
                   </tr>
                   <tr>
-                    <td align="center" style="padding:0 8px 10px 8px;font-size:9px;color:#7A6E5A;letter-spacing:1.5px;text-transform:uppercase;">RISK / 100</td>
+                    <td align="center" style="padding:0 6px 8px 6px;font-family:'Courier New',Consolas,monospace;font-size:8px;color:#6b7280;letter-spacing:2px;text-transform:uppercase;">risk / 100</td>
                   </tr>
                 </table>
               </td>
             </tr>
           </table>
 
-          <!-- divider -->
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
-            <tr><td style="border-top:1px solid rgba(140,26,43,0.12);font-size:0;">&nbsp;</td></tr>
+          <!-- honeycomb divider -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">
+            <tr>
+              <td style="font-family:'Courier New',Consolas,monospace;font-size:9px;color:#d8cfb8;letter-spacing:5px;line-height:1;">
+                &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042; &#11042;
+              </td>
+            </tr>
           </table>
 
           <!-- key-value rows -->
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
             <tr>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#7A6E5A;width:36%;vertical-align:top;">Source IP</td>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#1A1208;font-family:'Courier New',monospace;word-break:break-all;">
-                {{ source_ip }}{% if country %} &nbsp;·&nbsp; {{ country }}{% endif %}
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;width:32%;vertical-align:top;">&#9656; Source IP</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:13px;color:#0d1117;font-family:'Courier New',Consolas,monospace;word-break:break-all;font-weight:500;">
+                {{ source_ip }}{% if country %} <span style="color:#6b6356;font-weight:400;">&middot; {{ country }}</span>{% endif %}
               </td>
             </tr>
             <tr>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#7A6E5A;vertical-align:top;">Honeypot</td>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#1A1208;font-family:'Courier New',monospace;">{{ honeypot }}</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; Honeypot</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:13px;color:#0d1117;font-family:'Courier New',Consolas,monospace;font-weight:500;">{{ honeypot }}</td>
             </tr>
             {% if attempts %}
             <tr>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#7A6E5A;vertical-align:top;">Attempts</td>
-              <td style="padding:7px 4px;border-bottom:1px solid rgba(140,26,43,0.08);font-size:13px;color:#1A1208;font-family:'Courier New',monospace;">{{ attempts }}</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; Attempts</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:13px;color:#0d1117;font-family:'Courier New',Consolas,monospace;font-weight:500;">{{ attempts }}</td>
+            </tr>
+            {% endif %}
+            {% if abuseipdb_score is defined and abuseipdb_score is not none %}
+            <tr>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; AbuseIPDB</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:13px;color:{% if abuseipdb_score >= 50 %}#991b1b{% else %}#0d1117{% endif %};font-family:'Courier New',Consolas,monospace;font-weight:600;">{{ abuseipdb_score }}%</td>
+            </tr>
+            {% endif %}
+            {% if yara_match %}
+            <tr>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; YARA</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:12px;">
+                <span style="display:inline-block;padding:2px 8px;font-size:10px;font-weight:600;background:#dcfce7;color:#14532d;border:1px solid #16a34a;border-radius:2px;font-family:'Courier New',Consolas,monospace;">{{ yara_match }}</span>
+              </td>
+            </tr>
+            {% endif %}
+            {% if ioc_hash %}
+            <tr>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; SHA-256</td>
+              <td style="padding:8px 4px;border-bottom:1px solid #ebe3cc;font-size:10px;color:#0d1117;font-family:'Courier New',Consolas,monospace;word-break:break-all;">{{ ioc_hash }}</td>
             </tr>
             {% endif %}
             {% if mitre_tags %}
             <tr>
-              <td style="padding:7px 4px;font-size:13px;color:#7A6E5A;vertical-align:top;">MITRE ATT&amp;CK</td>
-              <td style="padding:7px 4px;font-size:13px;">
+              <td style="padding:8px 4px;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1.5px;text-transform:uppercase;vertical-align:top;">&#9656; MITRE</td>
+              <td style="padding:8px 4px;font-size:13px;">
                 {% for t in mitre_tags %}
-                <span style="display:inline-block;margin:2px 3px 2px 0;padding:2px 8px;font-size:10px;background:rgba(13,71,161,0.08);color:#0D47A1;border:1px solid rgba(13,71,161,0.25);border-radius:999px;font-family:'Courier New',monospace;">{{ t }}</span>
+                <span style="display:inline-block;margin:2px 3px 2px 0;padding:3px 8px;font-size:10px;font-weight:600;background:#cffafe;color:#155e75;border:1px solid #0e7490;border-radius:2px;font-family:'Courier New',Consolas,monospace;letter-spacing:0.5px;">{{ t }}</span>
                 {% endfor %}
               </td>
             </tr>
@@ -131,11 +155,32 @@
 
           <!-- AI analysis block -->
           {% if mistral_analysis %}
-          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:18px;">
             <tr>
-              <td style="background:#F5F3EE;border-left:3px solid #8C1A2B;border-radius:0 6px 6px 0;padding:14px 16px;">
-                <p style="margin:0 0 8px 0;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8C1A2B;">AI Analysis</p>
-                <p style="margin:0;font-size:13px;line-height:1.65;color:#3D3220;">{{ mistral_analysis }}</p>
+              <td style="background:#cffafe;border:1px solid #0e7490;border-left:4px solid #0e7490;border-radius:2px;padding:14px 16px;">
+                <p style="margin:0 0 8px 0;font-family:'Courier New',Consolas,monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#155e75;">
+                  &#9656; AI Analysis &nbsp;<span style="color:#0e7490;font-weight:400;">&#8212; Mistral 7B &middot; local</span>
+                </p>
+                <p style="margin:0;font-size:13px;line-height:1.65;color:#0d1117;">{{ mistral_analysis }}</p>
+              </td>
+            </tr>
+          </table>
+          {% endif %}
+
+          <!-- CTA buttons -->
+          {% if report_url %}
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 2px 0;">
+            <tr>
+              <td style="background:#c2570a;border-radius:2px;">
+                <a href="{{ report_url }}" target="_blank" style="display:inline-block;padding:11px 22px;font-family:'Courier New',Consolas,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#fff;text-decoration:none;">
+                  &#9656; View Full Report
+                </a>
+              </td>
+              <td width="10">&nbsp;</td>
+              <td style="background:#faf8f2;border:1px solid #0d1117;border-radius:2px;">
+                <a href="{{ block_url | default('#') }}" target="_blank" style="display:inline-block;padding:10px 22px;font-family:'Courier New',Consolas,monospace;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#0d1117;text-decoration:none;">
+                  Block IP
+                </a>
               </td>
             </tr>
           </table>
@@ -144,18 +189,33 @@
         </td></tr>
       </table>
 
-      <!-- footer -->
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid rgba(140,26,43,0.10);">
+      <!-- inner footer -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #ebe3cc;background:#f3ecd8;">
         <tr>
-          <td style="padding:12px 24px;font-size:10px;color:#7A6E5A;">ForenHive &nbsp;·&nbsp; PFE 2025/2026 &nbsp;·&nbsp; ISET Radès</td>
-          <td align="right" style="padding:12px 24px;font-size:10px;color:#7A6E5A;font-family:'Courier New',monospace;">Honeypot IDS</td>
+          <td style="padding:12px 28px;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b6356;letter-spacing:1px;text-transform:uppercase;">
+            ForenHive &nbsp;&middot;&nbsp; Honeypot IDS &nbsp;&middot;&nbsp; PFE 2025/2026 &nbsp;&middot;&nbsp; ISET Rad&egrave;s
+          </td>
+          <td align="right" style="padding:12px 28px;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#7c2d12;letter-spacing:2px;text-transform:uppercase;">
+            TLP:AMBER
+          </td>
         </tr>
       </table>
 
     </td>
   </tr>
 
+  <!-- outer footer -->
+  <tr>
+    <td style="padding:18px 8px 4px 8px;text-align:center;">
+      <p style="margin:0;font-family:'Courier New',Consolas,monospace;font-size:9px;color:#6b7280;line-height:1.6;letter-spacing:0.5px;">
+        Automated message from the ForenHive forensic engine.<br>
+        ISET Rad&egrave;s &nbsp;//&nbsp; do-not-reply
+      </p>
+    </td>
+  </tr>
+
 </table>
+
 </td></tr>
 </table>
 
