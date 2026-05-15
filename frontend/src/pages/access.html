@@ -10,10 +10,10 @@
   </div>
 </div>
 
-<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
-  <div class="kpi g"><div class="kpi-label">Total Users</div><div class="kpi-val" id="kpi-total">—</div><div class="kpi-delta">registered accounts</div></div>
-  <div class="kpi r"><div class="kpi-label">Admins</div><div class="kpi-val" id="kpi-admin">—</div><div class="kpi-delta">full platform access</div></div>
-  <div class="kpi b"><div class="kpi-label">Analysts</div><div class="kpi-val" id="kpi-analyst">—</div><div class="kpi-delta">forensic + monitoring</div></div>
+<div class="fkpi-row">
+  <div class="fkpi" style="border-color:#f0b42955"><div class="fkpi-label">Total Users</div><div class="fkpi-val" id="kpi-total" style="color:var(--gold)">—</div><div class="fkpi-sub">registered accounts</div></div>
+  <div class="fkpi" style="border-color:#ff505055"><div class="fkpi-label">Admins</div><div class="fkpi-val" id="kpi-admin" style="color:#ff5050">—</div><div class="fkpi-sub">full platform access</div></div>
+  <div class="fkpi" style="border-color:#3b82f655"><div class="fkpi-label">Analysts</div><div class="fkpi-val" id="kpi-analyst" style="color:#3b82f6">—</div><div class="fkpi-sub">forensic + monitoring</div></div>
 </div>
 
 <div id="ac-chart-root" style="margin-bottom:16px"></div>
@@ -233,7 +233,7 @@
     openModal(`
       <div class="modal-h">
         <div class="card-t"> New User</div>
-        <button class="drawer-close" onclick="closeModal()">✕</button>
+        <button class="drawer-close" onclick="closeModal()">×</button>
       </div>
       <form id="create-user-form" autocomplete="off" style="display:flex;flex-direction:column;gap:14px">
 

@@ -125,6 +125,12 @@ body::before{content:'';position:fixed;inset:0;background-image:url("data:image/
 .kpi-delta{margin-top:8px;font-size:11px;color:var(--text3);font-family:'Share Tech Mono','JetBrains Mono',ui-monospace,monospace}
 .kpi-delta.up{color:var(--blue2)}
 .kpi-delta.down{color:var(--red2)}
+/* Modern bordered KPI cards (shared across pages) */
+.fkpi-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.fkpi{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px}
+.fkpi-label{font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;font-family:'JetBrains Mono',monospace}
+.fkpi-val{font-family:'Rajdhani',sans-serif;font-size:32px;font-weight:700;line-height:1}
+.fkpi-sub{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px}
 
 /* buttons */
 .btn{padding:8px 16px;border-radius:5px;font-size:12px;font-weight:600;font-family:'Rajdhani',sans-serif;letter-spacing:.5px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;transition:all .2s}

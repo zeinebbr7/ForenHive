@@ -9,13 +9,20 @@
   </div>
 </div>
 
+<div class="fkpi-row">
+  <div class="fkpi" style="border-color:#f0b42955"><div class="fkpi-label">Total Sessions</div><div class="fkpi-val" id="rep-count" style="color:var(--gold)">—</div><div class="fkpi-sub">available reports</div></div>
+  <div class="fkpi" style="border-color:#ff505055"><div class="fkpi-label">Critical</div><div class="fkpi-val" id="rep-kpi-crit" style="color:#ff5050">—</div><div class="fkpi-sub">risk score ≥ 70</div></div>
+  <div class="fkpi" style="border-color:#ff993355"><div class="fkpi-label">Elevated</div><div class="fkpi-val" id="rep-kpi-elev" style="color:#ff9933">—</div><div class="fkpi-sub">score 40 – 69</div></div>
+  <div class="fkpi" style="border-color:#2dd4bf55"><div class="fkpi-label">Avg Risk Score</div><div class="fkpi-val" id="rep-kpi-avg" style="color:#2dd4bf">—</div><div class="fkpi-sub">out of 100</div></div>
+</div>
+
 <div style="display:grid;grid-template-columns:320px 1fr;gap:14px;margin-bottom:20px">
 
   <!-- Session list -->
   <div class="card" style="padding:0;align-self:start">
     <div class="card-h" style="padding:14px 16px;border-bottom:1px solid var(--border)">
       <div class="card-t">Available Sessions</div>
-      <div class="card-sub"><span id="rep-count">—</span> session(s) · sorted by risk</div>
+      <div class="card-sub">sessions · sorted by risk</div>
     </div>
     <div id="rep-list" style="max-height:calc(100vh - 260px);overflow-y:auto">
       <div class="alert info" style="margin:14px">Loading…</div>
@@ -31,15 +38,15 @@
       </div>
       <div class="flex gap-8">
         <button class="btn btn-gh btn-sm" id="rep-reload" disabled title="Regenerate report">↺ Regenerate</button>
-        <button class="btn btn-gh btn-sm" id="rep-print" disabled title="Open browser print dialog">🖨 Print Preview</button>
-        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Download WeasyPrint certified PDF from server">⬇ Certified PDF</button>
+        <button class="btn btn-gh btn-sm" id="rep-print" disabled title="Open browser print dialog">Print Preview</button>
+        <button class="btn btn-gold btn-sm" id="rep-download" disabled title="Download WeasyPrint certified PDF from server">↓ Certified PDF</button>
       </div>
     </div>
 
     <!-- Report HTML area -->
     <div id="rep-preview" style="flex:1;overflow-y:auto;background:#f0f0f0;min-height:500px">
       <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#888;padding:60px;height:100%">
-        <div style="font-size:48px;opacity:.3">📄</div>
+        <div style="font-size:48px;opacity:.3"></div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:13px">No report selected</div>
         <div style="font-size:12px;opacity:.6">Click a session on the left to preview its forensic report</div>
       </div>
@@ -407,6 +414,13 @@
         } catch (_) {}
       }
       $('#rep-count').textContent = sessions.length;
+      const critCount = sessions.filter(s => s.risk_score != null && s.risk_score >= 70).length;
+      const elevCount = sessions.filter(s => s.risk_score != null && s.risk_score >= 40 && s.risk_score < 70).length;
+      const scored = sessions.filter(s => s.risk_score != null);
+      const avgScore = scored.length ? Math.round(scored.reduce((a, s) => a + s.risk_score, 0) / scored.length) : '—';
+      $('#rep-kpi-crit').textContent = critCount;
+      $('#rep-kpi-elev').textContent = elevCount;
+      $('#rep-kpi-avg').textContent = avgScore;
       if (!sessions.length) {
         $('#rep-list').innerHTML = `<div class="alert info" style="margin:14px"><b>No sessions found.</b><br>Run the forensic engine to generate sessions.</div>`;
         return;
@@ -643,9 +657,9 @@
             ['Threat Score',    sc != null ? sc + '/100' : '—'],
             ['AbuseIPDB',       s.abuse_confidence != null ? s.abuse_confidence + '%' : '—'],
             ['Reports',         s.total_reports ?? profile?.reports ?? '—'],
-            ['Tor Exit Node',   s.is_tor ? '⚠ YES' : 'No'],
-            ['VPN/Proxy',       s.is_vpn ? '⚠ YES' : 'No'],
-            ['Blacklisted',     (sc||0) >= 70 ? '⚠ YES' : 'No'],
+            ['Tor Exit Node',   s.is_tor ? 'WARN YES' : 'No'],
+            ['VPN/Proxy',       s.is_vpn ? 'WARN YES' : 'No'],
+            ['Blacklisted',     (sc||0) >= 70 ? 'WARN YES' : 'No'],
             ['Last seen',       s.started_at ? esc(new Date(s.started_at).toISOString().slice(0,10)) : '—'],
           ].map(([k,v]) => `
             <div class="fh-kv-row">
@@ -914,7 +928,7 @@
       </div>
     </div>
     <div style="padding:40px 28px;display:flex;flex-direction:column;align-items:center;gap:24px">
-      <div style="font-size:48px">🔐</div>
+      <div style="font-size:48px"></div>
       <div style="font-size:18px;font-weight:800;color:#374151;letter-spacing:.05em;text-transform:uppercase">Report Integrity Certified</div>
       <div class="fh-cert" style="width:100%;max-width:600px">
         <div class="fh-cert-title">DIGITAL CERTIFICATION DETAILS</div>
@@ -928,8 +942,8 @@
       </div>
       <div style="font-size:11px;color:#888;text-align:center;max-width:500px;line-height:1.7">
         This forensic report was automatically generated by the ForenHive platform.
-        Click <strong>⬇ Certified PDF</strong> to download the server-generated WeasyPrint PDF
-        with embedded SHA-256 hash and RFC 3161 timestamp. Use <strong>🖨 Print Preview</strong>
+        Click <strong>↓ Certified PDF</strong> to download the server-generated WeasyPrint PDF
+        with embedded SHA-256 hash and RFC 3161 timestamp. Use <strong>Print Preview</strong>
         for a browser-rendered version.
       </div>
     </div>
@@ -991,7 +1005,7 @@
     } catch(e) {
       $('#rep-preview').innerHTML = `
         <div style="padding:32px;text-align:center;color:#ef4444;font-family:'JetBrains Mono',monospace;font-size:12px">
-          <div style="font-size:32px;margin-bottom:12px">⚠</div>
+          <div style="font-size:32px;margin-bottom:12px">WARN</div>
           <div>Preview failed: ${esc(e.message)}</div>
           <div style="margin-top:8px;opacity:.6;font-size:11px">Check backend logs — session may not exist in Elasticsearch.</div>
         </div>`;
@@ -1080,7 +1094,7 @@
       status.style.color = 'var(--red2, #ef4444)';
     } finally {
       btn.disabled = false;
-      btn.textContent = '⬇ Certified PDF';
+      btn.textContent = '↓ Certified PDF';
     }
   });
 

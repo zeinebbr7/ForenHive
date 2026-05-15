@@ -1,11 +1,11 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">📋 Audit</div>
+    <div class="section-tag" style="margin-bottom:8px">Audit</div>
     <h2 class="page-title">Journal <span>d'audit</span></h2>
     <div class="page-sub">Traçabilité des actions PostgreSQL · <span id="audit-total">—</span> entrées.</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="audit-refresh">🔄 Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="audit-refresh">Actualiser</button>
   </div>
 </div>
 
@@ -13,13 +13,13 @@
 
   <!-- Utilisateurs -->
   <div class="card">
-    <div class="card-h"><div class="card-t">👥 Utilisateurs</div><div class="card-sub">comptes enregistrés</div></div>
+    <div class="card-h"><div class="card-t">Utilisateurs</div><div class="card-sub">comptes enregistrés</div></div>
     <div id="users-body"><div class="alert info">Chargement…</div></div>
   </div>
 
   <!-- Stats actions -->
   <div class="card">
-    <div class="card-h"><div class="card-t">📊 Actions par type</div><div class="card-sub">résumé des 50 derniers logs</div></div>
+    <div class="card-h"><div class="card-t">Actions par type</div><div class="card-sub">résumé des 50 derniers logs</div></div>
     <div id="audit-stats"><div class="alert info">Chargement…</div></div>
   </div>
 
@@ -75,14 +75,14 @@
   let totalItems = 0;
 
   const ACTION_ICON = {
-    'auth.login':   '🔑',
-    'auth.logout':  '🚪',
-    'user.create':  '➕',
-    'user.update':  '✏️',
-    'user.delete':  '🗑️',
-    'report.generate': '📄',
-    'report.download': '⬇️',
-    'config.update':   '⚙️',
+    'auth.login':   '',
+    'auth.logout':  '',
+    'user.create':  '+',
+    'user.update':  'Edit',
+    'user.delete':  'Del',
+    'report.generate': '',
+    'report.download': '↓',
+    'config.update':   '',
   };
   const ROLE_COLORS = { admin:'gold', analyst:'blue', viewer:'purple', user:'purple' };
 
@@ -96,7 +96,7 @@
       $('#users-body').innerHTML = `<div style="padding:0 4px">${users.map(u => {
         const roleColor = ROLE_COLORS[u.role] || 'purple';
         return `<div class="user-row">
-          <div class="user-av">${u.role==='admin'?'👑':'🔎'}</div>
+          <div class="user-av">${u.role==='admin'?'':''}</div>
           <div>
             <div class="user-email">${esc(u.email)}</div>
             <div class="user-name">${esc(u.full_name||'—')}</div>
@@ -124,7 +124,7 @@
       if (!sorted.length) { $('#audit-stats').innerHTML = '<div class="alert info">Aucune action.</div>'; return; }
       $('#audit-stats').innerHTML = `<div style="padding:4px 0">${sorted.map(([action,count])=>`
         <div class="action-bar">
-          <div class="action-bar-label">${ACTION_ICON[action]||'📌'} ${esc(action)}</div>
+          <div class="action-bar-label">${ACTION_ICON[action]||''} ${esc(action)}</div>
           <div class="action-bar-track"><div class="action-bar-fill" style="width:${(count/max*100).toFixed(1)}%"></div></div>
           <div class="action-bar-count">${count}</div>
         </div>`).join('')}</div>`;
@@ -148,7 +148,7 @@
       }
 
       $('#audit-rows').innerHTML = items.map(it => {
-        const icon = ACTION_ICON[it.action] || '📌';
+        const icon = ACTION_ICON[it.action] || '';
         const isAuth = it.action.startsWith('auth.');
         return `<tr>
           <td class="mono" style="font-size:11px">${fmt.date(it.timestamp)}</td>

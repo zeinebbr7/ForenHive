@@ -17,8 +17,11 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import httpx
+from sqlalchemy import text as _text
+
 from config import get_settings
-from db import dispose as dispose_db, init_db
+from db import dispose as dispose_db, init_db, get_sessionmaker as _gsm
 from routers import alerts, attacks, audit, auth, chat, forensics, geo, honeypots, profiling, reports, risk_score, sessions
 from services import forensic_runner
 from services import audit_service
@@ -207,11 +210,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ---------- health (public) ----------
 @app.get("/health", tags=["meta"])
 async def health() -> Dict[str, Any]:
-    from sqlalchemy import text as _text
-    from db import get_sessionmaker as _gsm
-
-    import httpx as _httpx
-
     es_ok = await get_es().ping()
 
     pg_ok = False
@@ -224,7 +222,7 @@ async def health() -> Dict[str, Any]:
 
     ollama_ok = False
     try:
-        async with _httpx.AsyncClient(timeout=3) as _c:
+        async with httpx.AsyncClient(timeout=3) as _c:
             r = await _c.get(f"{settings.ollama_host}/api/tags")
             ollama_ok = r.status_code == 200
     except Exception:

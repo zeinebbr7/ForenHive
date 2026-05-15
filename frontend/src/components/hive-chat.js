@@ -278,8 +278,8 @@ _root.innerHTML = `
       <!-- eyes -->
       <circle cx="20" cy="28" r="5" fill="white"/>
       <circle cx="34" cy="28" r="5" fill="white"/>
-      <circle cx="21" cy="29" r="2.5" fill="#1a0810"/>
-      <circle cx="35" cy="29" r="2.5" fill="#1a0810"/>
+      <circle id="ghost-pupil-l" cx="21" cy="29" r="2.5" fill="#1a0810"/>
+      <circle id="ghost-pupil-r" cx="35" cy="29" r="2.5" fill="#1a0810"/>
     </svg>
     <div id="hive-fab-shadow"></div>
   </button>
@@ -699,3 +699,30 @@ document.querySelectorAll('.hive-chip').forEach(c => c.addEventListener('click',
 document.addEventListener('click', e => {
   if (_open && !_hid('hive-window').contains(e.target) && !_hid('hive-fab').contains(e.target)) _closeChat();
 });
+
+// ── ghost eyes follow mouse ─────────────────────────────────────────────────
+(function(){
+  var EYES = [
+    {id:'ghost-pupil-l', cx:21, cy:29},
+    {id:'ghost-pupil-r', cx:35, cy:29}
+  ];
+  var MAX_R = 2.2;
+  document.addEventListener('mousemove', function(e){
+    var fab = document.getElementById('hive-fab');
+    if(!fab) return;
+    var svg = fab.querySelector('svg');
+    if(!svg) return;
+    var rect = svg.getBoundingClientRect();
+    var mouseX = (e.clientX - rect.left) * (54 / rect.width);
+    var mouseY = (e.clientY - rect.top)  * (58 / rect.height);
+    EYES.forEach(function(eye){
+      var el = document.getElementById(eye.id);
+      if(!el) return;
+      var dx = mouseX - eye.cx, dy = mouseY - eye.cy;
+      var dist = Math.sqrt(dx*dx + dy*dy);
+      var s = dist > MAX_R ? MAX_R/dist : 1;
+      el.setAttribute('cx', eye.cx + dx*s);
+      el.setAttribute('cy', eye.cy + dy*s);
+    });
+  });
+})();

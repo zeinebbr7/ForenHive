@@ -8,10 +8,16 @@
     <span id="ev-run-status" style="font-size:12px;color:var(--text3)"></span>
     <button class="btn btn-primary btn-sm" id="ev-run-btn"> Run Analysis Now</button>
     <button class="btn btn-gh btn-sm" id="ev-refresh">Refresh</button>
-    <button class="btn btn-gh btn-sm" id="ev-stix-cowrie"  title="Export Cowrie logs as STIX 2.1 bundle">⬇ STIX · Cowrie</button>
-    <button class="btn btn-gh btn-sm" id="ev-stix-dionaea" title="Export Dionaea logs as STIX 2.1 bundle">⬇ STIX · Dionaea</button>
-    <button class="btn btn-gh btn-sm" id="ev-stix-galah"   title="Export Galah logs as STIX 2.1 bundle">⬇ STIX · Galah</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-cowrie"  title="Export Cowrie logs as STIX 2.1 bundle">↓ STIX · Cowrie</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-dionaea" title="Export Dionaea logs as STIX 2.1 bundle">↓ STIX · Dionaea</button>
+    <button class="btn btn-gh btn-sm" id="ev-stix-galah"   title="Export Galah logs as STIX 2.1 bundle">↓ STIX · Galah</button>
   </div>
+</div>
+
+<div class="fkpi-row">
+  <div class="fkpi" style="border-color:#f0b42955"><div class="fkpi-label">Total Logs</div><div class="fkpi-val" id="ev-count" style="color:var(--gold)">0</div><div class="fkpi-sub">raw entries</div></div>
+  <div class="fkpi" style="border-color:#2dd4bf55"><div class="fkpi-label">SHA-256 Sealed</div><div class="fkpi-val" id="ev-sealed" style="color:#2dd4bf">0</div><div class="fkpi-sub">integrity verified</div></div>
+  <div class="fkpi" style="border-color:#3b82f655"><div class="fkpi-label">Active Source</div><div class="fkpi-val" id="ev-source-kpi" style="color:#3b82f6">—</div><div class="fkpi-sub">honeypot filter</div></div>
 </div>
 
 <div class="card mb-16">
@@ -32,7 +38,7 @@
 <div class="card">
   <div class="card-h">
     <div class="card-t">Raw Logs</div>
-    <div class="card-sub"><span id="ev-count">0</span> entries · <span id="ev-sealed">0</span> SHA-256 sealed</div>
+    <div class="card-sub">raw honeypot logs · SHA-256 sealed entries</div>
   </div>
   <div id="ev-rows"><div class="alert info">Loading…</div></div>
 </div>
@@ -43,7 +49,7 @@
       <div class="ev-drawer-title">Log Detail</div>
       <div class="ev-drawer-sid" id="ev-drawer-sid">—</div>
     </div>
-    <button class="ev-drawer-close" id="ev-drawer-close" title="Close (Esc)">✕</button>
+    <button class="ev-drawer-close" id="ev-drawer-close" title="Close (Esc)">×</button>
   </div>
   <div class="ev-drawer-body" id="ev-drawer-body"></div>
 </div>
@@ -121,7 +127,7 @@
       drawerEl.querySelector('#ev-drawer-sid').textContent = n.source_ip || '—';
       const rows = [];
       rows.push(`<div class="ev-d-hero"><div class="ev-d-ip">${esc(n.source_ip || '—')}</div><span class="badge ${hpColor}">${esc(n.honeypot || '?')}</span></div>`);
-      if (n.username || n.password) rows.push(`<div class="ev-d-cred">👤 ${esc(n.username || '?')} &nbsp;/&nbsp; 🔑 ${esc(n.password || '?')}</div>`);
+      if (n.username || n.password) rows.push(`<div class="ev-d-cred">User: ${esc(n.username || '?')} &nbsp;/&nbsp;  ${esc(n.password || '?')}</div>`);
       if (n.command) rows.push(`<div class="ev-d-cmd">$ ${esc(n.command)}</div>`);
       if (n.http_path) rows.push(`<div class="ev-d-cmd">${esc(n.http_method||'GET')} ${esc(n.http_path)}</div>`);
       rows.push(`<div class="ev-d-section">Event</div>`);
@@ -208,6 +214,8 @@
       allItems = items;
       $('#ev-count').textContent = items.length;
       $('#ev-sealed').textContent = items.filter(it => it.sha256 || (it.raw && it.raw.sha256)).length;
+      const hpSrc = $('#ev-hp').value;
+      const srcEl = $('#ev-source-kpi'); if (srcEl) srcEl.textContent = hpSrc || 'All';
       if (!items.length) { $('#ev-rows').innerHTML = `<div class="alert info">No logs matching these filters.</div>`; return; }
       $('#ev-rows').innerHTML = items.map((ev, i) => {
         const n = evNormalize(ev);
@@ -386,12 +394,12 @@
       if (s.status === 'completed') {
         clearInterval(pollInterval); pollInterval = null;
         setRunning(false);
-        runStatus.textContent = '✅ Completed! Refreshing...';
+        runStatus.textContent = 'Done Completed! Refreshing...';
         setTimeout(() => location.reload(), 2000);
       } else if (['error', 'failed', 'timeout'].includes(s.status)) {
         clearInterval(pollInterval); pollInterval = null;
         setRunning(false);
-        runStatus.textContent = `❌ Failed: ${s.error || s.status}`;
+        runStatus.textContent = `Failed Failed: ${s.error || s.status}`;
       } else {
         runStatus.textContent = `Status: ${s.status}`;
       }
@@ -403,7 +411,7 @@
     runStatus.textContent = 'Queuing analysis...';
     try {
       await api._call('/api/forensics/run', { method: 'POST' });
-      runStatus.textContent = '✅ Queued — may take 2–5 min.';
+      runStatus.textContent = 'Done Queued — may take 2–5 min.';
       startPolling();
     } catch (e) {
       setRunning(false);

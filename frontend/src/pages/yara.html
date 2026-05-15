@@ -1,11 +1,11 @@
 <div class="page-head">
   <div>
-    <div class="section-tag" style="margin-bottom:8px">🦠 YARA</div>
+    <div class="section-tag" style="margin-bottom:8px">YARA</div>
     <h2 class="page-title">Détection <span>malware</span></h2>
     <div class="page-sub">Scan YARA des binaires capturés par Dionaea · <span id="yara-count">—</span> fichier(s) analysé(s).</div>
   </div>
   <div class="page-actions">
-    <button class="btn btn-gh btn-sm" id="yara-refresh">🔄 Actualiser</button>
+    <button class="btn btn-gh btn-sm" id="yara-refresh">Actualiser</button>
   </div>
 </div>
 
@@ -59,7 +59,7 @@
 (async function(){
   const { fmt, esc, $ } = FH;
 
-  const SEV_ICON = { critical:'🔴', high:'🟠', medium:'🟡', low:'🔵' };
+  const SEV_ICON = { critical:'●', high:'●', medium:'●', low:'●' };
   const SEV_BADGE = { critical:'red', high:'red', medium:'gold', low:'blue' };
 
   function sevClass(s){ return 'sev-'+(s||'low').toLowerCase(); }
@@ -88,7 +88,7 @@
       $('#k-crit').textContent = critCount;
 
       if (!infected.length) {
-        $('#yara-body').innerHTML = '<div class="alert info">✅ Aucun fichier infecté détecté dans les binaires Dionaea.</div>';
+        $('#yara-body').innerHTML = '<div class="alert info">Done Aucun fichier infecté détecté dans les binaires Dionaea.</div>';
         return;
       }
 
@@ -104,11 +104,11 @@
           <div class="yara-head" data-idx="${i}">
             <div>
               <div class="flex gap-8 items-c" style="flex-wrap:wrap">
-                <span class="badge ${SEV_BADGE[topSev]||'blue'}">${SEV_ICON[topSev]||'🔵'} ${topSev.toUpperCase()}</span>
-                <span class="badge gold">🦠 ${(r.matches||[]).length} règle(s)</span>
+                <span class="badge ${SEV_BADGE[topSev]||'blue'}">${SEV_ICON[topSev]||'●'} ${topSev.toUpperCase()}</span>
+                <span class="badge gold">${(r.matches||[]).length} règle(s)</span>
               </div>
               <div class="yara-hash">${esc(r.sha256 || '—')}</div>
-              <div class="yara-file">📁 ${esc(r.filepath || '—')}</div>
+              <div class="yara-file">${esc(r.filepath || '—')}</div>
             </div>
             <div></div>
             <span style="font-size:18px;color:var(--text3);padding-left:8px" class="yara-toggle">▶</span>
@@ -120,12 +120,12 @@
               const ref  = m.meta && m.meta.reference  || '';
               const author = m.meta && m.meta.author   || '';
               return `<div class="rule-row">
-                <div style="font-size:22px;padding-top:2px">${SEV_ICON[sev]||'🔵'}</div>
+                <div style="font-size:22px;padding-top:2px">${SEV_ICON[sev]||'●'}</div>
                 <div style="flex:1;min-width:0">
                   <div class="rule-name ${sevClass(sev)}">${esc(m.rule)}</div>
                   <div class="rule-ns">namespace: ${esc(m.namespace||'—')}${author?' · '+esc(author):''}</div>
                   ${desc ? `<div class="rule-desc">${esc(desc)}</div>` : ''}
-                  ${ref  ? `<div class="rule-ref">📎 ${esc(ref)}</div>` : ''}
+                  ${ref  ? `<div class="rule-ref">${esc(ref)}</div>` : ''}
                   ${(m.strings||[]).length ? `
                     <div class="rule-strings">
                       ${(m.strings||[]).map(s => `<span class="tag mono" style="font-size:10px">offset:${s.offset} <b>${esc(s.identifier)}</b></span>`).join('')}

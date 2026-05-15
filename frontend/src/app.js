@@ -76,10 +76,10 @@ const Auth = {
     const me = await api.login(email, password);
     return me;
   },
-  logout() { api.clear(); location.href = (location.pathname.includes('/pages/') ? '' : 'pages/') + 'login.html'; },
+  logout() { api.clear(); location.href = 'src/pages/login.html'; },
   require() {
     const u = this.current();
-    if (!u) { location.href = (location.pathname.includes('/pages/') ? '' : 'pages/') + 'login.html'; return null; }
+    if (!u) { location.href = 'src/pages/login.html'; return null; }
     return u;
   },
   can(page) {
@@ -169,7 +169,7 @@ const Router = {
     try {
       if (typeof window.__pageCleanup === 'function') { try { window.__pageCleanup(); } catch(e){} }
       window.__pageCleanup = null;
-      const res = await fetch('pages/' + page + '.html?v=4', {cache: 'no-store'});
+      const res = await fetch('src/pages/' + page + '.html', {cache: 'no-store'});
       const html = await res.text();
       content.innerHTML = html;
       content.querySelectorAll('script').forEach(old => {
@@ -228,7 +228,7 @@ async function initAppShell() {
   const role = ROLES[cur.role] || ROLES.analyst;
   $('#sb-role').className = `sb-role ${cur.role}`;
   $('#sb-role').innerHTML = `<span class="sb-role-dot"></span>${role.label}`;
-  $('#tb-avatar').textContent = role.icon;
+  if ($('#tb-avatar')) $('#tb-avatar').textContent = role.icon;
   $('#tb-name').textContent = cur.email.split('@')[0];
   $('#tb-role').textContent = role.label;
   buildSidebar(cur);

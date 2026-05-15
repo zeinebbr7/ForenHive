@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/style.css?v=1778788793">
+<link rel="stylesheet" href="assets/style.css?v=1778835558">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -22,7 +22,6 @@
   <!-- ═══ SIDEBAR ═══ -->
   <aside class="sidebar" id="sidebar">
     <div class="sb-brand">
-      <span class="sb-brand-hex"></span>
       <span class="sb-brand-name">FORENHIVE</span>
       <span class="sb-brand-badge">v1.0</span>
     </div>
@@ -44,7 +43,6 @@
         </button>
         <div class="tb-live"><span class="tb-live-dot"></span>LIVE · <span id="tb-time">--:--:--</span></div>
         <div class="tb-user">
-          <div class="tb-avatar" id="tb-avatar"></div>
           <div>
             <div class="tb-name" id="tb-name">—</div>
             <div class="tb-role" id="tb-role">—</div>
@@ -63,10 +61,10 @@
 <!-- Modal (réutilisable) -->
 <div class="modal-bd" id="modal-bd"><div class="modal" id="modal"></div></div>
 
-<script src="assets/api.js?v=1778788793"></script>
-<script src="assets/app.js?v=1778788793"></script>
+<script src="src/api.js"></script>
+<script src="src/app.js"></script>
 <script type="module">
-  import './assets/components/hive-chat.js';
+  import './src/components/hive-chat.js';
 </script>
 <script>
   // Theme — persisted in localStorage, applied before first paint via inline script below is ideal,

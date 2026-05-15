@@ -38,8 +38,7 @@ const api = {
     const res = await fetch(this.base + path, Object.assign({}, opts, { headers }));
     if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/me')) {
       this.clear();
-      const loginUrl = location.pathname.includes('/pages/') ? 'login.html' : 'pages/login.html';
-      window.location.href = loginUrl;
+      window.location.href = '/login';
       throw new Error('session expired');
     }
     const ct = res.headers.get('content-type') || '';
@@ -127,7 +126,7 @@ const api = {
 
   /* ─── forensic PDF reports (Sprint 4) ─── */
   forensicSessions(limit = 50) { return this._call('/api/reports/forensic/sessions?limit=' + limit); },
-  forensicSessionDetail(sid)   { return this._call('/api/reports/forensic/' + encodeURIComponent(sid) + '/detail'); },
+  forensicSessionEnrichment(sid) { return this._call('/api/reports/forensic/sessions/' + encodeURIComponent(sid) + '/enrichment'); },
   forensicReportPreviewUrl(sid) {
     return this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/preview';
   },
@@ -165,4 +164,4 @@ const api = {
   health()         { return fetch(this.base + '/health').then(r => r.json()).catch(() => ({ status:'down' })); },
 };
 
-window.api = api;
+export default api;

@@ -1,0 +1,66 @@
+export const ROLES = {
+  admin:   { label: 'Admin',   color: 'gold', icon: '⬡' },
+  analyst: { label: 'Analyst', color: 'blue', icon: '◈' },
+};
+
+export const NAV_GROUPS = [
+  { label: null, items: [
+    { id: 'stats', label: 'Dashboard', icon: '⊞', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Monitoring', items: [
+    { id: 'alerts', label: 'Alerts / Incidents', icon: '⚑', roles: ['admin','analyst'] },
+    { id: 'health', label: 'Health Check',       icon: '♥', roles: ['admin'] },
+  ]},
+  { label: 'Forensic Analysis', items: [
+    { id: 'timeline',       label: 'Timeline',              icon: '⏱', roles: ['admin','analyst'] },
+    { id: 'reconstruction', label: 'Attack Reconstruction', icon: '⬡', roles: ['admin','analyst'] },
+    { id: 'evidence',       label: 'Evidence Logs',         icon: '⊛', roles: ['admin','analyst'] },
+    { id: 'profiling',      label: 'Profiling',             icon: '◈', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Threat Intelligence', items: [
+    { id: 'geomap', label: 'Geo Map', icon: '⊕', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Reports', items: [
+    { id: 'reporting', label: 'Reporting', icon: '⊟', roles: ['admin','analyst'] },
+  ]},
+  { label: 'Honeypot Management', items: [
+    { id: 'honeypots', label: 'Honeypots', icon: '⬡', roles: ['admin'] },
+  ]},
+  { label: 'Access Control', items: [
+    { id: 'access', label: 'Access Control', icon: '⊕', roles: ['admin'] },
+  ]},
+];
+
+export const NAV = NAV_GROUPS.flatMap(g => g.items);
+
+export const HONEYPOTS = ['cowrie', 'dionaea', 'galah'];
+export const SENSORS   = ['zeek'];
+export const ALL_SOURCES = [...HONEYPOTS, ...SENSORS];
+
+export const SOURCE_META = {
+  cowrie:  { label: 'Cowrie',  icon: '⬡', kind: 'honeypot', color: 'var(--gold)',    desc: 'SSH/Telnet' },
+  dionaea: { label: 'Dionaea', icon: '⬡', kind: 'honeypot', color: 'var(--red2)',    desc: 'Malware capture' },
+  galah:   { label: 'Galah',   icon: '⬡', kind: 'honeypot', color: 'var(--purple2)', desc: 'LLM Web' },
+  zeek:    { label: 'Zeek',    icon: '⬡', kind: 'sensor',   color: 'var(--blue2)',   desc: 'NDR · Passive IDS' },
+};
+
+export const COUNTRIES_ISO = {
+  RU:'🇷🇺', CN:'🇨🇳', US:'🇺🇸', BR:'🇧🇷', IN:'🇮🇳', DE:'🇩🇪', NL:'🇳🇱', UA:'🇺🇦',
+  IR:'🇮🇷', VN:'🇻🇳', TN:'🇹🇳', KP:'🇰🇵', FR:'🇫🇷', GB:'🇬🇧', JP:'🇯🇵', KR:'🇰🇷',
+  TR:'🇹🇷', PL:'🇵🇱', IT:'🇮🇹', ES:'🇪🇸', RO:'🇷🇴', CA:'🇨🇦', MX:'🇲🇽', AU:'🇦🇺',
+  CH:'🇨🇭', BE:'🇧🇪', SE:'🇸🇪', FI:'🇫🇮', NO:'🇳🇴', DK:'🇩🇰', AT:'🇦🇹', IE:'🇮🇪',
+  ZA:'🇿🇦', EG:'🇪🇬', NG:'🇳🇬', KE:'🇰🇪', MA:'🇲🇦', DZ:'🇩🇿', LY:'🇱🇾', SA:'🇸🇦',
+  AE:'🇦🇪', IL:'🇮🇱', SG:'🇸🇬', HK:'🇭🇰', TW:'🇹🇼', ID:'🇮🇩', TH:'🇹🇭', MY:'🇲🇾',
+  PH:'🇵🇭', PK:'🇵🇰', BD:'🇧🇩', AR:'🇦🇷', CL:'🇨🇱', CO:'🇨🇴', PE:'🇵🇪', VE:'🇻🇪',
+};
+
+export const COUNTRY_LATLNG = {
+  RU:[55,37],CN:[35,105],US:[39,-98],BR:[-14,-52],IN:[21,78],DE:[51,10],NL:[52,5],
+  UA:[49,32],IR:[32,53],VN:[16,108],TN:[34,9],KP:[40,127],FR:[46,2],GB:[54,-2],
+  JP:[36,138],KR:[36,128],TR:[39,35],PL:[52,19],IT:[42,12],ES:[40,-4],RO:[46,25],
+  CA:[56,-106],MX:[23,-102],AU:[-25,134],CH:[47,8],BE:[50,4],SE:[62,16],FI:[64,26],
+  NO:[62,10],DK:[56,10],AT:[47,14],IE:[53,-8],ZA:[-30,24],EG:[27,30],NG:[10,8],
+  KE:[0,37],MA:[31,-7],DZ:[28,1],LY:[27,17],SA:[24,45],AE:[24,54],IL:[31,35],
+  SG:[1.3,103],HK:[22,114],TW:[23,121],ID:[-5,118],TH:[15,101],MY:[4,102],PH:[12,122],
+  PK:[30,70],BD:[24,90],AR:[-38,-63],CL:[-35,-71],CO:[4,-72],PE:[-9,-75],VE:[8,-66],
+};

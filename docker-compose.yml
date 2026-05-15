@@ -237,16 +237,13 @@ services:
     networks:
       - backend-net
 
-  # ── FRONTEND (nginx serving SPA) ─────────────────────
+  # ── FRONTEND (Vite build → nginx SPA) ───────────────
   forenhive-frontend:
-    image: nginx:alpine
+    build: ./frontend
     container_name: forenhive-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - backend-net
     depends_on:

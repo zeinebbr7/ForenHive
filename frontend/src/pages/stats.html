@@ -397,11 +397,11 @@
           runBtn.innerHTML = ' Running…';
           setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 8000);
         } else {
-          runBtn.innerHTML = '⚠ Already running';
+          runBtn.innerHTML = 'WARN Already running';
           setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 3000);
         }
       } catch (e) {
-        runBtn.innerHTML = '⚠ Already running';
+        runBtn.innerHTML = 'WARN Already running';
         setTimeout(() => { runBtn.innerHTML = ' Run Analysis'; runBtn.disabled = false; }, 3000);
       }
     });
