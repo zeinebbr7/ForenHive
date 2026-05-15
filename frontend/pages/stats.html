@@ -375,40 +375,10 @@
           )
     );
 
-    /* ── Severity distribution (donut + KPI cards) ────────── */
-    const sevCard = h('div', { className: 'st-chart-card', style: { marginTop: '14px' } },
-      h('div', { className: 'st-chart-title' }, 'Severity Distribution'),
-      h('div', { className: 'st-chart-sub' }, 'Event classification · forensic engine scoring'),
-      h('div', { className: 'st-sev-wrap' },
-        h(RC.PieChart, { width: 180, height: 180 },
-          h(RC.Pie, {
-              data: filteredSevData, dataKey: 'value', nameKey: 'name',
-              cx: 85, cy: 85, innerRadius: 50, outerRadius: 78,
-              paddingAngle: 2,
-            },
-            ...filteredSevData.map((entry, i) =>
-              h(RC.Cell, { key: i, fill: entry.color + 'cc', stroke: entry.color, strokeWidth: 1 })
-            )
-          ),
-          h(RC.Tooltip, { contentStyle: TOOLTIP_STYLE })
-        ),
-        h('div', { className: 'st-sev-kpis' },
-          ...filteredSevData.map((entry, i) =>
-            h('div', { key: i, className: 'st-sev-kpi', style: { borderColor: entry.color + '44' } },
-              h('div', { className: 'st-sev-kpi-label' }, entry.name),
-              h('div', { className: 'st-sev-kpi-val', style: { color: entry.color } }, entry.value),
-              h('div', { className: 'st-sev-kpi-pct' }, ((entry.value / filteredSevTotal) * 100).toFixed(1) + '%')
-            )
-          )
-        )
-      )
-    );
-
     return h('div', null,
       kpiRow,
       h('div', { className: 'st-grid-2' }, hourlyCard, splitCard),
-      h('div', { className: 'st-grid-2' }, ipsCard, portsCard),
-      sevCard
+      h('div', { className: 'st-grid-2' }, ipsCard, portsCard)
     );
   }
 

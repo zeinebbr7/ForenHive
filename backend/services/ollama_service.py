@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -36,6 +38,28 @@ MITRE ATT&CK techniques: {mitre}
 YARA matches: {yara}
 
 Assessment:"""
+
+_RECOMMENDATIONS_PROMPT = """\
+You are a senior SOC analyst. Based on the attack data below, output exactly 3 to 5 actionable \
+defensive recommendations as a JSON array. Each item must have exactly these three fields:
+  "priority": one of IMMEDIATE, HIGH, or MEDIUM
+  "action": a concise imperative sentence (max 20 words)
+  "rationale": one sentence explaining why (max 20 words)
+
+Output ONLY the JSON array — no markdown, no explanation, no extra text.
+
+Attack data:
+  Source IP     : {ip}
+  Country       : {country}
+  Risk score    : {risk_score}/100 ({risk_level})
+  Honeypots hit : {honeypots}
+  MITRE          : {mitre}
+  Auth attempts  : {auth_attempts} (success: {auth_success})
+  YARA matches   : {yara}
+  Tor/VPN        : tor={is_tor}, vpn={is_vpn}
+  Commands seen  : {commands}
+
+JSON array:"""
 
 
 class OllamaService:
@@ -74,6 +98,121 @@ class OllamaService:
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    def _recs_cache_key(self, ip: str) -> str:
+        return hashlib.sha256(f"recs:{ip}".encode()).hexdigest()[:32]
+
+    async def _get_cached_recs(self, ip: str) -> Optional[List[Dict]]:
+        es = get_es()
+        doc = await es.get_doc(self.settings.es_index_profiles, self._recs_cache_key(ip))
+        if not doc:
+            return None
+        updated = doc.get("updated_at")
+        if not updated:
+            return None
+        try:
+            ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if (datetime.now(timezone.utc) - ts).total_seconds() > self.settings.ollama_cache_ttl:
+            return None
+        return doc.get("ollama_recommendations")
+
+    async def _store_cached_recs(self, ip: str, recs: List[Dict]) -> None:
+        es = get_es()
+        await es.index_doc(
+            self.settings.es_index_profiles,
+            self._recs_cache_key(ip),
+            {
+                "ip": ip,
+                "ollama_recommendations": recs,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    def _parse_recs(self, raw: str) -> Optional[List[Dict]]:
+        """Extract a JSON array from the LLM response (strips markdown fences)."""
+        raw = re.sub(r"^```[a-z]*\s*", "", raw.strip(), flags=re.MULTILINE)
+        raw = re.sub(r"\s*```$", "", raw.strip(), flags=re.MULTILINE)
+        start, end = raw.find("["), raw.rfind("]")
+        if start == -1 or end == -1:
+            return None
+        try:
+            items = json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+        result = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            result.append({
+                "priority":  str(item.get("priority", "MEDIUM")).upper(),
+                "action":    str(item.get("action", "")),
+                "rationale": str(item.get("rationale", "")),
+            })
+        return result if result else None
+
+    async def generate_recommendations(
+        self,
+        ip: str,
+        *,
+        country: str = "unknown",
+        risk_score: int = 0,
+        risk_level: str = "INFO",
+        honeypots: List[str] | None = None,
+        mitre: List[str] | None = None,
+        auth_attempts: int = 0,
+        auth_success: bool = False,
+        yara: List[str] | None = None,
+        is_tor: bool = False,
+        is_vpn: bool = False,
+        commands: List[str] | None = None,
+        use_cache: bool = True,
+    ) -> List[Dict]:
+        """Return 3-5 Ollama-generated SOC recommendations for a given attacker."""
+        if use_cache:
+            cached = await self._get_cached_recs(ip)
+            if cached:
+                return cached
+
+        prompt = _RECOMMENDATIONS_PROMPT.format(
+            ip=ip,
+            country=country,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            honeypots=", ".join(honeypots or []) or "unknown",
+            mitre=", ".join(mitre or []) or "none",
+            auth_attempts=auth_attempts,
+            auth_success=auth_success,
+            yara=", ".join(yara or []) or "none",
+            is_tor=is_tor,
+            is_vpn=is_vpn,
+            commands=", ".join((commands or [])[:5]) or "none",
+        )
+
+        recs: Optional[List[Dict]] = None
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.ollama_timeout) as client:
+                resp = await client.post(
+                    f"{self.settings.ollama_host}/api/generate",
+                    json={
+                        "model": self.settings.ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.15, "num_predict": 400},
+                    },
+                )
+                resp.raise_for_status()
+                raw = (resp.json().get("response") or "").strip()
+                recs = self._parse_recs(raw)
+        except Exception as exc:
+            log.warning("Ollama recommendations call failed for %s: %s", ip, exc)
+
+        if not recs:
+            recs = [{"priority": "HIGH", "action": f"Block {ip} at perimeter firewall.", "rationale": "Ollama unavailable — fallback recommendation."}]
+
+        await self._store_cached_recs(ip, recs)
+        return recs
 
     async def analyze_profile(
         self, profile: Dict[str, Any], *, use_cache: bool = True
