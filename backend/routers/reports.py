@@ -22,7 +22,6 @@ from models.report import (
 )
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
-from services.ollama_service import get_ollama
 from services.profiler import build_profile
 from services.report_service import get_reports
 
@@ -273,8 +272,6 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "name":       s.get("name", ""),
             "points":     s.get("points", 0),
             "max_points": s.get("max", 0),
-            "value":      s.get("value", ""),
-            "why":        s.get("why", ""),
         }
         for s in ctx.get("score_signals", [])
     ]
@@ -504,14 +501,8 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "asn_domain":   privacy.get("asn_domain", ""),
         },
         "ptr_hostname": dns.get("ptr", ""),
-        # Deterministic recommendations
-        "recommendations":         recommendations,
-        # Ollama recommendations (passed through from _build_forensic_context)
-        "ollama_recommendations":  ctx.get("ollama_recommendations", []),
-        # VirusTotal fields (fix: these were missing and caused "Quota épuisé" always)
-        "vt_available": ctx.get("vt_available", True),
-        "vt_malicious": ctx.get("vt_malicious", 0),
-        "vt_family":    ctx.get("vt_family", ""),
+        # Recommendations
+        "recommendations":   recommendations,
         "extra_references":  [],
     }
 
@@ -688,6 +679,12 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.warning("pre-flight aggregation failed for %s: %s", source_ip, exc)
 
+    # Prefer PG risk_score (forensic engine) over profiler estimate
+    if pg_row.get("risk_score") is not None:
+        risk_score = int(pg_row["risk_score"])
+    else:
+        risk_score = int(profile_dict.get("risk_score") or 0)
+    risk_label, risk_color = _risk_label_color(risk_score)
 
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
@@ -758,7 +755,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         elif t_id == "T1078":
             evidence = "Login réussi confirmé"
         elif "T1059" in t_id:
-            evidence = f"{len(cmds)} commandes — " + ", ".join((c.get("input") or "")[:20] for c in cmds[:2])
+            evidence = f"{len(cmds)} commandes — " + ", ".join(c.get("input","")[:20] for c in cmds[:2])
         elif "T1552" in t_id:
             evidence = "Credentials lus"
         elif t_id == "T1105":
@@ -767,7 +764,7 @@ async def _build_forensic_context(session_id: str) -> dict:
 
     # Add from commands if not already present
     for c in cmds:
-        inp = c.get("input") or ""
+        inp = c.get("input", "")
         if any(x in inp for x in ["wget", "curl", "tftp"]) and "T1105" not in mitre_seen:
             mitre_seen.add("T1105")
             mitre_rows.append({"id": "T1105", "technique": "Ingress Tool Transfer", "tactic": "Command & Control", "confidence": "100%", "evidence": f"wget {inp[:40]}"})
@@ -806,41 +803,28 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    # Always prefer forensic_sessions.signal_breakdown (snapshot at engine run time
-    # for this specific session). Only fall back to ip_risk_scores if the per-session
-    # breakdown is missing — ip_risk_scores is a sliding 24h window and changes as
-    # new sessions from the same IP arrive, causing the displayed score to drift.
-    sb = pg_row.get("signal_breakdown") or {}
-    irs_risk_score: Optional[int] = None
-    if not sb and source_ip:
+    # For unified sessions, ip_risk_scores is always authoritative (forensic_sessions
+    # may hold a stale breakdown from a prior engine run before re-enrichment).
+    # For per-session reports, fall back to forensic_sessions.signal_breakdown.
+    sb = {}
+    if source_ip:
         try:
             async with session_scope() as db:
                 irs = await db.execute(
-                    text("SELECT signal_breakdown, risk_score FROM ip_risk_scores WHERE source_ip = CAST(:ip AS INET) LIMIT 1"),
+                    text("SELECT signal_breakdown FROM ip_risk_scores WHERE source_ip = CAST(:ip AS INET) LIMIT 1"),
                     {"ip": source_ip},
                 )
                 irs_row = irs.mappings().fetchone()
                 if irs_row and irs_row["signal_breakdown"]:
                     sb = irs_row["signal_breakdown"]
-                    # Use the unified risk score that matches this breakdown
-                    if irs_row["risk_score"] is not None:
-                        irs_risk_score = int(irs_row["risk_score"])
         except Exception:
             pass
+    if not sb:
+        sb = pg_row.get("signal_breakdown") or {}
     if sb:
         score_signals = _build_score_signals_from_breakdown(sb)
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
-
-    # Use ip_risk_scores score when breakdown came from there (keeps gauge consistent
-    # with signal bars). Fall back to forensic_sessions, then profiler estimate.
-    if irs_risk_score is not None:
-        risk_score = irs_risk_score
-    elif pg_row.get("risk_score") is not None:
-        risk_score = int(pg_row["risk_score"])
-    else:
-        risk_score = int(profile_dict.get("risk_score") or 0)
-    risk_label, risk_color = _risk_label_color(risk_score)
 
     # ── Malware intelligence — also check PG enrichment_data for captured files ──
     if not profile_dict.get("yara_matches") and not profile_dict.get("ioc_hashes") and source_ip:
@@ -938,27 +922,6 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception:
             pass
 
-    # ── Ollama recommendations ─────────────────────────────────────────────────
-    ollama_recs: List[Dict[str, Any]] = []
-    if source_ip:
-        try:
-            ollama_recs = await get_ollama().generate_recommendations(
-                ip=source_ip,
-                country=profile_dict.get("country", "unknown"),
-                risk_score=risk_score,
-                risk_level=risk_label,
-                honeypots=honeypots_hit or ([detail.get("honeypot")] if detail.get("honeypot") else []),
-                mitre=[r["id"] for r in mitre_rows],
-                auth_attempts=int(pg_row.get("login_attempts") or len(logins)),
-                auth_success=auth_success,
-                yara=profile_dict.get("yara_matches") or [],
-                is_tor=bool(profile_dict.get("is_tor")),
-                is_vpn=bool(profile_dict.get("is_vpn")),
-                commands=[c.get("input", "") for c in cmds[:5]],
-            )
-        except Exception as exc:
-            log.warning("Ollama recommendations failed for %s: %s", source_ip, exc)
-
     return {
         "session_id": session_id,
         "session": detail,
@@ -987,7 +950,6 @@ async def _build_forensic_context(session_id: str) -> dict:
         "vt_malicious": int(profile_dict.get("vt_malicious") or 0),
         "vt_available": bool(profile_dict.get("vt_available", True)),
         "vt_family": profile_dict.get("vt_family") or "",
-        "ollama_recommendations": ollama_recs,
         # Jinja2 helper
         "enumerate": enumerate,
     }
@@ -1084,12 +1046,9 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
                 text(
                     """
                     SELECT session_id, source_ip, honeypot_type,
-                           risk_score, risk_level, confidence,
-                           kill_chain_phase, kill_chain_stage,
+                           risk_score, kill_chain_phase, kill_chain_stage,
                            primary_technique, forensic_narrative,
-                           mitre_techniques, honeypots_hit, honeypot_count,
-                           sessions_count, login_attempts, success_count,
-                           attack_velocity, started_at, ended_at
+                           mitre_techniques, started_at
                     FROM forensic_sessions
                     ORDER BY started_at DESC
                     LIMIT :lim
@@ -1109,21 +1068,10 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
                     "source_ip":         row["source_ip"],
                     "honeypot_type":     row["honeypot_type"],
                     "risk_score":        row["risk_score"],
-                    "risk_level":        row["risk_level"],
-                    "confidence":        row["confidence"],
                     "kill_chain_phase":  row["kill_chain_phase"],
                     "kill_chain_stage":  row["kill_chain_stage"],
                     "primary_technique": row["primary_technique"],
-                    "forensic_narrative": row["forensic_narrative"],
-                    "mitre_techniques":  mitre,
-                    "honeypots_hit":     row["honeypots_hit"] or [],
-                    "honeypot_count":    row["honeypot_count"],
-                    "sessions_count":    row["sessions_count"],
-                    "login_attempts":    row["login_attempts"],
-                    "success_count":     row["success_count"],
-                    "attack_velocity":   row["attack_velocity"],
                     "started_at":        row["started_at"],
-                    "ended_at":          row["ended_at"],
                 })
     except Exception as exc:
         log.warning("forensic_sessions: PG query failed (%s), falling back to ES", exc)
@@ -1148,275 +1096,6 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
             "primary_technique": (mitre[0] if mitre else r.get("primary_technique")),
             "started_at":        r.get("started_at"),
         })
-    return out
-
-
-@router.get("/forensic/sessions/{session_id}/enrichment")
-async def forensic_session_enrichment(session_id: str) -> Dict[str, Any]:
-    """Return all enrichment + tool outputs for one session, used by the
-    Attack Reconstruction UI: VirusTotal, Shodan, WHOIS, IPLocate, AbuseIPDB,
-    YARA matches, MITRE technique details, captured-file SHA-256.
-
-    Reads from forensic_sessions + ip_enrichment_cache + file_analysis tables.
-    All blocks are optional — missing tools just return null/empty.
-    """
-    from sqlalchemy import text
-    from db import session_scope
-
-    out: Dict[str, Any] = {
-        "session_id": session_id,
-        "source_ip": None,
-        "honeypot_type": None,
-        "virustotal": None,
-        "shodan": None,
-        "whois": None,
-        "iplocate": None,
-        "abuseipdb": None,
-        "yara": [],
-        "captured_files": [],
-        "mitre": [],
-    }
-
-    source_ip: str = ""
-    honeypot_type: str = ""
-    enrichment_data: Dict[str, Any] = {}
-    mitre_techniques: List[str] = []
-
-    try:
-        async with session_scope() as db:
-            r = await db.execute(text("""
-                SELECT source_ip, honeypot_type, enrichment_data,
-                       mitre_techniques, honeypots_hit
-                FROM forensic_sessions WHERE session_id = :sid LIMIT 1
-            """), {"sid": session_id})
-            row = r.mappings().fetchone()
-            if not row:
-                return out
-            source_ip = row["source_ip"] or ""
-            honeypot_type = row["honeypot_type"] or ""
-            ed = row["enrichment_data"] or {}
-            enrichment_data = ed if isinstance(ed, dict) else (json.loads(ed) if ed else {})
-            mt = row["mitre_techniques"] or []
-            if isinstance(mt, str):
-                try: mt = json.loads(mt)
-                except Exception: mt = []
-            mitre_techniques = mt if isinstance(mt, list) else []
-    except Exception as exc:
-        log.warning("enrichment lookup failed for %s: %s", session_id, exc)
-        return out
-
-    out["source_ip"] = source_ip
-    out["honeypot_type"] = honeypot_type
-
-    # ── ip_enrichment_cache → Shodan / WHOIS / IPLocate / AbuseIPDB ──
-    enrichment: Dict[str, Any] = {}
-    cache_hit = False
-    if source_ip:
-        try:
-            async with session_scope() as db:
-                er = await db.execute(
-                    text("SELECT data FROM ip_enrichment_cache WHERE ip = :ip LIMIT 1"),
-                    {"ip": source_ip},
-                )
-                erow = er.mappings().fetchone()
-                if erow:
-                    d = erow["data"]
-                    enrichment = d if isinstance(d, dict) else json.loads(d or "{}")
-                    cache_hit = bool(enrichment)
-        except Exception as exc:
-            log.debug("ip_enrichment_cache lookup failed: %s", exc)
-
-    # ── Live fallback: call IPLocate + AbuseIPDB directly if cache is empty ──
-    if source_ip and not cache_hit:
-        from services.enrichment import get_enrichment as _get_enrichment
-        svc = _get_enrichment()
-        live_iplocate, live_abuseipdb = {}, {}
-        try:
-            import asyncio
-            live_iplocate, live_abuseipdb = await asyncio.gather(
-                svc.iplocate(source_ip),
-                svc.abuseipdb(source_ip),
-                return_exceptions=False,
-            )
-        except Exception as exc:
-            log.debug("live enrichment fallback failed for %s: %s", source_ip, exc)
-        if isinstance(live_iplocate, dict) and live_iplocate:
-            enrichment["geo"] = {
-                "country":     live_iplocate.get("country"),
-                "country_iso": live_iplocate.get("country_iso"),
-                "city":        live_iplocate.get("city"),
-                "asn":         live_iplocate.get("asn"),
-                "as_org":      live_iplocate.get("as_org"),
-            }
-            enrichment["privacy"] = {
-                "is_tor":       live_iplocate.get("is_tor", False),
-                "is_vpn":       live_iplocate.get("is_vpn", False),
-                "is_proxy":     live_iplocate.get("is_proxy", False),
-            }
-        if isinstance(live_abuseipdb, dict) and live_abuseipdb:
-            enrichment["reputation"] = {
-                "abuseipdb_score": live_abuseipdb.get("abuseipdb_score"),
-                "total_reports":   live_abuseipdb.get("abuseipdb_reports"),
-                "usage_type":      live_abuseipdb.get("usage_type"),
-                "isp":             live_abuseipdb.get("isp"),
-                "domain":          live_abuseipdb.get("domain"),
-                "is_tor":          live_abuseipdb.get("is_tor", False),
-            }
-
-    rep     = enrichment.get("reputation")     or {}
-    whois   = enrichment.get("whois")          or {}
-    privacy = enrichment.get("privacy")        or {}
-    threat  = enrichment.get("threat_summary") or {}
-    dns     = enrichment.get("dns")            or {}
-    geo     = enrichment.get("geo")            or {}
-
-    shodan_ports = threat.get("open_ports") or []
-    shodan_vulns = threat.get("known_vulns") or []
-    shodan_tags  = threat.get("shodan_tags") or []
-    shodan_hosts = list(dict.fromkeys(
-        ([dns.get("ptr")] if dns.get("ptr") else []) +
-        (threat.get("hostnames") or []) +
-        (rep.get("hostnames") or [])
-    ))
-    # Always include shodan block (even if empty) so the frontend always renders it
-    out["shodan"] = {
-        "_source": "cache" if cache_hit else "none",
-        "ports": shodan_ports,
-        "hostnames": shodan_hosts,
-        "vulns": shodan_vulns,
-        "tags": shodan_tags,
-    }
-
-    # Always include whois block
-    out["whois"] = {
-        "_source": "cache" if (cache_hit and whois) else "none",
-        "registrar":     whois.get("registrar"),
-        "organization":  whois.get("organization") or whois.get("org"),
-        "country":       whois.get("country"),
-        "created":       whois.get("created") or whois.get("creation_date"),
-        "updated":       whois.get("updated"),
-        "abuse_email":   whois.get("abuse_email") or whois.get("abuse"),
-        "net_range":     whois.get("net_range") or whois.get("network"),
-        "asn":           whois.get("asn"),
-    }
-
-    # Always include iplocate block
-    out["iplocate"] = {
-        "_source": "live" if (not cache_hit and geo) else ("cache" if geo else "none"),
-        "country":      geo.get("country") or rep.get("country_name"),
-        "country_iso":  geo.get("country_iso") or rep.get("country_code"),
-        "city":         geo.get("city"),
-        "region":       geo.get("region"),
-        "lat":          geo.get("lat"),
-        "lon":          geo.get("lon"),
-        "asn":          geo.get("asn") or rep.get("asn"),
-        "as_org":       geo.get("as_org") or rep.get("as_org") or rep.get("isp"),
-        "is_tor":       bool(privacy.get("is_tor") or threat.get("is_tor")),
-        "is_vpn":       bool(privacy.get("is_vpn") or threat.get("is_vpn")),
-        "is_proxy":     bool(privacy.get("is_proxy")),
-        "is_hosting":   bool(privacy.get("is_hosting")),
-        "is_datacenter":bool(privacy.get("is_datacenter")),
-        "is_bogon":     bool(privacy.get("is_bogon")),
-    }
-
-    # Always include abuseipdb block
-    out["abuseipdb"] = {
-        "_source": "live" if (not cache_hit and rep) else ("cache" if rep else "none"),
-        "abuse_score":   rep.get("abuseipdb_score") or rep.get("abuse_score"),
-        "total_reports": rep.get("total_reports"),
-        "last_reported": rep.get("last_reported_at"),
-        "usage_type":    rep.get("usage_type"),
-        "isp":           rep.get("isp"),
-        "domain":        rep.get("domain"),
-        "country":       rep.get("country_name") or geo.get("country"),
-    }
-
-    # ── YARA matches ──
-    yara_raw = enrichment_data.get("yara_matches") or []
-    if isinstance(yara_raw, str):
-        try: yara_raw = json.loads(yara_raw)
-        except Exception: yara_raw = []
-    if isinstance(yara_raw, list):
-        for ym in yara_raw:
-            if isinstance(ym, dict):
-                out["yara"].append({
-                    "rule":        ym.get("rule") or ym.get("name"),
-                    "namespace":   ym.get("namespace"),
-                    "tags":        ym.get("tags") or [],
-                    "meta":        ym.get("meta") or {},
-                })
-            elif ym:
-                out["yara"].append({"rule": str(ym), "namespace": None, "tags": [], "meta": {}})
-
-    # ── Captured files (Dionaea) + VirusTotal lookup ──
-    captured_sha = enrichment_data.get("captured_file") or enrichment_data.get("sha256")
-    if captured_sha:
-        try:
-            async with session_scope() as db:
-                fr = await db.execute(text("""
-                    SELECT sha256, file_size, file_type, virustotal_result, yara_result
-                    FROM file_analysis WHERE sha256 = :sha LIMIT 1
-                """), {"sha": captured_sha})
-                frow = fr.mappings().fetchone()
-                if frow:
-                    vt = frow["virustotal_result"]
-                    if isinstance(vt, str):
-                        try: vt = json.loads(vt)
-                        except Exception: vt = {}
-                    vt = vt or {}
-                    stats = vt.get("last_analysis_stats") or vt.get("stats") or {}
-                    out["captured_files"].append({
-                        "sha256":   frow["sha256"],
-                        "size":     frow["file_size"],
-                        "type":     frow["file_type"],
-                    })
-                    if vt:
-                        out["virustotal"] = {
-                            "sha256":     frow["sha256"],
-                            "malicious":  stats.get("malicious", vt.get("malicious", 0)),
-                            "suspicious": stats.get("suspicious", 0),
-                            "harmless":   stats.get("harmless", 0),
-                            "undetected": stats.get("undetected", 0),
-                            "engines":    vt.get("engines_count") or sum(stats.values()) if stats else None,
-                            "family":     vt.get("popular_threat_classification", {}).get("suggested_threat_label") if isinstance(vt.get("popular_threat_classification"), dict) else vt.get("family"),
-                            "names":      (vt.get("names") or [])[:5],
-                            "first_seen": vt.get("first_submission_date") or vt.get("first_seen"),
-                            "permalink":  vt.get("permalink") or (f"https://www.virustotal.com/gui/file/{frow['sha256']}" if frow["sha256"] else None),
-                        }
-                else:
-                    out["captured_files"].append({"sha256": captured_sha, "size": None, "type": None})
-        except Exception as exc:
-            log.debug("file_analysis lookup failed: %s", exc)
-            out["captured_files"].append({"sha256": captured_sha, "size": None, "type": None})
-
-    # ── MITRE technique details (id + tactic mapping) ──
-    _TACTICS = {
-        "T1110": ("Brute Force", "Credential Access"),
-        "T1078": ("Valid Accounts", "Defense Evasion"),
-        "T1190": ("Exploit Public-Facing Application", "Initial Access"),
-        "T1059": ("Command and Scripting Interpreter", "Execution"),
-        "T1105": ("Ingress Tool Transfer", "Command and Control"),
-        "T1046": ("Network Service Discovery", "Discovery"),
-        "T1071": ("Application Layer Protocol", "Command and Control"),
-        "T1133": ("External Remote Services", "Initial Access"),
-        "T1136": ("Create Account", "Persistence"),
-        "T1003": ("OS Credential Dumping", "Credential Access"),
-        "T1082": ("System Information Discovery", "Discovery"),
-        "T1083": ("File and Directory Discovery", "Discovery"),
-        "T1018": ("Remote System Discovery", "Discovery"),
-        "T1021": ("Remote Services", "Lateral Movement"),
-        "T1486": ("Data Encrypted for Impact", "Impact"),
-    }
-    for t in mitre_techniques:
-        tid = str(t).split(".")[0]
-        name, tactic = _TACTICS.get(tid, ("", ""))
-        out["mitre"].append({
-            "id":     str(t),
-            "name":   name or "Technique",
-            "tactic": tactic or "Unknown",
-            "url":    f"https://attack.mitre.org/techniques/{tid}/",
-        })
-
     return out
 
 

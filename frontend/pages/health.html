@@ -2,7 +2,7 @@
   <div>
     <div class="section-tag" style="margin-bottom:8px">Monitoring · System</div>
     <h2 class="page-title">Health <span>Check</span></h2>
-    <div class="page-sub">ForenHive platform status · Zeek sensor on <span class="mono">eno12399</span>.</div>
+    <div class="page-sub">ForenHive platform status · data pipeline · 4 stages · Zeek NDR sensor on <span class="mono">eno12399</span>.</div>
   </div>
   <div class="page-actions">
     <span class="mono" id="last-check" style="font-size:11px;color:var(--text3)">—</span>
@@ -12,42 +12,36 @@
 
 <div class="hc-pipeline mb-20" id="pipeline-strip">
   <div class="hc-pipe-step" id="pipe-c1">
-    <div class="hc-pipe-icon">1</div>
+    <div class="hc-pipe-icon">01</div>
     <div class="hc-pipe-label">Honeypots</div>
     <div class="hc-pipe-sub">Cowrie · Dionaea · Galah · Zeek</div>
     <div class="hc-pipe-dot" id="pdot-c1"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c2">
-    <div class="hc-pipe-icon">2</div>
+    <div class="hc-pipe-icon">02</div>
     <div class="hc-pipe-label">ETL Pipeline</div>
     <div class="hc-pipe-sub">Filebeat → Logstash → ES</div>
     <div class="hc-pipe-dot" id="pdot-c2"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c3">
-    <div class="hc-pipe-icon">3</div>
+    <div class="hc-pipe-icon">03</div>
     <div class="hc-pipe-label">Forensic Engine</div>
     <div class="hc-pipe-sub">YARA · Enrichment · Ollama</div>
     <div class="hc-pipe-dot" id="pdot-c3"></div>
   </div>
   <div class="hc-pipe-arrow">→</div>
   <div class="hc-pipe-step" id="pipe-c4">
-    <div class="hc-pipe-icon">4</div>
-    <div class="hc-pipe-label">Backend</div>
-    <div class="hc-pipe-sub">FastAPI · PostgreSQL</div>
+    <div class="hc-pipe-icon">04</div>
+    <div class="hc-pipe-label">Application</div>
+    <div class="hc-pipe-sub">FastAPI · PostgreSQL · Nginx</div>
     <div class="hc-pipe-dot" id="pdot-c4"></div>
-  </div>
-  <div class="hc-pipe-arrow">→</div>
-  <div class="hc-pipe-step" id="pipe-c5">
-    <div class="hc-pipe-icon">5</div>
-    <div class="hc-pipe-label">Interface</div>
-    <div class="hc-pipe-sub">React SPA · Nginx</div>
-    <div class="hc-pipe-dot" id="pdot-c5"></div>
   </div>
 </div>
 
 <div style="font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:1.4px;margin-bottom:10px;">Services &amp; Containers</div>
+<div id="svc-chart-root" style="margin-bottom:10px"></div>
 <div class="hc-svc-grid mb-20" id="svc-grid">
   <div class="alert info" style="grid-column:1/-1">Checking services…</div>
 </div>
@@ -69,10 +63,23 @@
   </div>
 </div>
 
-
 <div class="card mb-20">
-  <div class="card-h"><div class="card-t">Audit trail</div><div class="card-sub">Last 10 actions</div></div>
-  <div id="audit-list" class="scroll-y" style="max-height:260px"><div class="alert info">Loading…</div></div>
+  <div class="card-h">
+    <div class="card-t">Raw NDR stream · Zeek</div>
+    <div class="card-sub">Last 20 lines</div>
+  </div>
+  <div id="zeek-stream"><div class="alert info">Loading…</div></div>
+</div>
+
+<div class="grid-2 mb-20">
+  <div class="card">
+    <div class="card-h"><div class="card-t">Backend FastAPI</div><div class="card-sub" id="api-info">—</div></div>
+    <div id="api-detail" class="mono" style="font-size:11px;line-height:1.8"><div class="alert info">Loading…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="card-t">Audit trail</div><div class="card-sub">Last 10 actions</div></div>
+    <div id="audit-list" class="scroll-y" style="max-height:260px"><div class="alert info">Loading…</div></div>
+  </div>
 </div>
 
 <style>
@@ -91,7 +98,7 @@
 .hc-pipe-arrow { color:var(--text3);font-size:18px;padding:0 8px;flex-shrink:0; }
 .hc-svc-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px; }
 .hc-svc-card { background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;transition:border-color .2s; }
-.hc-svc-card.svc-up   { }
+.hc-svc-card.svc-up   { border-color:rgba(0,191,165,.3); }
 .hc-svc-card.svc-down { border-color:rgba(201,61,85,.35); }
 .hc-svc-card.svc-warn { border-color:rgba(232,184,75,.3); }
 .hc-svc-top { display:flex;align-items:center;justify-content:space-between;margin-bottom:8px; }
@@ -118,7 +125,7 @@
   const R = window.React, RD = window.ReactDOM, RC = window.Recharts;
   const TOOLTIP_STYLE = { backgroundColor:'#0d111e', border:'1px solid #1e2538', borderRadius:'6px', fontFamily:"'JetBrains Mono',monospace", fontSize:'11px', color:'#e0e6f0' };
   const AXIS_TICK = { fontSize:10, fill:'#8892a4', fontFamily:"'JetBrains Mono',monospace" };
-  let __protoRoot = null, __ipsRoot = null;
+  let __protoRoot = null, __ipsRoot = null, __svcRoot = null;
 
   const SVC_META = {
     api:           { name:'Backend API',    icon:'API', layer:'c4', desc:'FastAPI · Python 3.11' },
@@ -128,7 +135,7 @@
     cowrie:        { name:'Cowrie',        icon:'SSH', layer:'c1', desc:'SSH :2222 · Telnet :2223' },
     dionaea:       { name:'Dionaea',       icon:'SMB', layer:'c1', desc:'SMB · FTP · MySQL…' },
     galah:         { name:'Galah',         icon:'HTTP',layer:'c1', desc:'HTTP :8080/:8888' },
-    zeek:          { name:'Zeek',          icon:'NDR', layer:'c1', desc:'eno12399 · passive' },
+    zeek:          { name:'Zeek NDR',      icon:'NDR', layer:'c1', desc:'eno12399 · passive' },
     filebeat:      { name:'Filebeat',      icon:'FB',  layer:'c2', desc:'tail honeypot logs' },
     logstash:      { name:'Logstash',      icon:'LS',  layer:'c2', desc:'ECS · GeoIP · filters' },
     nginx:         { name:'Nginx',         icon:'NGX', layer:'c5', desc:'reverse proxy · SPA' },
@@ -201,9 +208,12 @@
         $('#zeek-ips').innerHTML = ipData.length ? '' : '<div class="alert info">No source IPs.</div>';
       }
 
+      $('#zeek-stream').innerHTML = normalized.slice(0, 20).length
+        ? normalized.slice(0, 20).map(n => `<div class="zlog"><span class="t">${fmt.time(n.timestamp)}</span><span class="ip">${esc(n.source_ip || '—')}</span><span class="m">${esc(n.message || n.event_action || '—')}${n.dest_port ? ' → :'+esc(n.dest_port) : ''}</span></div>`).join('')
+        : '<div class="alert info">No events.</div>';
       setPipeDot('#pdot-c1', items.length > 0 ? 'up' : 'warn');
     } catch (e) {
-      ['zeek-protos','zeek-ips'].forEach(id => $('#'+id).innerHTML = `<div class="alert err">${esc(e.message)}</div>`);
+      ['zeek-protos','zeek-ips','zeek-stream'].forEach(id => $('#'+id).innerHTML = `<div class="alert err">${esc(e.message)}</div>`);
       setPipeDot('#pdot-c1', 'warn');
     }
   }
@@ -227,7 +237,7 @@
       $('#svc-grid').innerHTML = entries.map(([name, st]) => {
         const status = (typeof st==='string') ? st : (st.status||'unknown');
         const detail = (typeof st==='object' && (st.version||st.detail||st.message)) || '';
-        const meta   = SVC_META[name] || { name, icon:'⬡', desc:'' };
+        const meta   = SVC_META[name] || { name, icon:'SVC', desc:'' };
         const dotCls = DOTCLS[status] || '';
         const cardCls = dotCls==='up'?'svc-up':dotCls==='down'?'svc-down':'svc-warn';
         return `<div class="hc-svc-card ${cardCls}">
@@ -238,17 +248,48 @@
           <div class="hc-svc-detail">${esc(detail||meta.desc||(status==='unknown'?'not exposed by /health':'—'))}</div>
         </div>`;
       }).join('');
+      // Services overview Recharts bar
+      if (R && RD && RC) {
+        const hh = R.createElement;
+        const svcData = entries.map(([name, st]) => {
+          const status = (typeof st==='string') ? st : (st.status||'unknown');
+          const meta = SVC_META[name] || { name, icon:'SVC' };
+          const col = DOTCLS[status]==='up' ? '#00bfa5cc' : DOTCLS[status]==='down' ? '#c93d55cc' : '#e8b84bcc';
+          const val = DOTCLS[status]==='up' ? 3 : DOTCLS[status]==='down' ? 1 : 2;
+          return { name: meta.name || name, status, col, val };
+        });
+        function SvcChart() {
+          return hh(RC.ResponsiveContainer,{width:'100%',height:Math.max(80, svcData.length*20+10)},
+            hh(RC.BarChart,{data:svcData,layout:'vertical',margin:{top:0,right:80,bottom:0,left:0}},
+              hh(RC.XAxis,{type:'number',hide:true,domain:[0,3]}),
+              hh(RC.YAxis,{type:'category',dataKey:'name',width:130,tick:{...AXIS_TICK,fill:'#c8d0de'},tickLine:false,axisLine:false}),
+              hh(RC.Tooltip,{contentStyle:TOOLTIP_STYLE,formatter:(_,__,props)=>[props.payload.status.toUpperCase(),'Status']}),
+              hh(RC.Bar,{dataKey:'val',name:'Status',radius:[0,3,3,0],barSize:11},
+                ...svcData.map((d,i)=>hh(RC.Cell,{key:i,fill:d.col}))
+              )
+            )
+          );
+        }
+        if (!__svcRoot) __svcRoot = RD.createRoot(document.getElementById('svc-chart-root'));
+        __svcRoot.render(hh(SvcChart,null));
+      }
+
       const stOf = name => { const v=components[name]; return typeof v==='string'?v:(v&&v.status)||'unknown'; };
       const c1 = ['cowrie','dionaea','galah','zeek'].map(stOf);
       setPipeDot('#pdot-c1', c1.includes('up')?'up':c1.includes('down')?'warn':'warn');
       setPipeDot('#pdot-c2', stOf('elasticsearch')==='up'?'up':stOf('elasticsearch')==='down'?'down':'warn');
       setPipeDot('#pdot-c3', stOf('ollama')==='up'?'up':'warn');
       const c4 = stOf('api');
-      setPipeDot('#pdot-c4', c4==='up'||c4==='ok'?'up':c4==='down'?'down':'warn');
-      setPipeDot('#pdot-c5', 'up');
+      const c4nginx = stOf('nginx');
+      const c4st = (c4==='up'||c4==='ok') && (c4nginx==='up'||c4nginx==='unknown') ? 'up' : (c4==='down'&&c4nginx==='down') ? 'down' : 'warn';
+      setPipeDot('#pdot-c4', c4st);
+      $('#api-info').textContent = `v${h.version||'1.0'} · ${h.status||'unknown'}`;
+      $('#api-detail').innerHTML = `<pre class="pre">${esc(JSON.stringify(h, null, 2))}</pre>`;
     } catch (e) {
       $('#svc-grid').innerHTML = `<div class="alert err" style="grid-column:1/-1">Backend unreachable: ${esc(e.message)}</div>`;
       ['#pdot-c2','#pdot-c3','#pdot-c4'].forEach(id => setPipeDot(id, 'down'));
+      $('#api-info').textContent = 'offline';
+      $('#api-detail').innerHTML = `<div class="alert err">${esc(e.message)}</div>`;
     }
   }
 
@@ -278,6 +319,7 @@
   window.__pageCleanup = () => {
     if (__protoRoot) { __protoRoot.unmount(); __protoRoot = null; }
     if (__ipsRoot)   { __ipsRoot.unmount();   __ipsRoot = null; }
+    if (__svcRoot)   { __svcRoot.unmount();   __svcRoot = null; }
   };
 })();
 </script>
