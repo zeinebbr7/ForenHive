@@ -121,21 +121,21 @@ class ESClient:
         )
         if isinstance(level, int):
             if level >= 4:
-                return Severity.critical
+                return Severity.CRITICAL
             if level == 3:
-                return Severity.high
+                return Severity.HIGH
             if level == 2:
-                return Severity.medium
-            return Severity.low
+                return Severity.MEDIUM
+            return Severity.LOW
         if isinstance(level, str):
             level = level.lower()
             if level in ("critical", "emerg", "alert"):
-                return Severity.critical
+                return Severity.CRITICAL
             if level in ("high", "error", "err"):
-                return Severity.high
+                return Severity.HIGH
             if level in ("medium", "warn", "warning"):
-                return Severity.medium
-        return Severity.low
+                return Severity.MEDIUM
+        return Severity.LOW
 
     @staticmethod
     def _f(src: Dict[str, Any], *keys: str):

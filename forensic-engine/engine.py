@@ -39,6 +39,7 @@ from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
 from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
+from risk_thresholds import ALERT_INDEX_MIN
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
 from ioc_extractor import IOCExtractor
@@ -672,13 +673,13 @@ class ForensicEngine:
     # ── Phase 8: Alert evaluation ─────────────────────────────────────────────
 
     def run_alert_evaluation(self, scored: list) -> dict:
-        """Index alerts for sessions with risk_score >= 60 into forenhive-alerts ES index."""
+        """Index alerts for sessions with risk_score >= ALERT_INDEX_MIN into forenhive-alerts ES index."""
         log.info("Evaluating sessions for alerts...")
         alert_count = 0
         failed_count = 0
 
         for session_id, source_ip, risk_score, level, honeypot_type in scored:
-            if risk_score < 60:
+            if risk_score < ALERT_INDEX_MIN:
                 continue
 
             try:

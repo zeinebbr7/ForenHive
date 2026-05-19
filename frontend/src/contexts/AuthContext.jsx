@@ -3,8 +3,15 @@ import api from '../api';
 
 const AuthContext = createContext(null);
 
+const VALID_ROLES = ['admin', 'analyst'];
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => api.user());
+  const [user, setUser] = useState(() => {
+    const u = api.user();
+    if (u && VALID_ROLES.includes(u.role)) return u;
+    api.clear();
+    return null;
+  });
 
   const login = useCallback(async (email, password) => {
     const me = await api.login(email, password);

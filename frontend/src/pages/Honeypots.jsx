@@ -12,6 +12,79 @@ const HONEYPOTS_META = [
   { id: 'galah',   name: 'Galah',   ports: 'HTTP:8080 · HTTPS:8888',                   desc: 'LLM-driven HTTP Honeypot (Ollama Mistral 7B) — dynamic responses',  container: 'forenhive-galah'   },
 ];
 
+const HP_DETAILS = {
+  cowrie: {
+    tagline: 'Low-interaction SSH/Telnet honeypot with a banking-DB persona.',
+    about: [
+      'Cowrie pretends to be a real Linux server called db-prod — a banking database machine that looks poorly secured.',
+      'When an attacker brute-forces their way in via SSH or Telnet, they land inside a fake shell. Every command they type, every file they try to download, every tool they run is silently recorded.',
+      'Nothing is real — the filesystem is fake, credentials work but lead nowhere — but the attacker has no way to know that.',
+    ],
+    profile: [
+      ['Hostname', 'db-prod'],
+      ['SSH banner', 'SSH-2.0-OpenSSH_8.9p1'],
+      ['Auth backend', 'UserDB (etc/userdb.txt)'],
+      ['Theme', 'Simulated banking database server'],
+    ],
+    ports: [
+      ['SSH', '2222', 'Interactive shell capture'],
+      ['Telnet', '2223', 'Telnet brute-force capture'],
+    ],
+    accounts: [
+      { user: 'root',    passwords: 'root, toor, admin, password, 123456, mongo2024, banking123' },
+      { user: 'mongodb', passwords: 'mongodb, mongo123, password' },
+      { user: 'dbadmin', passwords: 'dbadmin, Admin@2024' },
+      { user: 'ubuntu',  passwords: 'ubuntu, changeme' },
+    ],
+    notes: 'Logs every command, file upload, and credential attempt to cowrie.json for replay and timeline reconstruction.',
+  },
+  dionaea: {
+    tagline: 'Multi-protocol low-interaction honeypot — collects malware binaries.',
+    about: [
+      'Dionaea opens a wide range of fake network services — SMB file shares, SQL databases, MongoDB, HTTP, MQTT — all on one container.',
+      'It does not give attackers a real shell. Instead it speaks just enough of each protocol to lure automated malware into uploading itself, letting us capture the binary for analysis.',
+      'This is where worms like Mirai get caught: they scan for open ports, find what looks like a vulnerable service, and drop their payload directly into our collection folder.',
+    ],
+    profile: [
+      ['SMB persona',  'Windows Server 2019 · WORKGROUP'],
+      ['MSSQL persona','Microsoft SQL Server 2019 (SQLSERVER2019)'],
+      ['Modules',      'smb, mssql, mysql, http, ftp, tftp, sip, pcap'],
+    ],
+    ports: [
+      ['SMB',       '445',   'EternalBlue / SMB exploits'],
+      ['MSSQL',     '1433',  'SQL Server probes'],
+      ['MySQL',     '3306',  'MySQL brute-force'],
+      ['MongoDB',   '27017', 'Unauth Mongo scans'],
+      ['HTTP',      '80',    'Web exploit probes'],
+      ['HTTPS',     '443',   'TLS / cert harvesting'],
+      ['RPC',       '135',   'Windows RPC'],
+      ['Telnet',    '23',    'Legacy Telnet'],
+      ['PPTP',      '1723',  'VPN scans'],
+      ['MQTT',      '1883',  'IoT broker probes'],
+      ['Memcached', '11211', 'Amp / reflection scans'],
+    ],
+    notes: 'Captured malware binaries are stored under /opt/dionaea/var/lib/dionaea/binaries/ for offline analysis (Mirai variants commonly seen).',
+  },
+  galah: {
+    tagline: 'LLM-driven HTTP honeypot — Ollama generates believable responses on the fly.',
+    about: [
+      'Galah is a web server that does not serve a real site — it uses a local LLM (Mistral 7B via Ollama) to invent a plausible response to whatever HTTP request it receives.',
+      'Scanner tools and exploit bots probe websites looking for admin panels, login pages, or known CVE paths. Galah generates realistic-looking pages for each probe instead of returning the same static 404, making it very hard to fingerprint as a honeypot.',
+      'Responses are cached so repeated probes get the same answer, and every request is logged for analysis.',
+    ],
+    profile: [
+      ['LLM provider', 'Ollama'],
+      ['Model',        'Mistral 7B (configurable via OLLAMA_MODEL)'],
+      ['Cache',        'cache.db (replays prior LLM answers)'],
+    ],
+    ports: [
+      ['HTTP',  '8080', 'Plain HTTP scraping & exploit attempts'],
+      ['HTTPS', '8888', 'TLS — fake admin panels, APIs'],
+    ],
+    notes: 'Each request is answered by a freshly generated response, so scanners cannot fingerprint on static content.',
+  },
+};
+
 const HP_COLORS = { cowrie: '#8C1A2B', dionaea: '#ff5050', galah: '#b464ff' };
 const TOOLTIP_STYLE = {
   backgroundColor: '#0d111e', border: '1px solid #1e2538', borderRadius: '6px',
@@ -47,7 +120,78 @@ function HpChart({ barData }) {
   );
 }
 
-function HpCard({ h, stats, containerStatus, services, onAction }) {
+function HpDetailsPanel({ h, onClose }) {
+  const d = HP_DETAILS[h.id];
+  if (!d) return null;
+  return (
+    <>
+      <div className="hp-panel-backdrop" onClick={onClose} />
+      <aside className={`hp-panel hp-${h.id}`} role="dialog" aria-label={`${h.name} details`}>
+        <div className="hp-panel-h">
+          <div>
+            <div className="hp-panel-tag">Honeypot config</div>
+            <div className="hp-panel-title">{h.name}</div>
+            <div className="hp-panel-sub">{h.container}</div>
+          </div>
+          <button className="hp-panel-x" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        <div className="hp-panel-tagline">{d.tagline}</div>
+
+        <div className="hp-panel-section">
+          <div className="hp-panel-sectk">What it does</div>
+          <div className="hp-panel-about">
+            {d.about.map((p, i) => <p key={i}>{p}</p>)}
+          </div>
+        </div>
+
+        <div className="hp-panel-section">
+          <div className="hp-panel-sectk">Profile</div>
+          {d.profile.map(([k, v]) => (
+            <div key={k} className="hp-panel-kv"><b>{k}</b><span>{v}</span></div>
+          ))}
+        </div>
+
+        <div className="hp-panel-section">
+          <div className="hp-panel-sectk">Ports exposed</div>
+          <table className="hp-panel-ports">
+            <thead>
+              <tr><th>Service</th><th>Port</th><th>Captures</th></tr>
+            </thead>
+            <tbody>
+              {d.ports.map(([svc, port, note]) => (
+                <tr key={svc + port}>
+                  <td>{svc}</td>
+                  <td className="mono">{port}</td>
+                  <td>{note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {d.accounts && (
+          <div className="hp-panel-section">
+            <div className="hp-panel-sectk">Simulated accounts (userdb)</div>
+            {d.accounts.map(a => (
+              <div key={a.user} className="hp-panel-acct">
+                <div className="hp-panel-user">{a.user}</div>
+                <div className="hp-panel-pw">{a.passwords}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="hp-panel-section">
+          <div className="hp-panel-sectk">Notes</div>
+          <div className="hp-panel-notes">{d.notes}</div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function HpCard({ h, stats, containerStatus, services, onAction, onShowDetails }) {
   const [actionPending, setActionPending] = useState(null);
   const s = stats[h.id] || { count: 0, last: 0 };
   const ctState = (containerStatus[h.id] || '').toLowerCase();
@@ -116,9 +260,12 @@ function HpCard({ h, stats, containerStatus, services, onAction }) {
           </span>
         )}
       </div>
-      <div style={{ marginTop: 14 }}>
+      <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <button className="btn btn-gh btn-sm" onClick={() => onShowDetails(h.id)}>
+          config
+        </button>
         <a className="btn btn-gh btn-sm" href="/evidence">View logs</a>
-        <a className="btn btn-gh btn-sm" href="/sessions" style={{ marginLeft: 6 }}>Sessions</a>
+        <a className="btn btn-gh btn-sm" href="/sessions">Sessions</a>
       </div>
     </div>
   );
@@ -131,6 +278,14 @@ export default function Honeypots() {
   const [containerStatus, setContainerStatus] = useState({});
   const [services, setServices] = useState({});
   const [barData, setBarData] = useState([]);
+  const [selectedHp, setSelectedHp] = useState(null);
+
+  useEffect(() => {
+    if (!selectedHp) return;
+    const onKey = (e) => { if (e.key === 'Escape') setSelectedHp(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedHp]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -212,9 +367,17 @@ export default function Honeypots() {
             containerStatus={containerStatus}
             services={services}
             onAction={handleAction}
+            onShowDetails={setSelectedHp}
           />
         ))}
       </div>
+
+      {selectedHp && (
+        <HpDetailsPanel
+          h={HONEYPOTS_META.find(x => x.id === selectedHp)}
+          onClose={() => setSelectedHp(null)}
+        />
+      )}
 
       <style>{`
         .hp-card { border:1px solid var(--border); border-radius:10px; background: var(--bg2); padding: 18px; }
@@ -235,6 +398,53 @@ export default function Honeypots() {
         .hp-row:last-child { border-bottom:none; }
         .hp-row b { color: var(--text2); }
         .hp-row .mono { color: var(--gold); }
+
+        .hp-panel-backdrop {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+          z-index: 40; animation: hp-fade 0.18s ease;
+        }
+        .hp-panel {
+          position: fixed; top: 0; right: 0; bottom: 0;
+          width: min(420px, 92vw);
+          background: var(--bg2); border-left: 1px solid var(--border);
+          padding: 22px 22px 28px; overflow-y: auto; z-index: 41;
+          box-shadow: -8px 0 24px rgba(0,0,0,0.4);
+          animation: hp-slide 0.22s ease;
+        }
+        @keyframes hp-fade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes hp-slide { from { transform: translateX(100%) } to { transform: translateX(0) } }
+        .hp-panel.hp-cowrie  { border-left-color: var(--gold); }
+        .hp-panel.hp-dionaea { border-left-color: var(--red2); }
+        .hp-panel.hp-galah   { border-left-color: var(--purple2, #9F6AE0); }
+        .hp-panel-h { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+        .hp-panel-tag { font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color: var(--text3); }
+        .hp-panel-title { font-family:'Rajdhani',sans-serif; font-size:24px; font-weight:700; margin-top:2px; }
+        .hp-panel.hp-cowrie  .hp-panel-title { color: var(--gold); }
+        .hp-panel.hp-dionaea .hp-panel-title { color: var(--red2); }
+        .hp-panel.hp-galah   .hp-panel-title { color: var(--purple2, #9F6AE0); }
+        .hp-panel-sub { font-family:'Share Tech Mono',monospace; font-size:11px; color: var(--text3); margin-top:2px; }
+        .hp-panel-x {
+          background: transparent; border: 1px solid var(--border); color: var(--text2);
+          width: 28px; height: 28px; border-radius: 4px; font-size: 18px; line-height: 1;
+          cursor: pointer;
+        }
+        .hp-panel-x:hover { color: var(--text); border-color: var(--text3); }
+        .hp-panel-tagline { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+        .hp-panel-section { margin-bottom: 18px; }
+        .hp-panel-sectk { font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color: var(--text3); margin-bottom: 8px; }
+        .hp-panel-kv { display:flex; justify-content:space-between; gap:12px; padding:5px 0; font-size:12px; border-bottom:1px dashed var(--border); }
+        .hp-panel-kv b { color: var(--text2); font-weight: 600; }
+        .hp-panel-kv span { color: var(--text); text-align:right; }
+        .hp-panel-ports { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .hp-panel-ports th { text-align: left; color: var(--text3); font-weight: 600; padding: 5px 6px; border-bottom: 1px solid var(--border); font-family:'Share Tech Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+        .hp-panel-ports td { padding: 6px; border-bottom: 1px solid var(--border); color: var(--text); }
+        .hp-panel-ports td.mono { font-family:'JetBrains Mono',monospace; color: var(--gold); }
+        .hp-panel-acct { padding: 6px 0; border-bottom: 1px dashed var(--border); }
+        .hp-panel-user { font-family:'JetBrains Mono',monospace; font-size: 12px; color: var(--gold); font-weight: 600; }
+        .hp-panel-pw { font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--text3); margin-top: 2px; word-break: break-word; }
+        .hp-panel-notes { font-size: 12px; color: var(--text2); line-height: 1.55; }
+        .hp-panel-about { display: flex; flex-direction: column; gap: 8px; }
+        .hp-panel-about p { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text2); line-height: 1.7; }
       `}</style>
     </>
   );

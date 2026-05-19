@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import api from '../api';
 import { flag, evNormalize } from '../utils';
-import { SOURCE_META } from '../constants';
+import { SOURCE_META, RISK_CRITICAL, RISK_HIGH, RISK_MEDIUM } from '../constants';
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#0d111e',
@@ -150,7 +150,7 @@ export default function GeoMap() {
               radius: r, fillColor: clr.fill, color: clr.stroke, weight: 1.5, fillOpacity: 0.85,
             });
             const meta = SOURCE_META[d.honeypot] || { label: d.honeypot || '?', icon: '' };
-            const riskColor = d.risk_score >= 80 ? '#C62828' : d.risk_score >= 60 ? '#b36000' : d.risk_score >= 40 ? '#1565C0' : '#388E3C';
+            const riskColor = d.risk_score >= RISK_CRITICAL ? '#C62828' : d.risk_score >= RISK_HIGH ? '#b36000' : d.risk_score >= RISK_MEDIUM ? '#1565C0' : '#388E3C';
             circle.bindPopup(`<div style="font-family:'JetBrains Mono',monospace;font-size:12px;min-width:180px">
               <div style="font-size:14px;font-weight:700;margin-bottom:6px">${flag(d.geo.country_code)} ${d.ip}</div>
               <div style="color:#aaa;margin-bottom:4px">${d.geo.country_name}${d.geo.city ? ' · ' + d.geo.city : ''}</div>
@@ -224,7 +224,7 @@ export default function GeoMap() {
     <>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}> Geo Map</div>
+          <div className="section-tag" style={{ marginBottom: 8 }}>Geo Map</div>
           <h2 className="page-title">Attacker <span>Map</span></h2>
           <div className="page-sub">Real geographic positions · MaxMind GeoIP enrichment.</div>
         </div>

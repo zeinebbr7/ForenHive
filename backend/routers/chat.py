@@ -59,9 +59,9 @@ async def _groq_reachable(settings) -> bool:
 
 # ── data context ───────────────────────────────────────────────────────────────
 
-async def _safe_pg(session: AsyncSession, query: str) -> list[dict]:
+async def _safe_pg(session: AsyncSession, query: str, params: dict | None = None) -> list[dict]:
     try:
-        result = await session.execute(text(query))
+        result = await session.execute(text(query), params or {})
         cols = list(result.keys())
         return [dict(zip(cols, row)) for row in result.fetchall()]
     except Exception:
@@ -134,7 +134,8 @@ async def build_context(message: str, session: AsyncSession) -> str:
         rows = await _safe_pg(
             session,
             "SELECT session_id, source_ip, risk_score, risk_level, country "
-            "FROM sessions WHERE risk_score >= 60 ORDER BY risk_score DESC LIMIT 10",
+            "FROM sessions WHERE risk_score >= :minrisk ORDER BY risk_score DESC LIMIT 10",
+            {"minrisk": get_settings().risk_high_threshold},
         )
         x = _xml("high_risk_sessions", rows)
         if x:

@@ -37,7 +37,7 @@ export default function Settings() {
     <>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{marginBottom:'8px'}}>⚙ Settings</div>
+          <div className="section-tag" style={{marginBottom:'8px'}}>Settings</div>
           <h2 className="page-title">User <span>Preferences</span></h2>
           <div className="page-sub">Profile, users (admin), sessions.</div>
         </div>

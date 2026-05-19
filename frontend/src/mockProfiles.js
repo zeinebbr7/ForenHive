@@ -1,6 +1,6 @@
 /* ForenHive — Mock suspect profiles for development / soutenance demo
    Load via the "Load Demo Profiles" button in the Profiling page.       */
-window.MOCK_PROFILES = [
+export const MOCK_PROFILES = [
   {
     id: 1001,
     ip: '103.45.67.89', source_ip: '103.45.67.89',

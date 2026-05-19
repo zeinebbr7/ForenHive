@@ -120,7 +120,7 @@ export default function Config() {
     <>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{marginBottom:'8px'}}>⚙ Configuration</div>
+          <div className="section-tag" style={{marginBottom:'8px'}}>Configuration</div>
           <h2 className="page-title">System <span>Settings</span></h2>
           <div className="page-sub">Backend alerting · local honeypot config.</div>
         </div>

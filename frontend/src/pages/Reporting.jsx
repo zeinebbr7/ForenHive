@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api';
 import { fmt, esc } from '../utils';
+import { RISK_MEDIUM, RISK_HIGH, riskLevel } from '../constants';
 
 /* ── helpers ─────────────────────────────────────────────── */
 function scoreCls(s) {
-  return s == null ? 'lo' : s < 40 ? 'lo' : s < 70 ? 'md' : 'hi';
+  if (s == null) return 'lo';
+  if (s >= RISK_HIGH)   return 'hi';
+  if (s >= RISK_MEDIUM) return 'md';
+  return 'lo';
 }
 function scoreLabel(s) {
-  return s == null ? '—' : s >= 70 ? 'CRITICAL' : s >= 40 ? 'ELEVATED' : 'MODERATE';
+  return s == null ? '—' : riskLevel(s);
 }
 
 /* ── session list row ────────────────────────────────────── */

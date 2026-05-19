@@ -151,7 +151,7 @@ export default function Stats() {
     <div style={{ width: '100%' }}>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}> SOC Platform</div>
+          <div className="section-tag" style={{ marginBottom: 8 }}>SOC Platform</div>
           <h2 className="page-title">Dash<span>board</span></h2>
           <div className="page-sub">Live data from Elasticsearch · interactive charts powered by Recharts.</div>
         </div>

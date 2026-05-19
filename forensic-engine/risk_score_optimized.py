@@ -21,6 +21,7 @@ import psycopg2.extras
 from elasticsearch import Elasticsearch
 
 import config
+from risk_thresholds import risk_level
 
 log = logging.getLogger("risk_score_optimized")
 
@@ -93,7 +94,7 @@ class RiskScorer:
             )
 
             risk_score = min(100, sum(raw_signals.values()))
-            risk_level = self._risk_level(risk_score)
+            level = risk_level(risk_score)
 
             active_signals = sum(1 for v in raw_signals.values() if v > 0)
             confidence = self._confidence(active_signals)
@@ -153,7 +154,7 @@ class RiskScorer:
             return {
                 "source_ip":      source_ip,
                 "risk_score":     risk_score,
-                "risk_level":     risk_level,
+                "risk_level":     level,
                 "confidence":     confidence,
                 "active_signals": active_signals,
                 "timestamp":      datetime.utcnow().isoformat() + "Z",
@@ -382,18 +383,6 @@ class RiskScorer:
             return False
 
     @staticmethod
-    def _risk_level(score: int) -> str:
-        if score >= 80:
-            return "CRITICAL"
-        if score >= 60:
-            return "HIGH"
-        if score >= 40:
-            return "MEDIUM"
-        if score >= 20:
-            return "LOW"
-        return "INFO"
-
-    @staticmethod
     def _confidence(active: int) -> str:
         if active >= 4:
             return "HIGH"
@@ -559,15 +548,6 @@ class RiskScorer:
         }
 
 
-def risk_level(score: int) -> str:
-    """Human-readable risk level from numeric score (0-100)."""
-    if score >= 80: return "CRITICAL"
-    if score >= 60: return "HIGH"
-    if score >= 40: return "MEDIUM"
-    if score >= 20: return "LOW"
-    return "INFO"
-
-
 _HIGH_SEV_YARA = {"Mirai_Botnet", "WannaCry_Ransomware", "Emotet_Loader",
                   "Cobalt_Strike", "Metasploit_Payload"}
 
@@ -576,11 +556,16 @@ def score_session_from_data(session_data: dict) -> dict:
     """
     Compute the 6-signal risk score from a single session dict (no DB query).
     Returns: {score, level, confidence, signal_breakdown}
-    """
-    is_private = session_data.get("is_private", False)
 
-    # 1. Reputation (0-25)
-    abuse_score = int(session_data.get("abuse_score", 0))
+    Inputs are coerced and bounded — callers may pass None or strings.
+    """
+    if not isinstance(session_data, dict):
+        session_data = {}
+
+    is_private = bool(session_data.get("is_private", False))
+
+    # 1. Reputation (0-25) — clamp abuse to [0,100]
+    abuse_score = max(0, min(100, int(session_data.get("abuse_score") or 0)))
     if is_private or abuse_score == 0:
         rep = 0
         rep_detail = "private IP — not applicable" if is_private else "AbuseIPDB 0/100 (0 reports)"
@@ -591,14 +576,14 @@ def score_session_from_data(session_data: dict) -> dict:
     else: rep = 0; rep_detail = f"AbuseIPDB {abuse_score}/100 (below threshold)"
 
     # 2. Compromise confirmed (0-25)
-    success = int(session_data.get("success_count", 0))
+    success = max(0, int(session_data.get("success_count") or 0))
     comp = 25 if success > 0 else 0
     comp_detail = (f"{success} successful login(s)" if success
                    else "no successful authentications")
 
     # 3. Brute Force / Automation (0-20)
-    attempts = int(session_data.get("login_attempts", 0))
-    velocity = float(session_data.get("attack_velocity", 0) or 0)
+    attempts = max(0, int(session_data.get("login_attempts") or 0))
+    velocity = max(0.0, float(session_data.get("attack_velocity") or 0))
     if velocity > 50:      bf = 20; bf_detail = f"{velocity:.1f}/s (DoS/flood)"
     elif attempts >= 500:  bf = 15; bf_detail = f"{attempts} attempts (>500 high-volume)"
     elif attempts >= 200:  bf = 10; bf_detail = f"{attempts} attempts (>200 brute force)"
@@ -607,7 +592,7 @@ def score_session_from_data(session_data: dict) -> dict:
 
     # 4. Malware (0-15)
     yara = list(session_data.get("yara_matches") or [])
-    vt = int(session_data.get("vt_malicious", 0))
+    vt = max(0, int(session_data.get("vt_malicious") or 0))
     def _yara_name(m): return m if isinstance(m, str) else m.get("family") or m.get("rule", "")
     if any(_yara_name(m) in _HIGH_SEV_YARA for m in yara):
         mal = 15; mal_detail = f"critical YARA match: {[_yara_name(m) for m in yara]}"

@@ -77,5 +77,7 @@ ENRICH_PARALLEL_WORKERS = int(os.environ.get("ENRICH_PARALLEL_WORKERS", "5"))
 DNS_LOOKUP_TIMEOUT_SEC  = float(os.environ.get("DNS_LOOKUP_TIMEOUT_SEC", "5"))
 
 # ── Profiling ──────────────────────────────────────────────────────────────────
+from risk_thresholds import PROFILE_RISK_MIN as _PROFILE_RISK_MIN
+
 MAX_PROFILES_PER_RUN = int(os.environ.get("MAX_PROFILES_PER_RUN", "5"))
-PROFILE_RISK_THRESHOLD = int(os.environ.get("PROFILE_RISK_THRESHOLD", "60"))
+PROFILE_RISK_THRESHOLD = int(os.environ.get("PROFILE_RISK_THRESHOLD", str(_PROFILE_RISK_MIN)))

@@ -159,6 +159,11 @@ def _es_stats(es) -> dict:
         return {}
 
 
+# Mirror of forensic-engine/risk_thresholds.PROFILE_RISK_MIN.
+# Chatbot runs in its own container so we can't share the module; override via env.
+_HIGH_RISK_MIN = int(os.environ.get("PROFILE_RISK_THRESHOLD", "60"))
+
+
 def _pg_high_risk_sessions(conn, limit: int = 10) -> list[dict]:
     if conn is None:
         return []
@@ -168,11 +173,11 @@ def _pg_high_risk_sessions(conn, limit: int = 10) -> list[dict]:
                 """
                 SELECT session_id, source_ip, risk_score, risk_level, country
                 FROM sessions
-                WHERE risk_score >= 60
+                WHERE risk_score >= %s
                 ORDER BY risk_score DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (_HIGH_RISK_MIN, limit),
             )
             return [dict(r) for r in cur.fetchall()]
     except Exception:

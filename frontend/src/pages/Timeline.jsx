@@ -361,7 +361,7 @@ export default function Timeline() {
     <div>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}> Timeline</div>
+          <div className="section-tag" style={{ marginBottom: 8 }}>Timeline</div>
           <h2 className="page-title">Live <span>Timeline</span></h2>
           <div className="page-sub">Live stream · auto-refresh every 5 s · charts update in real-time.</div>
         </div>

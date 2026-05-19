@@ -153,7 +153,7 @@ export default function Dashboard() {
     <div>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}> Overview</div>
+          <div className="section-tag" style={{ marginBottom: 8 }}>Overview</div>
           <h2 className="page-title">Dash<span>board</span></h2>
           <div className="page-sub">
             Real-time monitoring · <span>{kpis.srcCount}</span> active sources.

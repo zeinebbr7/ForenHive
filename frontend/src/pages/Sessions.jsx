@@ -303,7 +303,7 @@ export default function Sessions() {
     <>
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}> Sessions</div>
+          <div className="section-tag" style={{ marginBottom: 8 }}>Sessions</div>
           <h2 className="page-title">Attack <span>Sessions</span></h2>
           <div className="page-sub">
             Grouped by Cowrie SSH <span className="mono">session_id</span> · <span>{loading ? '—' : sessions.length}</span> sessions.

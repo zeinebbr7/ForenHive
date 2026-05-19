@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { NAV_GROUPS, NAV, ROLES } from '../constants';
+import './hive-chat.js';
 
 function LiveClock() {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}));
@@ -35,6 +36,7 @@ export default function Layout() {
 
   const role = ROLES[user?.role] || ROLES.analyst;
   const currentPage = NAV.find(n => location.pathname === '/' + n.id);
+  const currentGroup = NAV_GROUPS.find(g => g.items?.some(n => location.pathname === '/' + n.id));
 
   const visibleGroups = NAV_GROUPS.map(g => ({
     ...g,
@@ -70,14 +72,22 @@ export default function Layout() {
             </React.Fragment>
           ))}
         </nav>
-        <button className="sb-logout" onClick={logout}>⏻ Sign Out</button>
+        <button className="sb-logout" onClick={logout}> Sign Out</button>
       </aside>
 
       <div className="main">
         <header className="topbar">
-          <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          <div className="tb-left">
             <button className="burger" onClick={() => setSidebarOpen(o => !o)} />
-            <h1 className="tb-title">{currentPage?.label || 'ForenHive'}</h1>
+            <div className="tb-page">
+              {currentGroup?.label && (
+                <div className="tb-group">{currentGroup.label}</div>
+              )}
+              <h1 className="tb-title">{currentPage?.label || 'ForenHive'}</h1>
+              {currentPage?.sub && (
+                <div className="tb-sub">{currentPage.sub}</div>
+              )}
+            </div>
           </div>
           <div className="tb-right">
             <ThemeToggle />
@@ -86,7 +96,8 @@ export default function Layout() {
               LIVE · <LiveClock />
             </div>
             <div className="tb-user">
-              <div>
+              <div className="tb-avatar"></div>
+              <div className="tb-user-info">
                 <div className="tb-name">{user?.email?.split('@')[0] || '—'}</div>
                 <div className="tb-role">{role.label}</div>
               </div>
