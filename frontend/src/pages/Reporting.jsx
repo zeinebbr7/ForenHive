@@ -35,13 +35,13 @@ function SessionRow({ session, active, onSelect }) {
       }}
     >
       <div>
-        <div className="rep-ip" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, color: 'var(--text1)' }}>
+        <div className="rep-ip" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color: 'var(--text1)' }}>
           {session.source_ip || '—'}
         </div>
-        <div className="rep-sid" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+        <div className="rep-sid" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
           {session.session_id}
         </div>
-        <div className="rep-meta" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>
+        <div className="rep-meta" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>
           {(session.honeypot_type || '').toUpperCase()} · {session.primary_technique || '—'}
         </div>
       </div>
@@ -54,14 +54,14 @@ function SessionRow({ session, active, onSelect }) {
             borderRadius: 4,
             fontWeight: 700,
             fontFamily: "'JetBrains Mono',monospace",
-            fontSize: 11,
+            fontSize: 13,
             background: cls === 'hi' ? 'rgba(198,40,40,.12)' : cls === 'md' ? 'rgba(140,26,43,.12)' : 'rgba(21,101,192,.12)',
             color: cls === 'hi' ? 'var(--red2)' : cls === 'md' ? 'var(--gold)' : 'var(--blue2)',
           }}
         >
           {sc == null ? '—' : sc}
         </span>
-        <div className="rep-meta" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>
+        <div className="rep-meta" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
           {session.started_at ? fmt.date(session.started_at) : '—'}
         </div>
       </div>

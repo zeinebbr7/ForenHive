@@ -68,6 +68,8 @@ const api = {
   me()      { return this._call('/api/auth/me'); },
   refresh() { return this._call('/api/auth/refresh', { method: 'POST' }); },
   users()   { return this._call('/api/auth/users'); },
+  updateUser(id, body) { return this._call('/api/auth/users/' + encodeURIComponent(id), { method: 'PATCH', body }); },
+  deleteUser(id)       { return this._call('/api/auth/users/' + encodeURIComponent(id), { method: 'DELETE' }); },
 
   /* ─── attacks ─── */
   attacks(params = {}) {

@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import api from '../api';
 import { fmt } from '../utils';
 import { useModal } from '../contexts/ModalContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#0d111e', border: '1px solid #1e2538', borderRadius: '6px',
@@ -204,7 +205,84 @@ function AddUserModal({ onClose, onCreated }) {
   );
 }
 
+function EditUserModal({ user, onClose, onSaved }) {
+  const [email, setEmail]    = useState(user.email || '');
+  const [name, setName]      = useState(user.full_name || '');
+  const [pass, setPass]      = useState('');
+  const [role, setRole]      = useState((user.role || 'analyst').toLowerCase());
+  const [active, setActive]  = useState(user.is_active !== false);
+  const [submitting, setSub] = useState(false);
+  const [error, setError]    = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSub(true);
+    setError(null);
+    try {
+      const body = {
+        email:     email.trim(),
+        full_name: name.trim() || null,
+        role,
+        is_active: active,
+      };
+      if (pass) body.password = pass;
+      await api.updateUser(user.id, body);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to update user.');
+      setSub(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="modal-h">
+        <div className="card-t"> Edit User</div>
+        <button className="drawer-close" onClick={onClose}>×</button>
+      </div>
+      <form onSubmit={handleSubmit} autoComplete="off" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 6 }}>Email *</label>
+            <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="form-i" style={{ fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 6 }}>Full Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} className="form-i" style={{ fontSize: 13 }} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 6 }}>New Password</label>
+            <input type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="Leave blank to keep current" className="form-i" style={{ fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 6 }}>Role</label>
+            <select value={role} onChange={e => setRole(e.target.value)} className="form-s" style={{ fontSize: 13 }}>
+              <option value="analyst">ANALYST</option>
+              <option value="admin">ADMIN</option>
+            </select>
+          </div>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)' }}>
+          <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
+          Account active
+        </label>
+
+        {error && <div className="alert err">{error}</div>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+          <button type="button" className="btn btn-gh btn-sm" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-gold btn-sm" disabled={submitting}>{submitting ? 'Saving…' : ' Save Changes'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function Access() {
+  const { user: currentUser } = useAuth();
   const { openModal, closeModal } = useModal();
   const [allItems, setAllItems]   = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -247,6 +325,20 @@ export default function Access() {
     );
   }
 
+  function openEditUser(u) {
+    openModal(<EditUserModal user={u} onClose={closeModal} onSaved={load} />);
+  }
+
+  async function handleDelete(u) {
+    if (!window.confirm(`Delete user ${u.email}? This cannot be undone.`)) return;
+    try {
+      await api.deleteUser(u.id);
+      load();
+    } catch (e) {
+      alert(e.message || 'Failed to delete user.');
+    }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -282,8 +374,6 @@ export default function Access() {
         </div>
       </div>
 
-      {!loading && !error && <AcCharts users={allItems} />}
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, alignItems: 'start' }}>
 
         {/* Users table */}
@@ -312,21 +402,21 @@ export default function Access() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>User</th><th>Role</th><th>Status</th><th>Created</th><th>Last Login</th>
+                <th>User</th><th>Role</th><th>Status</th><th>Created</th><th>Last Login</th><th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>Loading…</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--text3)' }}>Loading…</td></tr>
               )}
               {error && (
-                <tr><td colSpan={5}><div className="alert err" style={{ margin: 8 }}>{error} — user management requires the ADMIN role.</div></td></tr>
+                <tr><td colSpan={6}><div className="alert err" style={{ margin: 8 }}>{error} — user management requires the ADMIN role.</div></td></tr>
               )}
               {!loading && !error && allItems.length === 0 && (
-                <tr><td colSpan={5}><div className="alert info" style={{ margin: 8 }}>No users — the admin bootstrap account is created on first backend startup.</div></td></tr>
+                <tr><td colSpan={6}><div className="alert info" style={{ margin: 8 }}>No users — the admin bootstrap account is created on first backend startup.</div></td></tr>
               )}
               {!loading && !error && filtered.length === 0 && allItems.length > 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--text3)', fontSize: 12, fontFamily: "'Share Tech Mono',monospace" }}>No users match the current filter.</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--text3)', fontSize: 12, fontFamily: "'Share Tech Mono',monospace" }}>No users match the current filter.</td></tr>
               )}
               {!loading && !error && filtered.map((u, i) => {
                 const lastLogin = u.last_login_at || u.last_login;
@@ -361,6 +451,21 @@ export default function Access() {
                     <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>{fmt.date(u.created_at)}</td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
                       {lastLogin ? fmt.ago(lastLogin) + ' ago' : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        className="btn btn-gh btn-sm"
+                        style={{ marginRight: 6 }}
+                        onClick={() => openEditUser(u)}
+                        title="Edit user"
+                      >Edit</button>
+                      <button
+                        className="btn btn-gh btn-sm"
+                        onClick={() => handleDelete(u)}
+                        disabled={currentUser && (u.id === currentUser.id || u.email === currentUser.email)}
+                        title={currentUser && (u.id === currentUser.id || u.email === currentUser.email) ? "You can't delete yourself" : 'Delete user'}
+                        style={{ color: 'var(--red2)', borderColor: 'rgba(201,61,85,0.4)' }}
+                      >Delete</button>
                     </td>
                   </tr>
                 );

@@ -61,6 +61,14 @@ class UserCreate(BaseModel):
     role: UserRole = UserRole.ANALYST
 
 
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
@@ -161,3 +169,87 @@ async def create_user(
         metadata={"email": user.email, "role": user.role.value},
     )
     return UserOut.from_orm_user(user)
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: str,
+    body: UserUpdate,
+    request: Request,
+    admin: User = Depends(require_role(UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_session),
+) -> UserOut:
+    target = await get_user_by_id(db, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    changes: dict = {}
+    if body.email is not None and body.email.lower() != target.email:
+        exists = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+        if exists and str(exists.id) != str(target.id):
+            raise HTTPException(status_code=409, detail="email already registered")
+        target.email = body.email.lower()
+        changes["email"] = target.email
+    if body.full_name is not None:
+        target.full_name = body.full_name or None
+        changes["full_name"] = target.full_name
+    if body.password:
+        target.password_hash = hash_password(body.password)
+        changes["password"] = "***"
+    if body.role is not None:
+        if str(target.id) == str(admin.id) and body.role != UserRole.ADMIN:
+            raise HTTPException(status_code=400, detail="cannot demote yourself")
+        target.role = body.role
+        changes["role"] = body.role.value
+    if body.is_active is not None:
+        if str(target.id) == str(admin.id) and not body.is_active:
+            raise HTTPException(status_code=400, detail="cannot disable yourself")
+        target.is_active = body.is_active
+        changes["is_active"] = body.is_active
+
+    await db.commit()
+    await db.refresh(target)
+    await audit_service.record(
+        action="user.update",
+        actor=admin,
+        target_type="user",
+        target_id=str(target.id),
+        path=str(request.url.path),
+        method=request.method,
+        ip=request.client.host if request.client else None,
+        metadata=changes,
+    )
+    return UserOut.from_orm_user(target)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: str,
+    request: Request,
+    admin: User = Depends(require_role(UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_session),
+) -> None:
+    target = await get_user_by_id(db, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="user not found")
+    if str(target.id) == str(admin.id):
+        raise HTTPException(status_code=400, detail="cannot delete yourself")
+    if target.role == UserRole.ADMIN:
+        remaining = (await db.execute(
+            select(User).where(User.role == UserRole.ADMIN, User.is_active == True, User.id != target.id)  # noqa: E712
+        )).scalars().all()
+        if not remaining:
+            raise HTTPException(status_code=400, detail="cannot delete the last active admin")
+    email = target.email
+    await db.delete(target)
+    await db.commit()
+    await audit_service.record(
+        action="user.delete",
+        actor=admin,
+        target_type="user",
+        target_id=user_id,
+        path=str(request.url.path),
+        method=request.method,
+        ip=request.client.host if request.client else None,
+        metadata={"email": email},
+    )

@@ -160,7 +160,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="page-actions">
-          <button className="btn btn-gh btn-sm" onClick={load} disabled={loading}> Refresh</button>
+          <button className="btn btn-gh btn-sm" onClick={load} disabled={loading}>Refresh</button>
         </div>
       </div>
 
@@ -191,7 +191,7 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-h">
             <div className="card-t">Source Distribution</div>
-            <div className="card-sub"> honeypots +  sensors</div>
+            <div className="card-sub">honeypots + sensors</div>
           </div>
           {loading ? (
             <div className="alert info">Loading…</div>
@@ -217,7 +217,7 @@ export default function Dashboard() {
                 return (
                   <div key={ev.id || i} className="log-row">
                     <div className="log-t">{fmt.time(ev.timestamp)}</div>
-                    <div className={`log-s ${ev.honeypot}`}>{meta.icon} {meta.label}</div>
+                    <div className={`log-s ${ev.honeypot}`}>{meta.label}</div>
                     <div className="log-ip">{ev.source_ip || '—'}</div>
                     <div className="log-m">
                       {(ev.command || ev.http_path || ev.protocol || '—').slice(0, 80)}
@@ -265,7 +265,7 @@ export default function Dashboard() {
                       <td className="mono" style={{ fontSize: 11 }}>{fmt.time(ev.timestamp)}</td>
                       <td>
                         <span className={`badge ${meta.kind === 'sensor' ? 'blue' : 'gold'}`}>
-                          {meta.icon} {meta.label}
+                          {meta.label}
                         </span>
                       </td>
                       <td className="mono">{ev.source_ip || '—'}</td>

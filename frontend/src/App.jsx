@@ -5,6 +5,7 @@ import { ModalProvider } from './contexts/ModalContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
+const Landing        = lazy(() => import('./pages/Landing'));
 const Login          = lazy(() => import('./pages/Login'));
 const Stats          = lazy(() => import('./pages/Stats'));
 const Alerts         = lazy(() => import('./pages/Alerts'));
@@ -39,13 +40,13 @@ export default function App() {
         <ModalProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
+              <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route element={
                 <Protected>
                   <Layout />
                 </Protected>
               }>
-                <Route index element={<Navigate to="/stats" replace />} />
                 <Route path="/stats"          element={<Stats />} />
                 <Route path="/alerts"         element={<Alerts />} />
                 <Route path="/health"         element={<Protected roles={['admin']}><Health /></Protected>} />
@@ -62,7 +63,7 @@ export default function App() {
                 <Route path="/audit"          element={<Audit />} />
                 <Route path="/yara"           element={<Yara />} />
                 <Route path="/sessions"       element={<Sessions />} />
-                <Route path="/dashboard"      element={<Dashboard />} />
+                <Route path="/dashboard"      element={<Navigate to="/stats" replace />} />
                 <Route path="*"               element={<Navigate to="/stats" replace />} />
               </Route>
             </Routes>

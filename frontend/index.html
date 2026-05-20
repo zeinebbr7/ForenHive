@@ -6,10 +6,25 @@
   <title>ForenHive — SOC Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script>
     (function(){ const t = localStorage.getItem('fh.theme') || 'dark'; document.documentElement.setAttribute('data-theme', t); })();
+  </script>
+  <script>
+    window.addEventListener('error', function(e) {
+      document.body.innerHTML = '<div style="position:fixed;inset:0;background:#0e1117;color:#C93D55;font-family:monospace;padding:40px;font-size:13px;white-space:pre-wrap;z-index:9999;overflow:auto">'
+        + '<b style="font-size:16px">JS CRASH — copy this and report it:</b>\n\n'
+        + (e.message || '') + '\n\nFile: ' + (e.filename || '') + ':' + e.lineno
+        + '\n\nStack:\n' + (e.error && e.error.stack ? e.error.stack : 'n/a')
+        + '</div>';
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      document.body.innerHTML = '<div style="position:fixed;inset:0;background:#0e1117;color:#C93D55;font-family:monospace;padding:40px;font-size:13px;white-space:pre-wrap;z-index:9999;overflow:auto">'
+        + '<b style="font-size:16px">Unhandled Promise Rejection:</b>\n\n'
+        + (e.reason && e.reason.stack ? e.reason.stack : String(e.reason))
+        + '</div>';
+    });
   </script>
 </head>
 <body>

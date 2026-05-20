@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { NAV_GROUPS, NAV, ROLES } from '../constants';
-import './hive-chat.js';
-
 function LiveClock() {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}));
   useEffect(() => {
@@ -33,6 +31,10 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    import('./hive-chat.js').catch(() => {});
+  }, []);
 
   const role = ROLES[user?.role] || ROLES.analyst;
   const currentPage = NAV.find(n => location.pathname === '/' + n.id);
