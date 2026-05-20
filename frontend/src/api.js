@@ -83,6 +83,8 @@ const api = {
   },
   attack(id)    { return this._call('/api/attacks/' + encodeURIComponent(id)); },
   statsHourly() { return this._call('/api/attacks/stats/hourly'); },
+  statsTopIps(limit = 10)   { return this._call('/api/attacks/stats/top-ips?limit=' + limit); },
+  statsTopPorts(limit = 10) { return this._call('/api/attacks/stats/top-ports?limit=' + limit); },
   statsLive(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this._call('/api/attacks/stats/live' + (qs ? '?' + qs : ''));

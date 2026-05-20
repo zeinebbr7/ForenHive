@@ -188,47 +188,6 @@ function ChartsPanel({ history, byHp, bySev, total, paused }) {
         )}
       </div>
 
-      {/* Severity donut */}
-      <div className="tl-chart-card">
-        <div className="tl-chart-title">Severity Mix</div>
-        <div className="tl-chart-sub">Current batch by level</div>
-        {total === 0 ? (
-          <div style={{ color: 'var(--text3)', fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>
-            No events yet.
-          </div>
-        ) : (
-          <div className="tl-split-wrap" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
-            <PieChart width={120} height={120}>
-              <Pie
-                data={sevData}
-                dataKey="value"
-                nameKey="name"
-                cx={56}
-                cy={56}
-                innerRadius={34}
-                outerRadius={52}
-                paddingAngle={2}
-              >
-                {sevData.map((e, i) => (
-                  <Cell key={i} fill={e.color + 'cc'} stroke={e.color} strokeWidth={1} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-            </PieChart>
-            <div className="tl-legend">
-              {sevData.map((e, i) => (
-                <div key={i} className="tl-legend-row">
-                  <span className="tl-legend-dot" style={{ background: e.color }} />
-                  <span className="tl-legend-label">{e.name}</span>
-                  <span className="tl-legend-val">
-                    {e.value} ({((e.value / sevTotal) * 100).toFixed(0)}%)
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

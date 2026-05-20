@@ -489,6 +489,74 @@ class ESClient:
             for b in buckets
         ]
 
+    async def top_source_ips(self, limit: int = 10) -> List[Dict[str, Any]]:
+        body = {
+            "size": 0,
+            "query": {"bool": {
+                "must": [{"exists": {"field": "source.ip"}}],
+                "filter": [{"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}],
+                "must_not": [{"wildcard": {"source.ip.keyword": "*:*"}}],
+            }},
+            "aggs": {
+                "ips": {
+                    "terms": {"field": "source.ip.keyword", "size": limit},
+                    "aggs": {
+                        "country": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},
+                        "honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 1}},
+                    },
+                }
+            },
+        }
+        resp = await self.client.search(
+            index=self.settings.honeypot_indices, body=body,
+            ignore_unavailable=True, allow_no_indices=True,
+        )
+        out: List[Dict[str, Any]] = []
+        for b in resp["aggregations"]["ips"]["buckets"]:
+            cb = b["country"]["buckets"]
+            hb = b["honeypot"]["buckets"]
+            out.append({
+                "ip": b["key"],
+                "count": b["doc_count"],
+                "country": cb[0]["key"] if cb else None,
+                "honeypot": hb[0]["key"] if hb else None,
+            })
+        return out
+
+    async def top_dest_ports(self, limit: int = 10) -> List[Dict[str, Any]]:
+        body = {
+            "size": 0,
+            "query": {"bool": {
+                "must": [{"exists": {"field": "destination.port"}}],
+                "filter": [{"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}],
+                "must_not": [{"term": {"destination.port": 0}}],
+            }},
+            "aggs": {
+                "ports": {
+                    "terms": {"field": "destination.port", "size": limit},
+                    "aggs": {
+                        "proto": {"terms": {"field": "network.protocol", "size": 1}},
+                        "honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 1}},
+                    },
+                }
+            },
+        }
+        resp = await self.client.search(
+            index=self.settings.honeypot_indices, body=body,
+            ignore_unavailable=True, allow_no_indices=True,
+        )
+        out: List[Dict[str, Any]] = []
+        for b in resp["aggregations"]["ports"]["buckets"]:
+            pb = b["proto"]["buckets"]
+            hb = b["honeypot"]["buckets"]
+            out.append({
+                "port": b["key"],
+                "count": b["doc_count"],
+                "protocol": pb[0]["key"] if pb else "tcp",
+                "honeypot": hb[0]["key"] if hb else None,
+            })
+        return out
+
     async def sessions(
         self, limit: int = 100, active_only: bool = False
     ) -> List[Dict[str, Any]]:

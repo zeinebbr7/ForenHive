@@ -51,6 +51,16 @@ async def stats_hourly(hours: int = Query(24, ge=1, le=168)) -> list[HourlyBucke
     return [HourlyBucket(**b) for b in buckets]
 
 
+@router.get("/stats/top-ips")
+async def stats_top_ips(limit: int = Query(10, ge=1, le=100)):
+    return {"items": await get_es().top_source_ips(limit=limit)}
+
+
+@router.get("/stats/top-ports")
+async def stats_top_ports(limit: int = Query(10, ge=1, le=100)):
+    return {"items": await get_es().top_dest_ports(limit=limit)}
+
+
 @router.get("/stats/live")
 async def stats_live(window: int = Query(60, ge=5, le=3600)):
     """Server-Sent Events stream of live event counts in the trailing window."""

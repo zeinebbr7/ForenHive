@@ -30,9 +30,11 @@ const TOOLTIP_STYLE = {
 const AXIS_TICK = { fontSize: 10, fill: '#8892a4', fontFamily: "'JetBrains Mono', monospace" };
 
 async function fetchAllData() {
-  const [hourlyRes, splitRes, ...hpResults] = await Promise.all([
+  const [hourlyRes, splitRes, topIpsRes, topPortsRes, ...hpResults] = await Promise.all([
     api.statsHourly().catch(() => []),
     api.geoSplit().catch(() => ({ split: [] })),
+    api.statsTopIps(10).catch(() => ({ items: [] })),
+    api.statsTopPorts(10).catch(() => ({ items: [] })),
     api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie'  }).catch(() => ({ items: [], total: 0 })),
     api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }).catch(() => ({ items: [], total: 0 })),
     api.attacks({ page_size: 100, page: 1, honeypot: 'galah'   }).catch(() => ({ items: [], total: 0 })),
@@ -73,39 +75,18 @@ async function fetchAllData() {
     pct:      ((x.count / hpTotal) * 100).toFixed(1),
   }));
 
-  const byIp = {};
-  allItems.forEach(n => {
-    const ip = n.source_ip;
-    if (!ip) return;
-    if (!byIp[ip]) byIp[ip] = { count: 0, country: n.country, hp: n.honeypot };
-    byIp[ip].count++;
-    if (!byIp[ip].country && n.country) byIp[ip].country = n.country;
-  });
-  const topIpsData = Object.entries(byIp)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 10)
-    .map(([ip, d]) => ({
-      ip:    (d.country ? flag(d.country) + ' ' : '') + ip,
-      count: d.count,
-      color: COLORS[d.hp] || '#8892a4',
-      hp:    d.hp,
-    }));
+  const topIpsData = (topIpsRes?.items || []).map(x => ({
+    ip:    (x.country ? flag(x.country) + ' ' : '') + x.ip,
+    count: x.count,
+    color: COLORS[x.honeypot] || '#8892a4',
+    hp:    x.honeypot,
+  }));
 
-  const byPort = {};
-  allItems.forEach(n => {
-    if (!n.dest_port) return;
-    const k = `${n.dest_port}/${n.protocol || 'tcp'}`;
-    if (!byPort[k]) byPort[k] = { count: 0, hp: n.honeypot };
-    byPort[k].count++;
-  });
-  const topPortsData = Object.entries(byPort)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 10)
-    .map(([port, d]) => ({
-      port,
-      count: d.count,
-      color: COLORS[d.hp] || '#50a0ff',
-    }));
+  const topPortsData = (topPortsRes?.items || []).map(x => ({
+    port:  `${x.port}/${x.protocol || 'tcp'}`,
+    count: x.count,
+    color: COLORS[x.honeypot] || '#50a0ff',
+  }));
 
   return { grandTotal, hpTotals, hourlyData, splitData, topIpsData, topPortsData, allItems };
 }

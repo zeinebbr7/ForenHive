@@ -20,7 +20,7 @@ const SVC_META = {
   cowrie:        { name: 'Cowrie',        icon: 'SSH', layer: 'c1', desc: 'SSH :2222 · Telnet :2223' },
   dionaea:       { name: 'Dionaea',       icon: 'SMB', layer: 'c1', desc: 'SMB · FTP · MySQL…' },
   galah:         { name: 'Galah',         icon: 'HTTP',layer: 'c1', desc: 'HTTP :8080/:8888' },
-  zeek:          { name: 'Zeek',          icon: 'NDR', layer: 'c1', desc: 'eno12399 · passive' },
+  zeek:          { name: 'Zeek',          icon: 'NSM', layer: 'c1', desc: 'eno12399 · passive' },
   filebeat:      { name: 'Filebeat',      icon: 'FB',  layer: 'c2', desc: 'tail honeypot logs' },
   logstash:      { name: 'Logstash',      icon: 'LS',  layer: 'c2', desc: 'ECS · GeoIP · filters' },
   nginx:         { name: 'Nginx',         icon: 'NGX', layer: 'c5', desc: 'reverse proxy · SPA' },
@@ -33,11 +33,11 @@ const DOTCLS  = { up: 'up', ok: 'up', down: 'down', degraded: 'warn', warn: 'war
 function dotClass(st) { return DOTCLS[st] || ''; }
 
 const PIPE_STEPS = [
-  { id: 'c1', label: 'Honeypots',       sub: 'Cowrie · Dionaea · Galah · Zeek', icon: '1' },
-  { id: 'c2', label: 'ETL Pipeline',    sub: 'Filebeat → Logstash → ES',        icon: '2' },
-  { id: 'c3', label: 'Forensic Engine', sub: 'YARA · Enrichment · Ollama',      icon: '3' },
-  { id: 'c4', label: 'Backend',         sub: 'FastAPI · PostgreSQL',             icon: '4' },
-  { id: 'c5', label: 'Interface',       sub: 'React SPA · Nginx',               icon: '5' },
+  { id: 'c1', label: 'Honeypots',       sub: 'Cowrie · Dionaea · Galah · Zeek' },
+  { id: 'c2', label: 'ETL Pipeline',    sub: 'Filebeat → Logstash → ES' },
+  { id: 'c3', label: 'Forensic Engine', sub: 'YARA · Enrichment · Ollama' },
+  { id: 'c4', label: 'Backend',         sub: 'FastAPI · PostgreSQL' },
+  { id: 'c5', label: 'Interface',       sub: 'React SPA · Nginx' },
 ];
 
 function PipelineStrip({ pipeDots }) {
@@ -49,7 +49,6 @@ function PipelineStrip({ pipeDots }) {
           <React.Fragment key={step.id}>
             {i > 0 && <div className="hc-pipe-arrow">→</div>}
             <div className={`hc-pipe-step${dot ? ' pipe-' + dot : ''}`}>
-              <div className="hc-pipe-icon">{step.icon}</div>
               <div className="hc-pipe-label">{step.label}</div>
               <div className="hc-pipe-sub">{step.sub}</div>
               <div className={`hc-pipe-dot${dot ? ' ' + dot : ''}`} />
@@ -236,47 +235,6 @@ export default function Health() {
           const detail = (typeof st === 'object' && (st.version || st.detail || st.message)) || '';
           return <SvcCard key={name} name={name} status={status} detail={detail} />;
         })}
-      </div>
-
-      <div className="grid-2 mb-20">
-        <div className="card">
-          <div className="card-h">
-            <div className="card-t">Zeek Captured Traffic</div>
-            <div className="card-sub">Top protocols · destination ports</div>
-          </div>
-          {zeekLoading && <div className="alert info">Loading…</div>}
-          {zeekError && <div className="alert err">{zeekError}</div>}
-          {!zeekLoading && !zeekError && (
-            zeekProtos.length
-              ? <BarChartBlock
-                  data={zeekProtos}
-                  dataKey="count"
-                  labelKey="proto"
-                  height={Math.max(120, zeekProtos.length * 28 + 20)}
-                  color="#50a0ffbb"
-                />
-              : <div className="alert info">No Zeek events.</div>
-          )}
-        </div>
-        <div className="card">
-          <div className="card-h">
-            <div className="card-t">Top Source IPs (Zeek)</div>
-            <div className="card-sub">Most active emitters</div>
-          </div>
-          {zeekLoading && <div className="alert info">Loading…</div>}
-          {zeekError && <div className="alert err">{zeekError}</div>}
-          {!zeekLoading && !zeekError && (
-            zeekIps.length
-              ? <BarChartBlock
-                  data={zeekIps}
-                  dataKey="count"
-                  labelKey="ip"
-                  height={Math.max(140, zeekIps.length * 28 + 20)}
-                  color="#8C1A2Bbb"
-                />
-              : <div className="alert info">No source IPs.</div>
-          )}
-        </div>
       </div>
 
       <div className="card mb-20">

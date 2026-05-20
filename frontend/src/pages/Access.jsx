@@ -474,31 +474,6 @@ export default function Access() {
           </table>
         </div>
 
-        {/* Roles & Permissions matrix */}
-        <div className="card">
-          <div className="card-h">
-            <div className="card-t">Roles &amp; Permissions</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 40px 40px', gap: 4, padding: '6px 0', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-              <span style={{ fontSize: 9, color: 'var(--text3)', fontFamily: "'Share Tech Mono',monospace", textTransform: 'uppercase', letterSpacing: '1px' }}>Feature</span>
-              <span style={{ fontSize: 9, color: 'var(--red2)', fontFamily: "'Share Tech Mono',monospace", textTransform: 'uppercase', textAlign: 'center' }}>ADM</span>
-              <span style={{ fontSize: 9, color: 'var(--gold)', fontFamily: "'Share Tech Mono',monospace", textTransform: 'uppercase', textAlign: 'center' }}>ANL</span>
-            </div>
-            {PERMS.map(([label, adm, anl], i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 40px 40px', gap: 4, padding: '7px 0', borderBottom: '1px solid rgba(140,26,43,0.05)' }}>
-                <span style={{ fontSize: 12, color: 'var(--text2)' }}>{label}</span>
-                <span style={{ textAlign: 'center', fontSize: 13 }}>
-                  {adm ? <span style={{ color: 'var(--blue2)' }}>✓</span> : <span style={{ color: 'var(--border2)' }}>—</span>}
-                </span>
-                <span style={{ textAlign: 'center', fontSize: 13 }}>
-                  {anl ? <span style={{ color: 'var(--blue2)' }}>✓</span> : <span style={{ color: 'var(--border2)' }}>—</span>}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
       </div>
     </>
   );
