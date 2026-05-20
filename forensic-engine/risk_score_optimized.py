@@ -188,8 +188,9 @@ class RiskScorer:
     #  SIGNAL 1 — IP REPUTATION  (0-25)
     # ════════════════════════════════════════════════════════════
     def _signal_reputation(self, source_ip: str, enrichment: dict) -> int:
+        # Private/internal IP = insider threat or lateral movement — maximum danger.
         if self._is_private(source_ip):
-            return 0
+            return 25
 
         abuse = enrichment.get("reputation", {}).get("abuse_score", 0)
         if abuse >= 90:
@@ -215,19 +216,34 @@ class RiskScorer:
     #  SIGNAL 3 — BRUTE FORCE / AUTOMATION  (0-20)
     # ════════════════════════════════════════════════════════════
     def _signal_brute_force(self, sessions: list) -> int:
-        total_attempts = sum(s.get("login_attempts", 0) for s in sessions)
-        max_velocity   = max((s.get("attack_velocity", 0.0) for s in sessions), default=0.0)
+        # IMPORTANT: only Cowrie's login_attempts represents real auth attempts.
+        # Dionaea/Galah store event_count (connections / HTTP requests) in that
+        # field, which would inflate the brute-force signal. Use event volume
+        # for those honeypots as automation evidence at a lower weight.
+        cowrie_attempts  = sum(s.get("login_attempts", 0) for s in sessions if s.get("honeypot_type") == "cowrie")
+        scan_events      = sum(s.get("login_attempts", 0) for s in sessions if s.get("honeypot_type") in ("dionaea", "galah"))
+        max_velocity     = max((s.get("attack_velocity", 0.0) for s in sessions), default=0.0)
 
+        # SSH brute force (Cowrie) — full scale
         if max_velocity > 50:
             base = 20
-        elif total_attempts >= 500:
+        elif cowrie_attempts >= 500:
             base = 15
-        elif total_attempts >= 200:
+        elif cowrie_attempts >= 200:
             base = 10
-        elif total_attempts >= 50:
+        elif cowrie_attempts >= 50:
             base = 5
         else:
             base = 0
+
+        # Dionaea/Galah high-volume automation (scans/probes) — capped at 10
+        if base == 0:
+            if scan_events >= 500:
+                base = 10
+            elif scan_events >= 200:
+                base = 6
+            elif scan_events >= 50:
+                base = 3
 
         has_targeted = any(
             "targeted_wordlist" in (s.get("enrichment_data") or {}).get("attack_types", [])
@@ -408,12 +424,14 @@ class RiskScorer:
         return "No compromise"
 
     def _detail_brute_force(self, sessions: list) -> str:
-        total = sum(s.get("login_attempts", 0) for s in sessions)
-        hp_count = len(set(
-            s["honeypot_type"] for s in sessions
-            if s.get("login_attempts", 0) > 0 and s.get("honeypot_type")
-        ))
-        return f"{total} attempts across {hp_count} honeypot(s)"
+        cowrie  = sum(s.get("login_attempts", 0) for s in sessions if s.get("honeypot_type") == "cowrie")
+        dionaea = sum(s.get("login_attempts", 0) for s in sessions if s.get("honeypot_type") == "dionaea")
+        galah   = sum(s.get("login_attempts", 0) for s in sessions if s.get("honeypot_type") == "galah")
+        parts = []
+        if cowrie:  parts.append(f"Cowrie SSH: {cowrie} auth")
+        if dionaea: parts.append(f"Dionaea: {dionaea} conn")
+        if galah:   parts.append(f"Galah: {galah} HTTP")
+        return " · ".join(parts) if parts else "no automation activity"
 
     def _detail_malware(self, sessions: list) -> str:
         families = []
@@ -566,9 +584,12 @@ def score_session_from_data(session_data: dict) -> dict:
 
     # 1. Reputation (0-25) — clamp abuse to [0,100]
     abuse_score = max(0, min(100, int(session_data.get("abuse_score") or 0)))
-    if is_private or abuse_score == 0:
+    if is_private:
+        rep = 25
+        rep_detail = "Private/internal IP — insider threat (maximum risk)"
+    elif abuse_score == 0:
         rep = 0
-        rep_detail = "private IP — not applicable" if is_private else "AbuseIPDB 0/100 (0 reports)"
+        rep_detail = "AbuseIPDB 0/100 (0 reports)"
     elif abuse_score >= 90: rep = 25; rep_detail = f"AbuseIPDB {abuse_score}/100"
     elif abuse_score >= 70: rep = 18; rep_detail = f"AbuseIPDB {abuse_score}/100"
     elif abuse_score >= 50: rep = 12; rep_detail = f"AbuseIPDB {abuse_score}/100"

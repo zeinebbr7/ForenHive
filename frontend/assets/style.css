@@ -1411,3 +1411,17 @@ h1,h2,h3,h4,.page-title,.card-t,.tb-title,.acc-t,.sb-brand-name{letter-spacing:-
    access page styles
 ═══════════════════════════════════════════════════════════════ */
 
+
+
+/* ── Light mode: chart axis ticks / IP addresses ──────────────────────────────
+   Recharts inlines fill="#e0e6f0" on SVG text — invisible on cream background.
+   CSS overrides SVG presentation attributes, so !important wins cleanly.      */
+:root[data-theme="light"] .recharts-cartesian-axis-tick text,
+:root[data-theme="light"] .recharts-text.recharts-cartesian-axis-tick-value {
+  fill: var(--text) !important;
+}
+:root[data-theme="light"] .mono,
+:root[data-theme="light"] .log-ip,
+:root[data-theme="light"] .zlog .ip {
+  color: var(--text) !important;
+}

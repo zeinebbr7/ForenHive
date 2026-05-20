@@ -543,23 +543,25 @@
     </div>
   </div>
 
-  {% if whois_data is defined and whois_data %}
   <h2>3.2 WHOIS &#8212; network registry</h2>
+  {% if whois_data is defined and whois_data %}
   <table class="kv">
-    {% if whois_data.get('network_name') %}<tr><th>Network Name</th><td class="mono">{{ whois_data.get('network_name') }}</td></tr>{% endif %}
-    {% if whois_data.get('cidr') %}<tr><th>Network CIDR</th><td class="mono">{{ whois_data.get('cidr') }}</td></tr>{% endif %}
-    {% if whois_data.get('asn') %}<tr><th>ASN</th><td class="mono">AS{{ whois_data.get('asn') }}{% if whois_data.get('asn_description') %} &#8212; {{ whois_data.get('asn_description') }}{% endif %}</td></tr>{% endif %}
-    {% if whois_data.get('asn_registry') %}<tr><th>Registry</th><td>{{ whois_data.get('asn_registry') | upper }}</td></tr>{% endif %}
-    {% if whois_data.get('network_type') %}<tr><th>Network Type</th><td>{{ whois_data.get('network_type') }}</td></tr>{% endif %}
-    {% if whois_data.get('registration') %}<tr><th>Registered</th><td class="mono">{{ whois_data.get('registration')[:10] }}</td></tr>{% endif %}
-    {% if whois_data.get('last_changed') %}<tr><th>Last Updated</th><td class="mono">{{ whois_data.get('last_changed')[:10] }}</td></tr>{% endif %}
-    {% if whois_data.get('abuse_emails') %}<tr><th>Abuse Contact</th><td class="mono text-red">{{ whois_data.get('abuse_emails', []) | join(', ') }}</td></tr>{% endif %}
-    {% if ptr_hostname is defined and ptr_hostname %}<tr><th>PTR (rDNS)</th><td class="mono">{{ ptr_hostname }}</td></tr>{% endif %}
+    <tr><th>Network Name</th><td class="mono">{{ whois_data.get('network_name') or 'N/A' }}</td></tr>
+    <tr><th>Network CIDR</th><td class="mono">{{ whois_data.get('cidr') or 'N/A' }}</td></tr>
+    <tr><th>ASN</th><td class="mono">{% if whois_data.get('asn') %}AS{{ whois_data.get('asn') }}{% if whois_data.get('asn_description') %} &#8212; {{ whois_data.get('asn_description') }}{% endif %}{% else %}N/A{% endif %}</td></tr>
+    <tr><th>Registry</th><td>{{ (whois_data.get('asn_registry') or '') | upper or 'N/A' }}</td></tr>
+    <tr><th>Network Type</th><td>{{ whois_data.get('network_type') or 'N/A' }}</td></tr>
+    <tr><th>Registered</th><td class="mono">{{ (whois_data.get('registration') or '')[:10] or 'N/A' }}</td></tr>
+    <tr><th>Last Updated</th><td class="mono">{{ (whois_data.get('last_changed') or '')[:10] or 'N/A' }}</td></tr>
+    <tr><th>Abuse Contact</th><td class="mono text-red">{{ (whois_data.get('abuse_emails') or []) | join(', ') or 'N/A' }}</td></tr>
+    <tr><th>PTR (rDNS)</th><td class="mono">{{ ptr_hostname | default('N/A') or 'N/A' }}</td></tr>
   </table>
+  {% else %}
+  <p class="muted">No WHOIS data available for this IP — No information available.</p>
   {% endif %}
 
-  {% if iplocate_data is defined and iplocate_data %}
   <h2>3.3 IPLocate &#8212; threat classification</h2>
+  {% if iplocate_data is defined and iplocate_data %}
   <div class="pill-grid">
     <div class="pill {% if iplocate_data.is_tor %}danger{% else %}ok{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
     <div class="pill {% if iplocate_data.is_vpn or iplocate_data.is_proxy %}danger{% else %}ok{% endif %}"><span class="ind"></span>VPN / Proxy &middot; {% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</div>
@@ -568,23 +570,25 @@
     <div class="pill {% if iplocate_data.is_bogon %}danger{% else %}ok{% endif %}"><span class="ind"></span>Bogon &middot; {% if iplocate_data.is_bogon %}YES{% else %}No{% endif %}</div>
     <div class="pill {% if iplocate_data.is_datacenter %}danger{% else %}ok{% endif %}"><span class="ind"></span>Datacenter &middot; {% if iplocate_data.is_datacenter %}Yes{% else %}No{% endif %}</div>
   </div>
-  {% if iplocate_data.company_name or iplocate_data.asn_name %}
   <table class="kv">
-    {% if iplocate_data.company_name %}<tr><th>Operator</th><td>{{ iplocate_data.company_name }}</td></tr>{% endif %}
-    {% if iplocate_data.asn_name %}<tr><th>ASN Name</th><td>{{ iplocate_data.asn_name }}{% if iplocate_data.asn_number %} ({{ iplocate_data.asn_number }}){% endif %}</td></tr>{% endif %}
-    {% if iplocate_data.asn_type %}<tr><th>ASN Type</th><td>{{ iplocate_data.asn_type }}</td></tr>{% endif %}
+    <tr><th>Operator</th><td>{{ iplocate_data.company_name or 'N/A' }}</td></tr>
+    <tr><th>ASN Name</th><td>{{ iplocate_data.asn_name or 'N/A' }}{% if iplocate_data.asn_number %} ({{ iplocate_data.asn_number }}){% endif %}</td></tr>
+    <tr><th>ASN Type</th><td>{{ iplocate_data.asn_type or 'N/A' }}</td></tr>
   </table>
-  {% endif %}
+  {% else %}
+  <p class="muted">No IPLocate enrichment available for this IP — No information available.</p>
   {% endif %}
 
-  {% if shodan_data is defined and shodan_data %}
   <h2>3.4 Shodan InternetDB &#8212; passive scan</h2>
+  {% if shodan_data is defined and shodan_data %}
   <table class="kv">
-    <tr><th>Open Ports</th><td class="mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "&#8212;" }}</td></tr>
-    <tr><th>Hostnames</th><td class="mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "&#8212;" }}</td></tr>
-    <tr><th>Known CVEs</th><td class="mono text-red">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "&#8212;" }}</td></tr>
-    <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "&#8212;" }}</td></tr>
+    <tr><th>Open Ports</th><td class="mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "N/A" }}</td></tr>
+    <tr><th>Hostnames</th><td class="mono">{{ shodan_data.hostnames | join(", ") if shodan_data.hostnames else "N/A" }}</td></tr>
+    <tr><th>Known CVEs</th><td class="mono text-red">{{ shodan_data.vulns | join(", ") if shodan_data.vulns else "N/A" }}</td></tr>
+    <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "N/A" }}</td></tr>
   </table>
+  {% else %}
+  <p class="muted">No Shodan InternetDB data available for this IP — No information available.</p>
   {% endif %}
 </section>
 
@@ -699,6 +703,27 @@
   {% endif %}
 
   <h2>5.3 Composite risk score &amp; signal breakdown</h2>
+
+  <h3>Honeypots involved in this score</h3>
+  {% if honeypots_hit is defined and honeypots_hit | length > 0 %}
+  <table class="kv">
+    <tr><th>Honeypots hit</th><td>
+      {% for hp in honeypots_hit %}<span class="tag">{{ hp | upper }}</span>{% endfor %}
+      &middot; <strong>{{ honeypots_hit | length }}</strong> honeypot type(s)
+    </td></tr>
+    <tr><th>Sessions correlated</th><td class="mono">{{ sessions_count | default(1) }}</td></tr>
+    <tr><th>Scoring method</th><td>
+      Unified 6-signal model (max 100). Each honeypot contributes evidence to one or
+      more signals: <strong>Cowrie</strong> → compromise &amp; brute force (auth attempts),
+      <strong>Dionaea</strong> → malware (YARA on captured binaries) &amp; automation (connections),
+      <strong>Galah</strong> → exploitation patterns &amp; automation (HTTP volume).
+    </td></tr>
+  </table>
+  {% else %}
+  <p class="muted">No honeypot session metadata available for breakdown.</p>
+  {% endif %}
+
+  <h3>Composite gauge</h3>
   <div class="risk-panel no-break">
     <div class="gauge">
       <svg viewBox="0 0 100 100" aria-hidden="true">

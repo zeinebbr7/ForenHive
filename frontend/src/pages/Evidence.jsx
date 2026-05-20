@@ -206,6 +206,7 @@ function EvidenceDrawer({ ev, onClose }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Evidence() {
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [hpFilter, setHpFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -222,9 +223,11 @@ export default function Evidence() {
     try {
       const params = { page_size: 500 };
       let result = [];
+      let totalCount = 0;
       if (hpFilter) {
         const res = await api.attacks({ ...params, honeypot: hpFilter });
         result = (res && res.items) || [];
+        totalCount = (res && res.total) || result.length;
       } else {
         const results = await Promise.allSettled([
           api.attacks({ ...params, honeypot: 'cowrie' }),
@@ -232,12 +235,14 @@ export default function Evidence() {
           api.attacks({ ...params, honeypot: 'galah' }),
         ]);
         result = results.flatMap(r => r.status === 'fulfilled' ? ((r.value && r.value.items) || []) : []);
+        totalCount = results.reduce((acc, r) => acc + (r.status === 'fulfilled' ? ((r.value && r.value.total) || 0) : 0), 0);
         result.sort((a, b) =>
           +new Date(b.timestamp || (b.raw && b.raw['@timestamp']) || 0) -
           +new Date(a.timestamp || (a.raw && a.raw['@timestamp']) || 0)
         );
       }
       setItems(result);
+      setTotal(totalCount || result.length);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -318,7 +323,6 @@ export default function Evidence() {
     }
   }
 
-  const sealedCount = items.filter(it => it.sha256 || (it.raw && it.raw.sha256)).length;
   const activeEv = activeIdx !== null ? items[activeIdx] : null;
 
   return (
@@ -350,13 +354,8 @@ export default function Evidence() {
       <div className="fkpi-row">
         <div className="fkpi" style={{ borderColor: '#f0b42955' }}>
           <div className="fkpi-label">Total Logs</div>
-          <div className="fkpi-val" style={{ color: 'var(--gold)' }}>{items.length}</div>
+          <div className="fkpi-val" style={{ color: 'var(--gold)' }}>{total.toLocaleString('en-US')}</div>
           <div className="fkpi-sub">raw entries</div>
-        </div>
-        <div className="fkpi" style={{ borderColor: '#2dd4bf55' }}>
-          <div className="fkpi-label">SHA-256 Sealed</div>
-          <div className="fkpi-val" style={{ color: '#2dd4bf' }}>{sealedCount}</div>
-          <div className="fkpi-sub">integrity verified</div>
         </div>
         <div className="fkpi" style={{ borderColor: '#3b82f655' }}>
           <div className="fkpi-label">Active Source</div>
@@ -383,7 +382,7 @@ export default function Evidence() {
       <div className="card">
         <div className="card-h">
           <div className="card-t">Raw Logs</div>
-          <div className="card-sub">raw honeypot logs · SHA-256 sealed entries</div>
+          <div className="card-sub">raw honeypot logs</div>
         </div>
         {loading && <div className="alert info">Loading…</div>}
         {error && <div className="alert err">{error}</div>}

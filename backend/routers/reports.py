@@ -1083,15 +1083,19 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
             result = await db.execute(
                 text(
                     """
-                    SELECT session_id, source_ip, honeypot_type,
-                           risk_score, risk_level, confidence,
-                           kill_chain_phase, kill_chain_stage,
-                           primary_technique, forensic_narrative,
-                           mitre_techniques, honeypots_hit, honeypot_count,
-                           sessions_count, login_attempts, success_count,
-                           attack_velocity, started_at, ended_at
-                    FROM forensic_sessions
-                    ORDER BY started_at DESC
+                    SELECT fs.session_id, fs.source_ip, fs.honeypot_type,
+                           COALESCE(irs.risk_score, fs.risk_score)  AS risk_score,
+                           COALESCE(irs.risk_level, fs.risk_level)  AS risk_level,
+                           COALESCE(irs.confidence, fs.confidence)  AS confidence,
+                           fs.kill_chain_phase, fs.kill_chain_stage,
+                           fs.primary_technique, fs.forensic_narrative,
+                           fs.mitre_techniques, fs.honeypots_hit, fs.honeypot_count,
+                           fs.sessions_count, fs.login_attempts, fs.success_count,
+                           fs.attack_velocity, fs.started_at, fs.ended_at
+                    FROM forensic_sessions fs
+                    LEFT JOIN ip_risk_scores irs
+                           ON irs.source_ip = CAST(fs.source_ip AS INET)
+                    ORDER BY fs.started_at DESC
                     LIMIT :lim
                     """
                 ),
