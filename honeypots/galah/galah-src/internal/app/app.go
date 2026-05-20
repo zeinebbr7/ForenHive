@@ -82,6 +82,20 @@ func (a *App) Run() error {
 		cblog.Fatalf("error creating service: %s", err)
 	}
 
+	// Pre-generate the "/" landing page in the background so the first attacker
+	// hits a warm cache instead of waiting on an on-the-fly LLM call. Runs
+	// async so servers start listening immediately — a request arriving before
+	// prewarm finishes just falls through to normal LLM generation.
+	prewarmPorts := make([]uint16, 0, len(a.Config.Ports))
+	for _, pc := range a.Config.Ports {
+		prewarmPorts = append(prewarmPorts, pc.Port)
+	}
+	go func() {
+		if err := a.Service.PrewarmLandingPage(context.Background(), prewarmPorts); err != nil {
+			cblog.Errorf("landing page prewarm failed: %s", err)
+		}
+	}()
+
 	srv := server.Server{
 		Cache:         a.Cache,
 		CacheDuration: args.CacheDuration,

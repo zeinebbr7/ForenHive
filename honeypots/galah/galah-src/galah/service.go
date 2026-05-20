@@ -3,9 +3,12 @@ package galah
 import (
 	"context"
 	"database/sql"
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -207,6 +210,54 @@ func (s *Service) GenerateHTTPResponse(r *http.Request, port string) ([]byte, er
 	}
 
 	return resp, nil
+}
+
+//go:embed landing.html
+var landingPageHTML string
+
+// PrewarmLandingPage seeds the cache with a hardcoded landing page for GET "/"
+// on every configured port. Bypasses the LLM so the first attacker always sees
+// a consistent, polished page in <50ms — no CPU-LLM startup delay, no risk of
+// the model ignoring the prompt and producing a stripped-down response.
+// No-op when caching is disabled (CacheDuration == 0).
+func (s *Service) PrewarmLandingPage(ctx context.Context, ports []uint16) error {
+	if s.CacheDuration == 0 {
+		s.Logger.WithPrefix("GALAH").Info("prewarm skipped: cache disabled")
+		return nil
+	}
+	if len(ports) == 0 {
+		return nil
+	}
+
+	page := llm.JSONResponse{
+		Headers: map[string]string{
+			"Content-Type":    "text/html; charset=UTF-8",
+			"Server":          "Apache/2.4.29 (Ubuntu)",
+			"X-Powered-By":    "PHP/7.2.24",
+			"Set-Cookie":      "PHPSESSID=3a8f1c9d2e7b4056; path=/; HttpOnly",
+			"X-Frame-Options": "SAMEORIGIN",
+		},
+		Body: landingPageHTML,
+	}
+	resp, err := json.Marshal(page)
+	if err != nil {
+		return fmt.Errorf("marshal landing page: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+	if err != nil {
+		return fmt.Errorf("build prewarm request: %w", err)
+	}
+
+	for _, port := range ports {
+		key := cache.GetCacheKey(req, strconv.FormatUint(uint64(port), 10))
+		if err := cache.StoreResponse(s.Cache, key, resp); err != nil {
+			s.Logger.WithPrefix("GALAH").Errorf("prewarm: store for port %d: %s", port, err)
+			continue
+		}
+		s.Logger.WithPrefix("GALAH").Infof("prewarm: cached landing page for port %d", port)
+	}
+	return nil
 }
 
 // CheckCache verifies if a response for the given request and port exists in

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DataVault Admin Console — Sign In</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);min-height:100vh;color:#e2e8f0}
+.topbar{background:#020617;border-bottom:1px solid #1e293b;padding:14px 32px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;color:#38bdf8}
+.brand .logo{width:30px;height:30px;background:#0ea5e9;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:16px}
+.status{font-size:12px;color:#64748b;font-family:'Consolas',monospace}
+.status b{color:#22c55e}
+.wrap{display:flex;justify-content:center;align-items:flex-start;min-height:calc(100vh - 62px);padding:40px 20px}
+.card{background:#0f172a;border:1px solid #1e293b;border-radius:10px;width:900px;max-width:100%;box-shadow:0 25px 60px rgba(0,0,0,.5);overflow:hidden;display:flex}
+.panel{padding:36px;flex:1}
+.panel.dark{background:#020617;border-right:1px solid #1e293b;flex:0 0 360px}
+.panel h2{font-size:20px;margin-bottom:6px;color:#f1f5f9;font-weight:600}
+.panel .sub{font-size:13px;color:#64748b;margin-bottom:22px}
+.tabs{display:flex;gap:0;margin-bottom:22px;border-bottom:1px solid #1e293b}
+.tab{padding:10px 18px;font-size:13px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;font-weight:500}
+.tab.active{color:#38bdf8;border-bottom-color:#38bdf8}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.field input,.field select{width:100%;padding:11px 13px;background:#020617;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;font-size:14px;outline:none;font-family:inherit}
+.field input:focus,.field select:focus{border-color:#0ea5e9}
+.btn{width:100%;padding:12px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;margin-top:6px}
+.btn:hover{background:#0284c7}
+.btn.ghost{background:transparent;border:1px solid #1e293b;color:#94a3b8}
+.row{display:flex;gap:12px}
+.row .field{flex:1}
+.foot{font-size:12px;color:#64748b;text-align:center;margin-top:18px}
+.foot a{color:#38bdf8;text-decoration:none}
+.divider{border:none;border-top:1px solid #1e293b;margin:24px 0 18px}
+.stats{list-style:none;margin:20px 0 0 0}
+.stats li{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e293b;font-size:13px;color:#94a3b8}
+.stats li b{color:#22c55e;font-family:'Consolas',monospace}
+.servers{margin-top:18px;font-size:12px}
+.servers .srv{display:flex;justify-content:space-between;padding:7px 0;color:#64748b;font-family:'Consolas',monospace}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:8px}
+.dot.warn{background:#facc15}
+.section-title{font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 8px;font-weight:700}
+.notice{font-size:11px;color:#475569;padding:10px;background:#020617;border-radius:5px;border-left:3px solid #0ea5e9;margin-top:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="logo">D</span> DataVault Admin Console</div>
+  <div class="status">cluster: <b>prod-eu-west-1</b> &middot; node-03 &middot; v4.2.1</div>
+</div>
+<div class="wrap">
+<div class="card">
+  <div class="panel dark">
+    <div class="section-title">Cluster Overview</div>
+    <h2>Live status</h2>
+    <div class="sub">Public read-only metrics. Authenticate for full access.</div>
+    <ul class="stats">
+      <li><span>Active databases</span><b>147</b></li>
+      <li><span>Total records</span><b>2.84B</b></li>
+      <li><span>Storage used</span><b>4.2 / 8.0 TB</b></li>
+      <li><span>Open connections</span><b>312</b></li>
+      <li><span>Queries / sec</span><b>1,847</b></li>
+    </ul>
+    <div class="section-title">Nodes</div>
+    <div class="servers">
+      <div class="srv"><span><span class="dot"></span>db-master-01</span><span>OK</span></div>
+      <div class="srv"><span><span class="dot"></span>db-replica-02</span><span>OK</span></div>
+      <div class="srv"><span><span class="dot warn"></span>db-replica-03</span><span>LAG 1.2s</span></div>
+      <div class="srv"><span><span class="dot"></span>backup-node-01</span><span>SYNC</span></div>
+    </div>
+    <div class="notice">Scheduled maintenance window: Sunday 02:00&ndash;04:00 UTC. Failover will be exercised on db-replica-03.</div>
+  </div>
+  <div class="panel">
+    <div class="tabs">
+      <div class="tab active">Sign In</div>
+      <div class="tab">Sign Up</div>
+    </div>
+    <h2>Welcome back</h2>
+    <div class="sub">Authenticate with your DataVault credentials</div>
+    <form method="POST" action="/login">
+      <div class="field"><label>Username</label><input name="username" type="text" placeholder="admin@corp.local" autocomplete="off"></div>
+      <div class="field"><label>Password</label><input name="password" type="password" placeholder="••••••••"></div>
+      <div class="field"><label>Database</label>
+        <select name="database">
+          <option value="corpnet_prod">corpnet_prod</option>
+          <option value="analytics_warehouse">analytics_warehouse</option>
+          <option value="finance_2025">finance_2025</option>
+          <option value="hr_systems">hr_systems</option>
+        </select>
+      </div>
+      <button class="btn" type="submit">Sign In</button>
+    </form>
+    <div class="foot"><a href="/reset">Forgot password?</a> &middot; <a href="/sso">Single sign-on</a></div>
+    <hr class="divider">
+    <h2>Create an account</h2>
+    <div class="sub">Request access to the DataVault console</div>
+    <form method="POST" action="/signup">
+      <div class="row">
+        <div class="field"><label>First name</label><input name="first_name" placeholder="Jane"></div>
+        <div class="field"><label>Last name</label><input name="last_name" placeholder="Doe"></div>
+      </div>
+      <div class="field"><label>Corporate email</label><input name="email" type="email" placeholder="jane.doe@corp.local"></div>
+      <div class="field"><label>Department</label>
+        <select name="department">
+          <option>Engineering</option>
+          <option>Data &amp; Analytics</option>
+          <option>Finance</option>
+          <option>Operations</option>
+          <option>Security</option>
+        </select>
+      </div>
+      <div class="field"><label>Password</label><input name="password" type="password" placeholder="Minimum 12 characters"></div>
+      <button class="btn" type="submit">Request account</button>
+    </form>
+    <div class="foot">Accounts are reviewed by IT within 1 business day.</div>
+  </div>
+</div>
+</div>
+</body>
+</html>
