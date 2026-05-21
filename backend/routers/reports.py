@@ -465,6 +465,8 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "session_end":       str(ended_at),
         "session_duration":  duration_str,
         "auth_attempts":     auth_attempts,
+        "auth_success":      any(a.get("success") for a in auth_attempts),
+        "auth_success_count": sum(1 for a in auth_attempts if a.get("success")),
         # MITRE
         "mitre_techniques":  mitre_techniques,
         "mitre_narrative":   profile.get("mistral_analysis", ""),
@@ -512,6 +514,13 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "vt_available": ctx.get("vt_available", True),
         "vt_malicious": ctx.get("vt_malicious", 0),
         "vt_family":    ctx.get("vt_family", ""),
+        # Kill chain progression (forensic engine MITRE phase)
+        "kc_reached":        ctx.get("kc_reached", 0),
+        "kc_stages":         ctx.get("kc_stages", []),
+        "kc_stages_labels":  ctx.get("kc_stages_labels", []),
+        # Honeypots involved (for §5.3 breakdown)
+        "honeypots_hit":     ctx.get("honeypots_hit", []),
+        "sessions_count":    ctx.get("sessions_count", 1),
         "extra_references":  [],
     }
 
@@ -580,8 +589,24 @@ async def _build_forensic_context(session_id: str) -> dict:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
 
     # ── Pre-flight: aggregate individual sessions for unified rows ───────────
-    # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated
+    # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated.
+    # We aggregate whenever the IP has multiple sessions (treating the report
+    # as a per-IP summary rather than a single isolated session). This is the
+    # behaviour users expect when generating a report from a brute-force IP:
+    # the timeline, kill chain and risk should reflect ALL the attacker's
+    # activity, not just one stray TCP connection.
     is_unified = pg_row.get("honeypot_type") == "unified" or session_id.startswith("unified-")
+    if not is_unified and source_ip:
+        try:
+            async with session_scope() as db:
+                _cnt = await db.execute(
+                    text("SELECT COUNT(*) FROM forensic_sessions WHERE source_ip = :ip AND honeypot_type != 'unified'"),
+                    {"ip": source_ip},
+                )
+                if int(_cnt.scalar() or 0) > 1:
+                    is_unified = True
+        except Exception:
+            pass
     if is_unified and source_ip:
         try:
             async with session_scope() as db:
@@ -592,7 +617,7 @@ async def _build_forensic_context(session_id: str) -> dict:
                             COALESCE(SUM(success_count), 0)         AS total_success,
                             MAX(kill_chain_stage)                   AS max_kc_stage,
                             MAX(kill_chain_phase)                   AS max_kc_phase,
-                            string_agg(DISTINCT forensic_narrative, ' ') AS combined_narrative,
+                            (array_agg(forensic_narrative ORDER BY length(forensic_narrative) DESC NULLS LAST))[1] AS combined_narrative,
                             array_agg(DISTINCT honeypot_type)       AS honeypot_types
                         FROM forensic_sessions
                         WHERE source_ip = :ip AND honeypot_type != 'unified'
@@ -675,15 +700,28 @@ async def _build_forensic_context(session_id: str) -> dict:
 
                     if _total_attempts > 0:
                         hp_names  = ', '.join(h.upper() for h in _honeypot_types if h)
-                        succ_txt  = f"{_total_success} login réussi(s)" if _total_success else "aucun login réussi"
+                        succ_txt  = f"{_total_success} successful login(s)" if _total_success else "no successful login"
                         yara_txt  = f" YARA: {', '.join(_agg_yara[:2])}." if _agg_yara else ""
-                        agg_sum   = (
-                            f"IP {source_ip} a attaqué {len(_honeypot_types)} honeypot(s) ({hp_names}). "
-                            f"{_total_attempts} tentatives, {succ_txt}. "
-                            f"Score: {pg_row.get('risk_score',0)}/100 {pg_row.get('risk_level','')}.{yara_txt} "
-                        )
+                        # Mistral sometimes loops within a single narrative
+                        # ("The incident involved... The incident involves...").
+                        # Dedupe near-identical sentences (loose 18-char prefix key)
+                        # and keep only the first 2 distinct sentences for concision.
+                        _best_narr = ""
                         if _combined_narr:
-                            agg_sum += _combined_narr[:600]
+                            import re as _re
+                            _parts = [p.strip() for p in _re.split(r"(?<=[.!?])\s+", _combined_narr) if p.strip()]
+                            seen_p = set(); _uniq = []
+                            for p in _parts:
+                                key = _re.sub(r"[^a-z]", "", p.lower())[:18]
+                                if key and key not in seen_p:
+                                    seen_p.add(key); _uniq.append(p)
+                            _best_narr = " ".join(_uniq[:2])
+                        agg_sum = (
+                            f"IP {source_ip} targeted {len(_honeypot_types)} honeypot(s) "
+                            f"({hp_names}) with {_total_attempts} authentication attempts, {succ_txt}.{yara_txt} "
+                        )
+                        if _best_narr:
+                            agg_sum += _best_narr
                         profile_dict["mistral_analysis"] = agg_sum
         except Exception as exc:
             log.warning("pre-flight aggregation failed for %s: %s", source_ip, exc)
@@ -692,6 +730,62 @@ async def _build_forensic_context(session_id: str) -> dict:
     now = datetime.now(tz=timezone.utc)
     report_ref = f"FH-{now.strftime('%Y-%m-%d')}-{session_id[:8]}"
     generated_at_str = f"{now.day} {_MONTHS_EN[now.month]} {now.year} · {now.strftime('%H:%M')} UTC"
+
+    # ── Aggregate timeline data from ALL sessions for this IP when unified ──
+    if is_unified and source_ip:
+        try:
+            # Pull all auth attempts from ES across the IP's sessions
+            agg_body = {
+                "size": 200,
+                "query": {"bool": {"filter": [
+                    {"term": {"source.ip.keyword": source_ip}},
+                    {"prefix": {"event.id": "cowrie.login"}}
+                ]}},
+                "sort": [{"@timestamp": {"order": "asc"}}],
+            }
+            agg_res = await es.search_docs("honeypot-logs-*", agg_body)
+            all_logins = []
+            for h in agg_res.get("hits", {}).get("hits", []):
+                src = h.get("_source", {})
+                # ES stores ECS fields as FLATTENED dotted keys (e.g. "user.name"),
+                # not nested objects. Read both shapes defensively.
+                ev_id = src.get("event.id") or (src.get("event") or {}).get("id") or ""
+                ev_out = src.get("event.outcome") or (src.get("event") or {}).get("outcome") or ""
+                uname = src.get("user.name") or (src.get("user") or {}).get("name") or "?"
+                upass = src.get("user.password") or (src.get("user") or {}).get("password") or "?"
+                all_logins.append({
+                    "timestamp": src.get("@timestamp"),
+                    "username":  uname,
+                    "password":  upass,
+                    "success":   ev_out == "success" or ev_id == "cowrie.login.success",
+                })
+            if all_logins:
+                detail["login_attempts"] = all_logins
+            # Same for commands
+            cmd_body = {
+                "size": 200,
+                "query": {"bool": {"filter": [
+                    {"term": {"source.ip.keyword": source_ip}},
+                    {"prefix": {"event.id": "cowrie.command"}}
+                ]}},
+                "sort": [{"@timestamp": {"order": "asc"}}],
+            }
+            cmd_res = await es.search_docs("honeypot-logs-*", cmd_body)
+            all_cmds = []
+            for h in cmd_res.get("hits", {}).get("hits", []):
+                src = h.get("_source", {})
+                inp = (src.get("process.command_line")
+                       or (src.get("process") or {}).get("command_line")
+                       or src.get("input")
+                       or src.get("message", ""))
+                all_cmds.append({
+                    "timestamp": src.get("@timestamp"),
+                    "input":     inp,
+                })
+            if all_cmds:
+                detail["commands"] = all_cmds
+        except Exception as exc:
+            log.warning("aggregated timeline fetch failed for %s: %s", source_ip, exc)
 
     # ── Timeline ──────────────────────────────────────────
     timeline = []
@@ -905,6 +999,12 @@ async def _build_forensic_context(session_id: str) -> dict:
     if isinstance(honeypots_hit, str):
         try: honeypots_hit = json.loads(honeypots_hit)
         except Exception: honeypots_hit = []
+    # Fallback to the session's own honeypot type so the §5.3 breakdown is
+    # never empty (single-honeypot reports still list their honeypot).
+    if not honeypots_hit:
+        _hp = pg_row.get("honeypot_type") or detail.get("honeypot")
+        if _hp and _hp != "unified":
+            honeypots_hit = [_hp]
 
     # ── Full enrichment cache data for §02 WHOIS/Shodan ───
     enrichment_cache: Dict[str, Any] = {}
@@ -981,6 +1081,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         "auth_success": auth_success,
         "malware_info": malware_info,
         "honeypots_hit": honeypots_hit,
+        "sessions_count": pg_row.get("sessions_count") or 1,
         "enrichment_cache": enrichment_cache,
         "is_unified": is_unified,
         "vt_result": vt_result,
@@ -1080,22 +1181,46 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
     pg_rows: List[Dict[str, Any]] = []
     try:
         async with session_scope() as db:
+            # One row per source IP (aggregate all the IP's sessions).
+            # Picks the most recent session as the "anchor" session_id used to
+            # open the report, but exposes per-IP totals: max kill chain stage,
+            # primary technique, sessions count, and risk_score from
+            # ip_risk_scores (which is the unified per-IP score).
             result = await db.execute(
                 text(
                     """
-                    SELECT fs.session_id, fs.source_ip, fs.honeypot_type,
-                           COALESCE(irs.risk_score, fs.risk_score)  AS risk_score,
-                           COALESCE(irs.risk_level, fs.risk_level)  AS risk_level,
-                           COALESCE(irs.confidence, fs.confidence)  AS confidence,
-                           fs.kill_chain_phase, fs.kill_chain_stage,
-                           fs.primary_technique, fs.forensic_narrative,
-                           fs.mitre_techniques, fs.honeypots_hit, fs.honeypot_count,
-                           fs.sessions_count, fs.login_attempts, fs.success_count,
-                           fs.attack_velocity, fs.started_at, fs.ended_at
-                    FROM forensic_sessions fs
+                    WITH ranked AS (
+                        SELECT
+                            fs.*,
+                            ROW_NUMBER() OVER (PARTITION BY fs.source_ip ORDER BY fs.started_at DESC) AS rn,
+                            COUNT(*)                 OVER (PARTITION BY fs.source_ip) AS agg_sessions_count,
+                            SUM(fs.login_attempts)   OVER (PARTITION BY fs.source_ip) AS agg_login_attempts,
+                            SUM(fs.success_count)    OVER (PARTITION BY fs.source_ip) AS agg_success_count,
+                            MAX(fs.kill_chain_stage) OVER (PARTITION BY fs.source_ip) AS agg_kc_stage,
+                            MAX(fs.attack_velocity)  OVER (PARTITION BY fs.source_ip) AS agg_velocity
+                        FROM forensic_sessions fs
+                        WHERE fs.honeypot_type != 'unified'
+                    )
+                    SELECT
+                        r.session_id, r.source_ip, r.honeypot_type,
+                        COALESCE(irs.risk_score, 0)        AS risk_score,
+                        COALESCE(irs.risk_level, 'INFO')   AS risk_level,
+                        COALESCE(irs.confidence, 'LOW')    AS confidence,
+                        r.kill_chain_phase,
+                        r.agg_kc_stage                     AS kill_chain_stage,
+                        r.primary_technique, r.forensic_narrative,
+                        r.honeypots_hit, r.honeypot_count,
+                        r.agg_sessions_count               AS sessions_count,
+                        r.agg_login_attempts               AS login_attempts,
+                        r.agg_success_count                AS success_count,
+                        r.agg_velocity                     AS attack_velocity,
+                        r.started_at, r.ended_at,
+                        r.mitre_techniques
+                    FROM ranked r
                     LEFT JOIN ip_risk_scores irs
-                           ON irs.source_ip = CAST(fs.source_ip AS INET)
-                    ORDER BY fs.started_at DESC
+                           ON irs.source_ip = CAST(r.source_ip AS INET)
+                    WHERE r.rn = 1
+                    ORDER BY risk_score DESC, r.started_at DESC
                     LIMIT :lim
                     """
                 ),
@@ -1205,6 +1330,28 @@ async def forensic_session_enrichment(session_id: str) -> Dict[str, Any]:
                 try: mt = json.loads(mt)
                 except Exception: mt = []
             mitre_techniques = mt if isinstance(mt, list) else []
+
+            # Aggregate MITRE techniques across ALL sessions for this IP so the
+            # reconstruction view shows the full picture (not just one session).
+            if source_ip:
+                agg = await db.execute(text("""
+                    SELECT DISTINCT elem AS tech
+                    FROM forensic_sessions,
+                         jsonb_array_elements_text(
+                             CASE WHEN jsonb_typeof(mitre_techniques) = 'array'
+                                  THEN mitre_techniques ELSE '[]'::jsonb END
+                         ) AS elem
+                    WHERE source_ip = :ip AND honeypot_type != 'unified'
+                      AND elem IS NOT NULL AND elem != ''
+                """), {"ip": source_ip})
+                agg_techs = [r2[0] for r2 in agg.fetchall()]
+                if agg_techs:
+                    # Preserve order, dedupe, prefer aggregated set
+                    seen = set(); merged = []
+                    for t in agg_techs + mitre_techniques:
+                        if t and t not in seen:
+                            seen.add(t); merged.append(t)
+                    mitre_techniques = merged
     except Exception as exc:
         log.warning("enrichment lookup failed for %s: %s", session_id, exc)
         return out
@@ -1291,17 +1438,23 @@ async def forensic_session_enrichment(session_id: str) -> Dict[str, Any]:
         "tags": shodan_tags,
     }
 
-    # Always include whois block
+    # Always include whois block. The enrichment cache stores RDAP-style keys
+    # (network_name, cidr, asn_registry, registration, abuse_emails, ...).
+    _abuse_emails = whois.get("abuse_emails")
+    _abuse_email = (_abuse_emails[0] if isinstance(_abuse_emails, list) and _abuse_emails
+                    else whois.get("abuse_email") or whois.get("abuse"))
     out["whois"] = {
         "_source": "cache" if (cache_hit and whois) else "none",
-        "registrar":     whois.get("registrar"),
-        "organization":  whois.get("organization") or whois.get("org"),
-        "country":       whois.get("country"),
-        "created":       whois.get("created") or whois.get("creation_date"),
-        "updated":       whois.get("updated"),
-        "abuse_email":   whois.get("abuse_email") or whois.get("abuse"),
-        "net_range":     whois.get("net_range") or whois.get("network"),
+        "registrar":     (whois.get("asn_registry") or "").upper() or whois.get("registrar"),
+        "organization":  whois.get("network_name") or whois.get("asn_description") or whois.get("organization") or whois.get("org"),
+        "country":       whois.get("asn_country") or whois.get("country"),
+        "created":       whois.get("registration") or whois.get("created") or whois.get("creation_date"),
+        "updated":       whois.get("last_changed") or whois.get("updated"),
+        "abuse_email":   _abuse_email,
+        "net_range":     whois.get("cidr") or whois.get("asn_cidr") or whois.get("net_range") or whois.get("network"),
         "asn":           whois.get("asn"),
+        "network_type":  whois.get("network_type"),
+        "asn_description": whois.get("asn_description"),
     }
 
     # Always include iplocate block
@@ -1487,6 +1640,10 @@ async def forensic_session_detail(session_id: str) -> Dict[str, Any]:
     from sqlalchemy import text
     from db import session_scope
 
+    _KC_PHASE_BY_STAGE = {
+        1: "reconnaissance", 2: "weaponization", 3: "delivery", 4: "exploitation",
+        5: "installation", 6: "command_and_control", 7: "lateral_movement", 8: "actions_on_objectives",
+    }
     row: Dict[str, Any] = {}
     try:
         async with session_scope() as db:
@@ -1516,6 +1673,52 @@ async def forensic_session_detail(session_id: str) -> Dict[str, Any]:
                 for field in ("started_at", "ended_at", "created_at"):
                     if row.get(field) is not None:
                         row[field] = str(row[field])
+
+                # ── Aggregate per-IP so the reconstruction view is consistent
+                #    with the report (full attack picture, not one sub-session) ──
+                _ip = row.get("source_ip")
+                if _ip:
+                    agg = await db.execute(text("""
+                        SELECT
+                            COUNT(*)                  AS sub_sessions,
+                            SUM(login_attempts)       AS total_attempts,
+                            SUM(success_count)        AS total_success,
+                            MAX(kill_chain_stage)     AS max_kc_stage,
+                            MAX(attack_velocity)      AS max_velocity
+                        FROM forensic_sessions
+                        WHERE source_ip = :ip AND honeypot_type != 'unified'
+                    """), {"ip": _ip})
+                    a = agg.mappings().fetchone()
+                    if a:
+                        row["sub_sessions"]    = int(a["sub_sessions"] or 1)
+                        row["login_attempts"]  = int(a["total_attempts"] or row.get("login_attempts") or 0)
+                        row["success_count"]   = int(a["total_success"] or 0)
+                        _maxkc = int(a["max_kc_stage"] or row.get("kill_chain_stage") or 0)
+                        row["kill_chain_stage"] = _maxkc
+                        row["kill_chain_phase"] = _KC_PHASE_BY_STAGE.get(_maxkc, row.get("kill_chain_phase"))
+                        if a["max_velocity"] is not None:
+                            row["attack_velocity"] = float(a["max_velocity"])
+
+                    # Aggregate MITRE techniques + pick a meaningful primary
+                    mres = await db.execute(text("""
+                        SELECT DISTINCT elem AS tech
+                        FROM forensic_sessions,
+                             jsonb_array_elements_text(
+                                 CASE WHEN jsonb_typeof(mitre_techniques) = 'array'
+                                      THEN mitre_techniques ELSE '[]'::jsonb END
+                             ) AS elem
+                        WHERE source_ip = :ip AND honeypot_type != 'unified'
+                          AND elem IS NOT NULL AND elem != ''
+                    """), {"ip": _ip})
+                    techs = [m[0] for m in mres.fetchall()]
+                    if techs:
+                        row["mitre_techniques"] = techs
+                        # Primary technique priority: brute force > valid accounts >
+                        # exploit > shell > first available.
+                        for pref in ("T1110.001", "T1078", "T1190", "T1059.004"):
+                            if pref in techs:
+                                row["primary_technique"] = pref
+                                break
     except Exception as exc:
         log.warning("forensic_session_detail: PG query failed for %s: %s", session_id, exc)
 

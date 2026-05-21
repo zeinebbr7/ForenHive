@@ -37,7 +37,10 @@ MITRE_TECHNIQUES = {
     "T1059.004": {
         "name":       "Command and Scripting Interpreter: Unix Shell",
         "tactic":     "Execution",
-        "kill_chain": "installation",
+        # Running shell commands after gaining access is Execution → Exploitation
+        # phase. Installation requires actual persistence (file drop, cron, service)
+        # which is captured by T1105 (Ingress Tool Transfer) instead.
+        "kill_chain": "exploitation",
     },
     "T1105": {
         "name":       "Ingress Tool Transfer",

@@ -463,9 +463,11 @@ class RiskScorer:
 
     def _detail_sophistication(self, sessions: list, honeypots_hit: list) -> str:
         max_kc = max((int(s.get("kill_chain_stage") or 0) for s in sessions), default=0)
+        # Lockheed Martin kill chain (1-indexed) — must match the report's
+        # KC labels: Recon, Weapon, Delivery, Exploit, Install, C2, Lateral, Actions
         phases = [
-            "None", "Reconnaissance", "Weaponization", "Exploitation",
-            "Installation", "C2", "Actions", "Lateral Movement", "Exfiltration",
+            "None", "Reconnaissance", "Weaponization", "Delivery", "Exploitation",
+            "Installation", "C2", "Lateral Movement", "Actions on Objectives",
         ]
         phase = phases[max_kc] if max_kc < len(phases) else f"Stage {max_kc}"
         multi = (
@@ -568,6 +570,35 @@ class RiskScorer:
 
 _HIGH_SEV_YARA = {"Mirai_Botnet", "WannaCry_Ransomware", "Emotet_Loader",
                   "Cobalt_Strike", "Metasploit_Payload"}
+
+
+def calculate_risk_score(session_data: dict) -> dict:
+    """Module-level wrapper used by engine.py — delegates to
+    score_session_from_data and fills the extra keys engine.py reads."""
+    base = score_session_from_data(session_data)
+    breakdown = base.get("signal_breakdown", {}) or {}
+    active = sum(1 for v in breakdown.values() if (v or {}).get("points", 0) > 0)
+    attack_types = []
+    if (breakdown.get("malware") or {}).get("points", 0) > 0:
+        attack_types.append("malware")
+    if (breakdown.get("brute_force") or {}).get("points", 0) > 0:
+        attack_types.append("brute_force")
+    if (breakdown.get("compromise") or {}).get("points", 0) >= 25:
+        attack_types.append("credential_access")
+    if (breakdown.get("anonymization") or {}).get("points", 0) > 0:
+        attack_types.append("evasion")
+    base.update({
+        "attack_types":        attack_types,
+        "lateral_movement":    False,
+        "active_signals":      active,
+        "data_quality":        "OK" if active >= 2 else "PARTIAL",
+        "notes":               [],
+        "narrative":           "",
+        "recommended_actions": [],
+        "iocs":                [],
+        "attribution":         {},
+    })
+    return base
 
 
 def score_session_from_data(session_data: dict) -> dict:

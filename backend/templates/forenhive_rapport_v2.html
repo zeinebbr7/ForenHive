@@ -216,13 +216,13 @@
   .kpi.y .kpi-value { color: var(--accent); }
 
   /* ═══════ RISK GAUGE (circular) ═══════ */
-  .risk-panel { display: grid; grid-template-columns: 60mm 1fr; gap: 8mm; align-items: center; padding: 6mm; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; margin: 3mm 0 5mm 0; }
+  .risk-panel { display: grid; grid-template-columns: 60mm 1fr; gap: 8mm; align-items: center; padding: 6mm; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; margin: 3mm 0 5mm 0; page-break-inside: avoid; }
   .gauge { position: relative; width: 50mm; height: 50mm; margin: 0 auto; }
-  .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-  .gauge-readout { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .gauge-readout .num { font-size: 28pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.02em; }
-  .gauge-readout .denom { font-family: var(--mono); font-size: 9pt; color: var(--text3); margin-top: 1mm; }
-  .gauge-readout .lvl { font-family: var(--mono); font-size: 8pt; letter-spacing: 2px; margin-top: 2mm; color: var(--red); font-weight: 700; }
+  .gauge svg { position: absolute; top: 0; left: 0; width: 50mm; height: 50mm; transform: rotate(-90deg); }
+  .gauge-readout { position: absolute; top: 0; left: 0; width: 50mm; height: 50mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .gauge-readout .num { display: block; font-size: 22pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.02em; }
+  .gauge-readout .denom { display: block; font-family: var(--mono); font-size: 8pt; color: var(--text3); margin-top: 1mm; }
+  .gauge-readout .lvl { display: block; font-family: var(--mono); font-size: 7pt; letter-spacing: 1.5px; margin-top: 2mm; color: var(--red); font-weight: 700; }
   .risk-meta { font-size: 9pt; }
   .risk-meta dt { font-family: var(--mono); font-size: 7pt; color: var(--text3); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2mm; }
   .risk-meta dd { margin: 0 0 1mm 0; font-weight: 500; color: var(--text); }
@@ -257,6 +257,16 @@
 
   /* ── PILLS (IPLocate) ── */
   .pill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin: 2mm 0 4mm 0; }
+
+  /* ── KILL CHAIN PROGRESSION ── */
+  .kc-track { display: flex; align-items: center; justify-content: space-between; margin: 3mm 0 5mm 0; gap: 0; }
+  .kc-step { display: flex; flex-direction: column; align-items: center; gap: 1.5mm; min-width: 14mm; flex-shrink: 0; }
+  .kc-dot { width: 7mm; height: 7mm; border-radius: 50%; background: var(--bg3, #E5E0D5); border: 1.5px solid var(--border); color: var(--text3); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8pt; font-weight: 700; }
+  .kc-step.done .kc-dot { background: linear-gradient(135deg, var(--red), var(--accent)); border-color: var(--red); color: #fff; }
+  .kc-label { font-family: var(--mono); font-size: 6.5pt; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; text-align: center; }
+  .kc-step.done .kc-label { color: var(--text); font-weight: 700; }
+  .kc-link { flex: 1; height: 2px; background: var(--border); margin: 0 -1mm; align-self: flex-start; margin-top: 3.5mm; }
+  .kc-link.done { background: var(--red); }
   .pill { display: flex; align-items: center; gap: 2mm; font-family: var(--mono); font-size: 8pt; padding: 2mm 3mm; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 2mm; letter-spacing: 1px; text-transform: uppercase; }
   .pill .ind { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
   .pill.ok  { background: rgba(13,71,161,0.05); border-color: rgba(13,71,161,0.25); color: var(--blue); }
@@ -395,7 +405,6 @@
       <div class="toc-entry sub"><span class="toc-num">9.1</span><span class="toc-label">AI-Generated (Mistral 7B)</span></div>
       <div class="toc-entry sub"><span class="toc-num">9.2</span><span class="toc-label">Deterministic Rules</span></div>
       <div class="toc-entry"><span class="toc-num">10</span><span class="toc-label">References</span></div>
-      <div class="toc-entry"><span class="toc-num">A</span><span class="toc-label">Appendix &#8212; Full Session Log</span></div>
     </div>
   </div>
 </section>
@@ -422,7 +431,7 @@
     <div class="kpi y">
       <div class="kpi-label">Auth Attempts</div>
       <div class="kpi-value">{{ auth_attempts | default([]) | length }}</div>
-      <div class="kpi-sub">{% if auth_success %}brute force &middot; 1 success{% else %}brute force &middot; 0 success{% endif %}</div>
+      <div class="kpi-sub">brute force &middot; {{ auth_success_count | default(0) }} success</div>
     </div>
     <div class="kpi b">
       <div class="kpi-label">Session Duration</div>
@@ -562,7 +571,7 @@
 
   <h2>3.3 IPLocate &#8212; threat classification</h2>
   {% if iplocate_data is defined and iplocate_data %}
-  <div class="pill-grid">
+  <div class="pill-grid no-break">
     <div class="pill {% if iplocate_data.is_tor %}danger{% else %}ok{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
     <div class="pill {% if iplocate_data.is_vpn or iplocate_data.is_proxy %}danger{% else %}ok{% endif %}"><span class="ind"></span>VPN / Proxy &middot; {% if iplocate_data.is_vpn %}VPN{% elif iplocate_data.is_proxy %}Proxy{% else %}No{% endif %}</div>
     <div class="pill {% if iplocate_data.is_hosting %}danger{% else %}ok{% endif %}"><span class="ind"></span>Hosting &middot; {% if iplocate_data.is_hosting %}Yes{% else %}No{% endif %}</div>
@@ -599,7 +608,7 @@
     <h1 class="section-title">Attack Timeline</h1>
     <span class="section-tag">~/kill_chain</span>
   </div>
-  <p>Key events from the session ({{ event_count }} total). Full chronological log is in <strong>Appendix&nbsp;A</strong>.</p>
+  <p>Chronological log of key events from the session ({{ event_count }} total).</p>
   <div class="timeline">
     {% for ev in timeline_summary | default([]) %}
     <div class="tl-item{% if ev.severity == 'CRITICAL' %} crit{% elif ev.severity == 'HIGH' %} warn{% elif ev.severity == 'INFO' %} info{% endif %}">
@@ -638,6 +647,32 @@
   {% else %}
   <p class="muted">No MITRE ATT&amp;CK techniques identified.</p>
   {% endif %}
+
+  {# ── Kill Chain progression ─────────────────────────────────────────── #}
+  <h3>Kill Chain progression</h3>
+  <div class="no-break">
+  {% set _kc_labels = kc_stages_labels | default(["Recon","Weapon","Delivery","Exploit","Install","C2","Lateral","Actions"]) %}
+  {% set _kc = kc_reached | default(0) %}
+  <table class="kv" style="margin-bottom:3mm">
+    <tr>
+      <th style="width:42mm">Stage reached</th>
+      <td><strong>{{ _kc }}/{{ _kc_labels | length }}</strong>
+          &middot; {% if _kc > 0 and _kc <= _kc_labels | length %}{{ _kc_labels[_kc - 1] }}{% else %}None{% endif %}
+      </td>
+    </tr>
+  </table>
+  <div class="kc-track">
+    {% for label in _kc_labels %}
+      {% set idx = loop.index %}
+      <div class="kc-step {% if idx <= _kc %}done{% endif %}">
+        <div class="kc-dot">{{ idx }}</div>
+        <div class="kc-label">{{ label }}</div>
+      </div>
+      {% if not loop.last %}<div class="kc-link {% if idx < _kc %}done{% endif %}"></div>{% endif %}
+    {% endfor %}
+  </div>
+  </div>
+
   {% if mitre_narrative is defined and mitre_narrative %}
   <div class="callout yellow">
     <strong>&#9889; Attack-chain narrative</strong> <span class="muted mono" style="font-size:7.5pt">(Mistral 7B &middot; T=0.3)</span><br>
@@ -950,29 +985,6 @@
     <li>{{ ref }}</li>
     {% endfor %}
   </ol>
-</section>
-
-{# ═══ APPENDIX A ═══ #}
-<section class="section page-break">
-  <div class="section-bar">
-    <span class="section-num">A</span>
-    <h1 class="section-title">Appendix &#8212; Full Session Log</h1>
-    <span class="section-tag">~/appendix_a</span>
-  </div>
-  <p class="muted" style="font-size:8pt">Complete chronological log of all {{ event_count }} events. Timestamps are UTC with millisecond precision.</p>
-  {% if full_timeline is defined and full_timeline %}
-  <div style="margin-top:3mm">
-    {% for ev in full_timeline %}
-    <div class="log-row">
-      <span class="ts">{{ ev.timestamp }}</span>
-      <span class="ty">{{ ev.event_type }}</span>
-      <span class="dt">{{ ev.details }}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <pre>{{ raw_log | default("Full session log not available.") }}</pre>
-  {% endif %}
 </section>
 
 </body>
