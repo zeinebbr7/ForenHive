@@ -528,7 +528,12 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "report_id":         ctx.get("report_ref", "FH-UNKNOWN"),
         "session_id":        ctx.get("session_id", ""),
         "generated_at":      ctx.get("generated_at_str", ""),
-        "engine_version":    "3.1",
+        "engine_version":    ctx.get("engine_version") or "v2.0.0-9signals",
+        "honeypot_port":     (
+            str(ctx.get("destination_port"))
+            if ctx.get("destination_port")
+            else None
+        ),
         "classification":    "TLP:AMBER",
         # Risk
         "risk_level":        risk_level,
@@ -630,8 +635,10 @@ async def _build_forensic_context(session_id: str) -> dict:
                     SELECT session_id, source_ip, honeypot_type, risk_score,
                            risk_level, confidence, signal_breakdown,
                            kill_chain_phase, kill_chain_stage, primary_technique,
-                           forensic_narrative, mitre_techniques, started_at,
-                           login_attempts, success_count, sessions_count, honeypots_hit
+                           forensic_narrative, mitre_techniques, started_at, ended_at,
+                           login_attempts, success_count, sessions_count, honeypots_hit,
+                           attack_velocity, score_version, scored_at,
+                           enrichment_data
                     FROM forensic_sessions
                     WHERE session_id = :sid
                     LIMIT 1
@@ -657,6 +664,15 @@ async def _build_forensic_context(session_id: str) -> dict:
                     except Exception:
                         sb = {}
                 pg_row["signal_breakdown"] = sb
+                # Normalise enrichment_data to dict — the engine stores per-session
+                # VT / SMB / exploit / kill-chain-label fields inside this jsonb.
+                ed = pg_row.get("enrichment_data") or {}
+                if isinstance(ed, str):
+                    try:
+                        ed = json.loads(ed)
+                    except Exception:
+                        ed = {}
+                pg_row["enrichment_data"] = ed
                 # Fill detail gaps from PG row
                 if not source_ip and pg_row.get("source_ip"):
                     source_ip = pg_row["source_ip"]
@@ -1259,9 +1275,33 @@ async def _build_forensic_context(session_id: str) -> dict:
         "enrichment_cache": enrichment_cache,
         "is_unified": is_unified,
         "vt_result": vt_result,
-        "vt_malicious": int(profile_dict.get("vt_malicious") or 0),
-        "vt_available": bool(profile_dict.get("vt_available", True)),
-        "vt_family": profile_dict.get("vt_family") or "",
+        # VirusTotal / extra per-session fields live in enrichment_data jsonb
+        # (engine.py:1173+). Previous reads from AttackerProfile always
+        # returned defaults; route through pg_row.enrichment_data so the
+        # "Quota épuisé" / detection-count / family lines reflect reality.
+        "vt_malicious":   int((pg_row.get("enrichment_data") or {}).get("vt_malicious")  or 0),
+        "vt_available":   bool((pg_row.get("enrichment_data") or {}).get("vt_available", True)),
+        "vt_family":      ((pg_row.get("enrichment_data") or {}).get("vt_family") or ""),
+        # Surface the previously-dropped engine fields so downstream sections
+        # can use them. Adapter consumes those it needs; rest is harmless.
+        "engine_enrichment":  (pg_row.get("enrichment_data") or {}),
+        "engine_version":     pg_row.get("score_version") or "v2.0.0-9signals",
+        "session_ended_at":   pg_row.get("ended_at"),
+        "attack_velocity":    pg_row.get("attack_velocity"),
+        "destination_port":   (pg_row.get("enrichment_data") or {}).get("destination_port"),
+        "command_count":      (pg_row.get("enrichment_data") or {}).get("command_count"),
+        "file_download_count": (pg_row.get("enrichment_data") or {}).get("file_download_count"),
+        "exfil_bytes":        (pg_row.get("enrichment_data") or {}).get("exfil_bytes"),
+        "kill_chain_label":   (pg_row.get("enrichment_data") or {}).get("kill_chain_label"),
+        "mapping_source":     (pg_row.get("enrichment_data") or {}).get("mapping_source"),
+        "smb_share_enum":     bool((pg_row.get("enrichment_data") or {}).get("smb_share_enum")),
+        "epmapper_prescan":   int((pg_row.get("enrichment_data") or {}).get("epmapper_prescan") or 0),
+        "exploit_cve":        (pg_row.get("enrichment_data") or {}).get("exploit_cve") or [],
+        "previously_seen":    bool((pg_row.get("enrichment_data") or {}).get("previously_seen")),
+        "previous_sessions":  int((pg_row.get("enrichment_data") or {}).get("previous_sessions") or 0),
+        "shodan_vulns":       (pg_row.get("enrichment_data") or {}).get("shodan_vulns") or [],
+        "is_bogon":           bool((pg_row.get("enrichment_data") or {}).get("is_bogon")),
+        "active_signals":     int((pg_row.get("enrichment_data") or {}).get("active_signals") or 0),
         "ollama_recommendations": ollama_recs,
         # Jinja2 helper
         "enumerate": enumerate,
