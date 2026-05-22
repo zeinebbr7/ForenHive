@@ -30,6 +30,24 @@ log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
+# ── Hoisted Jinja environment + WeasyPrint import ─────────────────────
+# Building these per-request adds ~1-2 s of cold-start latency on each call;
+# at module scope the templates stay compiled and WeasyPrint warms its font
+# cache exactly once.
+_JINJA_ENV = Environment(
+    loader=FileSystemLoader(TEMPLATE_DIR),
+    autoescape=select_autoescape(["html"]),
+    auto_reload=False,
+)
+_JINJA_ENV.globals["enumerate"] = enumerate
+
+try:
+    from weasyprint import HTML as _WeasyHTML  # noqa: E402
+    _WEASY_AVAILABLE = True
+except ImportError:  # pragma: no cover — surfaced at request time
+    _WeasyHTML = None  # type: ignore[assignment]
+    _WEASY_AVAILABLE = False
+
 # MITRE ATT&CK technique → (name, tactic)
 _MITRE_DB: Dict[str, tuple] = {
     "T1595":     ("Active Scanning",                    "Reconnaissance"),
@@ -112,10 +130,11 @@ def _resolve_malware_info(yara_matches: List[str]) -> Dict[str, str]:
     return {}
 
 _RISK_LABEL_EN: Dict[str, str] = {
-    "CRITIQUE": "CRITICAL",
-    "ÉLEVÉ":    "HIGH",
-    "MOYEN":    "MEDIUM",
-    "FAIBLE":   "LOW",
+    # Canonical v2.0.0 engine vocabulary — labels are English everywhere now.
+    "CRITICAL": "CRITICAL",
+    "HIGH":     "HIGH",
+    "MEDIUM":   "MEDIUM",
+    "LOW":      "LOW",
     "INFO":     "INFO",
 }
 
@@ -125,10 +144,11 @@ _KC_STAGES = ["reconnaissance", "weaponization", "delivery", "exploitation",
 
 
 def _risk_label_color(score: int):
-    if score >= 80: return "CRITIQUE", "#C62828"
-    if score >= 60: return "ÉLEVÉ",    "#b36000"
-    if score >= 40: return "MOYEN",    "#1565C0"
-    if score >= 20: return "FAIBLE",   "#388E3C"
+    # v2.0.0 cutoffs — mirror forensic-engine/risk_thresholds.py (70/45/25/10).
+    if score >= 70: return "CRITICAL", "#C62828"
+    if score >= 45: return "HIGH",     "#b36000"
+    if score >= 25: return "MEDIUM",   "#1565C0"
+    if score >= 10: return "LOW",      "#388E3C"
     return "INFO", "#757575"
 
 
@@ -141,56 +161,89 @@ def _mitre_lookup(tech_id: str):
 
 
 _SIGNAL_META = {
+    # ── WHO (33 pts) ──
     "reputation": {
         "name": "IP Reputation (AbuseIPDB)",
         "source": "AbuseIPDB",
-        "why": "Community-reported abuse confidence. Scores ≥80 indicate confirmed malicious infrastructure. Max 25 pts.",
+        "why": "Community-reported abuse confidence. ≥90→15, ≥70→11, ≥50→7, ≥25→4. Skipped for private IPs. Max 15 pts.",
     },
-    "compromise": {
-        "name": "Compromise Confirmed (Auth Success)",
+    "anonymization": {
+        "name": "Anonymisation / Evasion (Tor / VPN / Bogon)",
+        "source": "IPLocate",
+        "why": "Bogon/Tor→10, VPN/Proxy→6, Datacenter→3. Indicates deliberate identity concealment. Max 10 pts.",
+    },
+    "threat_history": {
+        "name": "Threat History (Recidivism + Geo)",
+        "source": "ForenHive + AbuseIPDB + Shodan",
+        "why": "Repeat-offender recidivism, abuser list, sanctioned-country origin, known Shodan vulns. Max 8 pts.",
+    },
+    # ── WHAT (43 pts) ──
+    "intent_volume": {
+        "name": "Intent & Volume (Effort + Recon)",
+        "source": "Cowrie / Dionaea / Galah",
+        "why": "Log-scaled attempts, velocity bonus (>50/s), scan-path hits against known recon paths. Max 10 pts.",
+    },
+    "compromise_depth": {
+        "name": "Compromise Depth (Auth + Commands + Files)",
         "source": "Cowrie",
-        "why": "Successful authentication grants interactive shell access — highest-severity signal. Max 25 pts.",
+        "why": "Successful auth, command volume, command quality (credential-access/destructive/lateral), file ingress. Max 15 pts.",
     },
-    "brute_force": {
-        "name": "Brute Force Automation",
-        "source": "Cowrie / Dionaea",
-        "why": "High-volume credential guessing (>200 attempts) or attack velocity >50 req/s. Max 20 pts.",
+    "exfiltration": {
+        "name": "Exfiltration (Egress Volume)",
+        "source": "Zeek / Cowrie",
+        "why": "Log-scaled KB egressed from `exfil_bytes`. 0 → no data egress. Max 8 pts.",
     },
+    "lateral_movement": {
+        "name": "Lateral Movement (CVE + SMB + Multi-HP + Critical Ports)",
+        "source": "Dionaea / Zeek / Correlator",
+        "why": "CVE exploit (+4), SMB share-enum/epmapper (+2 each), ≥3 honeypots (+2), critical dst port (+2). Max 10 pts.",
+    },
+    # ── HOW (24 pts) ──
     "malware": {
         "name": "Malware Detected (YARA / VirusTotal)",
         "source": "YARA Engine / VirusTotal",
-        "why": "Binary captured by Dionaea matched a YARA rule or VirusTotal flagged ≥10 engines. Max 15 pts.",
+        "why": "YARA severity (critical 6 / high 4 / medium 2 / low 1) + VT tiers (≥20→6, ≥10→4, ≥1→2). Max 12 pts.",
     },
-    "anonymization": {
-        "name": "Anonymisation / Evasion (Tor / VPN)",
-        "source": "IPLocate",
-        "why": "Tor exit node (+10) or commercial VPN/proxy (+6). Indicates deliberate identity concealment. Max 10 pts.",
-    },
-    "sophistication": {
-        "name": "Attack Sophistication (Multi-Honeypot)",
-        "source": "ForenHive Correlator",
-        "why": "+2 pts per additional honeypot type hit by the same IP. Max 5 pts.",
+    "mitre_sophistication": {
+        "name": "MITRE Sophistication (TTP Breadth)",
+        "source": "ForenHive MITRE Mapper",
+        "why": "Distinct techniques (≤6), kill-chain stage (≤4), distinct tactics (≤2). Max 12 pts.",
     },
 }
 
 
 def _build_score_signals_from_breakdown(breakdown: dict) -> List[dict]:
-    """Build §07 signal list from the 6-signal JSONB stored by RiskScorer."""
+    """Build §07 signal list from the v2.0.0 9-signal JSONB stored by RiskScorer."""
     signals = []
-    order = ["reputation", "compromise", "brute_force", "malware", "anonymization", "sophistication"]
+    order = [
+        # WHO
+        "reputation", "anonymization", "threat_history",
+        # WHAT
+        "intent_volume", "compromise_depth", "exfiltration", "lateral_movement",
+        # HOW
+        "malware", "mitre_sophistication",
+    ]
     for key in order:
         sig = breakdown.get(key)
         if sig is None:
             continue
         meta = _SIGNAL_META.get(key, {"name": key, "source": "ForenHive", "why": ""})
         detail_txt = sig.get("detail") or ""
+        skipped     = bool(sig.get("skipped"))
+        skip_reason = sig.get("skip_reason") or ""
+        if skipped:
+            value = f"SKIPPED — {skip_reason}" if skip_reason else "SKIPPED"
+        else:
+            value = detail_txt
         signals.append({
-            "name":   meta["name"],
-            "source": meta["source"],
-            "points": int(sig.get("points", 0)),
-            "max":    int(sig.get("max", 0)),
-            "value":  detail_txt,
-            "why":    meta["why"],
+            "name":        meta["name"],
+            "source":      meta["source"],
+            "points":      int(sig.get("points", 0)),
+            "max":         int(sig.get("max_points", sig.get("max", 0))),
+            "value":       value,
+            "why":         meta["why"],
+            "skipped":     skipped,
+            "skip_reason": skip_reason,
         })
     return signals
 
@@ -270,11 +323,13 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
 
     signal_breakdown = [
         {
-            "name":       s.get("name", ""),
-            "points":     s.get("points", 0),
-            "max_points": s.get("max", 0),
-            "value":      s.get("value", ""),
-            "why":        s.get("why", ""),
+            "name":        s.get("name", ""),
+            "points":      s.get("points", 0),
+            "max_points":  s.get("max", 0),
+            "value":       s.get("value", ""),
+            "why":         s.get("why", ""),
+            "skipped":     bool(s.get("skipped")),
+            "skip_reason": s.get("skip_reason", ""),
         }
         for s in ctx.get("score_signals", [])
     ]
@@ -337,20 +392,23 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "vt_total":      vt.get("total") if vt else None,
         })
 
-    # Chain of custody (session snapshot hash from existing context)
+    # Chain of custody — uses the real RFC 3161 record from get_custody().seal()
+    _tsa_ok  = bool(ctx.get("custody_ok", False))
+    _tsa_url = ctx.get("tsa_url") or "https://freetsa.org/tsr"
     chain_of_custody = [{
         "artifact":  "Session JSON snapshot",
         "sha256":    ctx.get("sha256_session", ""),
         "timestamp": str(started_at),
-        "tsa":       "freetsa.org",
+        "tsa":       _tsa_url if _tsa_ok else "—",
+        "tsa_ok":    _tsa_ok,
     }]
 
-    # Verdict
-    if score >= 80:
+    # Verdict — cutoffs aligned with risk_thresholds.py v2.0.0 (70/45/25/10)
+    if score >= 70:
         verdict = f"Confirmed high-severity threat ({malware_family or 'malware deployment detected'})"
-    elif score >= 60:
+    elif score >= 45:
         verdict = f"Likely malicious activity — {malware_family or 'attack confirmed'}"
-    elif score >= 40:
+    elif score >= 25:
         verdict = "Suspicious activity requiring further investigation"
     else:
         verdict = "Low-risk activity — continued monitoring recommended"
@@ -369,20 +427,49 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         traits.append("Achieved initial access via valid credentials")
 
     org_pct = ctx.get("org_score_pct", 50)
-    sophistication = "HIGH" if score >= 70 else ("MEDIUM" if score >= 40 else "LOW")
+    sophistication = "HIGH" if score >= 70 else ("MEDIUM" if score >= 25 else "LOW")
+
+    # Prefer the engine's persisted FBI BAU detective profile (suspect_profiles)
+    # over the score-derived heuristics. Engine stores confidence and
+    # organized_score as 0-1 floats; the template expects integer % / x/10.
+    sp = profile.get("suspect_profile") or {}
+    if sp.get("sophistication"):
+        sophistication = str(sp["sophistication"]).upper()
+    sp_conf = sp.get("confidence")
+    sp_conf_pct = int(round(float(sp_conf) * 100)) if isinstance(sp_conf, (int, float)) else org_pct
+    sp_objective = sp.get("primary_objective") or ""
+    sp_org = sp.get("organized_score")
+    sp_org_int = int(round(float(sp_org) * 10)) if isinstance(sp_org, (int, float)) else (org_pct // 10)
+    sp_traits = sp.get("behavioral_traits") or []
+    sp_narr = sp.get("detective_narrative") or ""
+    sp_disguise_used = bool(sp.get("disguise_used"))
+    sp_disguise_type = sp.get("disguise_type") or ""
+    sp_escalation = bool(sp.get("escalation_detected"))
+    sp_signature = sp.get("signature_indicators") or []
+
     profile_out = {
         "sophistication":    sophistication,
-        "confidence":        org_pct,
-        "objective":         malware_family or ("Credential harvesting" if auth_attempts else "Unknown"),
-        "organized_score":   min(10, org_pct // 10),
-        "behavioral_traits": traits,
-        "detective_narrative": profile.get("mistral_analysis", ""),
-        "es_reference_cases": [],
+        "confidence":        sp_conf_pct,
+        "objective":         sp_objective or malware_family or ("Credential harvesting" if auth_attempts else "Unknown"),
+        "organized_score":   min(10, sp_org_int),
+        "behavioral_traits": sp_traits if sp_traits else traits,
+        "detective_narrative": sp_narr or profile.get("mistral_analysis", ""),
+        "es_reference_cases": profile.get("suspect_similar_cases") or [],
+        # Mapped from the engine profile so the template's optional blocks render
+        # when real intel is available. Operator type folds disguise; persistence
+        # folds escalation + signature indicators.
+        "operator_type":     (
+            f"Anonymized ({sp_disguise_type})" if sp_disguise_used and sp_disguise_type and sp_disguise_type != "none"
+            else ("Direct" if sp else "")
+        ),
+        "persistence":       (
+            "Escalating" if sp_escalation else ("Persistent" if sp_signature else "")
+        ),
     }
 
     # Recommendations
     recommendations: List[Dict] = []
-    if score >= 80:
+    if score >= 70:
         recommendations.append({
             "priority":  "IMMEDIATE",
             "action":    f"Block {source_ip} at perimeter firewall and upstream BGP if possible",
@@ -446,7 +533,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         # Risk
         "risk_level":        risk_level,
         "risk_score":        score,
-        "risk_confidence":   "HIGH" if score >= 70 else ("MEDIUM" if score >= 40 else "LOW"),
+        "risk_confidence":   "HIGH" if score >= 70 else ("MEDIUM" if score >= 25 else "LOW"),
         "risk_warnings":     [],
         # Executive summary
         "verdict":           verdict,
@@ -487,7 +574,8 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "stix_export_path":  None,
         # Chain of custody
         "chain_of_custody":        chain_of_custody,
-        "coc_timestamp_authority": "freetsa.org",
+        "coc_timestamp_authority": _tsa_url if _tsa_ok else "freetsa.org",
+        "custody_ok":              _tsa_ok,
         # Shodan / WHOIS / IPLocate enrichment
         "shodan_data":  shodan_data,
         "whois_data":   whois,
@@ -587,6 +675,68 @@ async def _build_forensic_context(session_id: str) -> dict:
             profile_dict = p.model_dump(mode="json")
         except Exception as exc:
             log.warning("build_profile failed for %s: %s", source_ip, exc)
+
+    # ── FBI BAU detective profile from forensic-engine/profiler.py ─────────
+    # The engine writes a rich Mistral-derived profile (sophistication,
+    # primary_objective, behavioral_traits, detective_narrative, …) into
+    # suspect_profiles.profile (jsonb). Surface it so §"Profile FBI BAU"
+    # uses real engine values instead of the heuristic fallback in the v2
+    # adapter. Also load up to 5 similar cases (by primary_objective and
+    # risk_score proximity) so §"Similar Past Cases" is no longer empty.
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                sp_row = (await db.execute(
+                    text(
+                        "SELECT profile, risk_score, updated_at "
+                        "FROM suspect_profiles "
+                        "WHERE source_ip = :ip "
+                        "ORDER BY updated_at DESC LIMIT 1"
+                    ),
+                    {"ip": source_ip},
+                )).mappings().fetchone()
+                if sp_row:
+                    sp_profile = sp_row["profile"]
+                    if isinstance(sp_profile, str):
+                        try:
+                            sp_profile = json.loads(sp_profile)
+                        except Exception:
+                            sp_profile = {}
+                    if isinstance(sp_profile, dict):
+                        profile_dict["suspect_profile"] = sp_profile
+                        # Similar past cases: same primary_objective, closest risk_score.
+                        sp_obj = sp_profile.get("primary_objective") or ""
+                        sp_score = int(sp_row["risk_score"] or 0)
+                        try:
+                            sim_rows = (await db.execute(
+                                text(
+                                    "SELECT source_ip, risk_score, updated_at, "
+                                    "       profile->>'primary_objective' AS objective, "
+                                    "       profile->>'dominant_tactic'   AS tactic "
+                                    "FROM suspect_profiles "
+                                    "WHERE source_ip != :ip "
+                                    "  AND (:obj = '' OR profile->>'primary_objective' = :obj) "
+                                    "ORDER BY ABS(COALESCE(risk_score,0) - :score) ASC, updated_at DESC "
+                                    "LIMIT 5"
+                                ),
+                                {"ip": source_ip, "obj": sp_obj, "score": sp_score},
+                            )).mappings().fetchall()
+                            profile_dict["suspect_similar_cases"] = [
+                                {
+                                    "ip": r["source_ip"],
+                                    "date": str(r["updated_at"])[:10] if r["updated_at"] else "",
+                                    "session_id": "—",
+                                    "match_reason": (
+                                        f"{r['objective'] or 'unknown'} · "
+                                        f"score {r['risk_score']}"
+                                    ),
+                                }
+                                for r in sim_rows
+                            ]
+                        except Exception as _sim_exc:
+                            log.debug("similar suspect_profiles query failed: %s", _sim_exc)
+        except Exception as exc:
+            log.debug("suspect_profiles query failed for %s: %s", source_ip, exc)
 
     # ── Pre-flight: aggregate individual sessions for unified rows ───────────
     # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated.
@@ -914,9 +1064,17 @@ async def _build_forensic_context(session_id: str) -> dict:
                     {"ip": source_ip},
                 )
                 irs_row = irs.mappings().fetchone()
-                if irs_row and irs_row["signal_breakdown"]:
-                    sb = irs_row["signal_breakdown"]
-                    # Use the unified risk score that matches this breakdown
+                cand = irs_row["signal_breakdown"] if irs_row else None
+                # The unified per-IP scorer runs on a sliding lookback window. Once an
+                # IP's sessions age out of that window, score_ip() returns an empty
+                # result (every signal skipped="empty_aggregate", score 0) which then
+                # overwrites ip_risk_scores. Only adopt the unified breakdown/score if
+                # it actually has at least one active (non-skipped) signal — otherwise
+                # keep the permanent per-session score from forensic_sessions.
+                if isinstance(cand, dict) and any(
+                    isinstance(v, dict) and not v.get("skipped") for v in cand.values()
+                ):
+                    sb = cand
                     if irs_row["risk_score"] is not None:
                         irs_risk_score = int(irs_row["risk_score"])
         except Exception:
@@ -926,12 +1084,13 @@ async def _build_forensic_context(session_id: str) -> dict:
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
 
-    # Use ip_risk_scores score when breakdown came from there (keeps gauge consistent
-    # with signal bars). Fall back to forensic_sessions, then profiler estimate.
-    if irs_risk_score is not None:
-        risk_score = irs_risk_score
-    elif pg_row.get("risk_score") is not None:
-        risk_score = int(pg_row["risk_score"])
+    # Pick the highest meaningful score: the unified per-IP score when it carries a
+    # real (non-empty) breakdown, and never below the permanent per-session score
+    # stored in forensic_sessions (which survives the unified scorer's lookback window).
+    session_score = int(pg_row["risk_score"]) if pg_row.get("risk_score") is not None else None
+    score_candidates = [s for s in (irs_risk_score, session_score) if s is not None]
+    if score_candidates:
+        risk_score = max(score_candidates)
     else:
         risk_score = int(profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
@@ -986,9 +1145,22 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception:
             pass
 
-    # ── SHA-256 chain of custody ──────────────────────────
-    session_bytes = json.dumps(detail, sort_keys=True, default=str).encode()
-    sha256_session = hashlib.sha256(session_bytes).hexdigest()
+    # ── SHA-256 + RFC 3161 chain of custody ─────────────────
+    # Real TSA call via services.chain_custody (rfc3161-client). Falls back
+    # gracefully to SHA-256-only if the TSA is unreachable or the lib missing.
+    try:
+        _custody = await get_custody().seal(detail)
+        sha256_session   = _custody.sha256
+        tsa_ok           = bool(_custody.tsa_ok)
+        tsa_url          = _custody.tsa_url
+        tsa_token_b64    = _custody.tsa_token_b64
+    except Exception as _coc_exc:
+        log.warning("chain_of_custody seal failed: %s", _coc_exc)
+        session_bytes    = json.dumps(detail, sort_keys=True, default=str).encode()
+        sha256_session   = hashlib.sha256(session_bytes).hexdigest()
+        tsa_ok           = False
+        tsa_url          = ""
+        tsa_token_b64    = None
 
     # ── Organised score (behavioural estimate) ─────────────
     n_cmd = len(cmds)
@@ -1073,7 +1245,9 @@ async def _build_forensic_context(session_id: str) -> dict:
         "mitre_rows": mitre_rows,
         "score_signals": score_signals,
         "sha256_session": sha256_session,
-        "custody_ok": False,
+        "custody_ok": tsa_ok,
+        "tsa_url": tsa_url,
+        "tsa_token_b64": tsa_token_b64,
         "kc_reached": kc_reached,
         "kc_stages": _KC_STAGES,
         "kc_stages_labels": _KC_LABELS,
@@ -1105,10 +1279,12 @@ async def generate_report(request: Request, req: ReportRequest = Body(...)) -> R
         raise HTTPException(status_code=400, detail="ip required for ip scope")
     if req.scope.value == "session" and not req.session_id:
         raise HTTPException(status_code=400, detail="session_id required for session scope")
+    correlation_id = uuid.uuid4().hex[:12]
     try:
         return await get_reports().generate(req)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"report generation failed: {exc}")
+    except Exception:
+        log.exception("[%s] report generation failed", correlation_id)
+        raise HTTPException(status_code=500, detail=f"report generation failed (cid={correlation_id})")
 
 
 @router.get("", response_model=ReportListResponse)
@@ -1197,14 +1373,25 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> List[Dict[s
                             SUM(fs.login_attempts)   OVER (PARTITION BY fs.source_ip) AS agg_login_attempts,
                             SUM(fs.success_count)    OVER (PARTITION BY fs.source_ip) AS agg_success_count,
                             MAX(fs.kill_chain_stage) OVER (PARTITION BY fs.source_ip) AS agg_kc_stage,
-                            MAX(fs.attack_velocity)  OVER (PARTITION BY fs.source_ip) AS agg_velocity
+                            MAX(fs.attack_velocity)  OVER (PARTITION BY fs.source_ip) AS agg_velocity,
+                            MAX(fs.risk_score)       OVER (PARTITION BY fs.source_ip) AS agg_risk_score
                         FROM forensic_sessions fs
                         WHERE fs.honeypot_type != 'unified'
                     )
                     SELECT
                         r.session_id, r.source_ip, r.honeypot_type,
-                        COALESCE(irs.risk_score, 0)        AS risk_score,
-                        COALESCE(irs.risk_level, 'INFO')   AS risk_level,
+                        -- Prefer the unified per-IP score (ip_risk_scores) when present,
+                        -- but never fall below the actual per-session score: ip_risk_scores
+                        -- is only populated for IPs above the profiling threshold, so most
+                        -- sessions would otherwise COALESCE to 0 despite having a real score.
+                        GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) AS risk_score,
+                        CASE
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 80 THEN 'CRITICAL'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 60 THEN 'HIGH'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 40 THEN 'MEDIUM'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 20 THEN 'LOW'
+                            ELSE 'INFO'
+                        END                                AS risk_level,
                         COALESCE(irs.confidence, 'LOW')    AS confidence,
                         r.kill_chain_phase,
                         r.agg_kc_stage                     AS kill_chain_stage,
@@ -1577,19 +1764,22 @@ async def forensic_session_enrichment(session_id: str) -> Dict[str, Any]:
     return out
 
 
+def _pick_report_template(lang: str | None) -> str:
+    return "forenhive_rapport_v2_fr.html" if (lang or "").lower() == "fr" else "forenhive_rapport_v2.html"
+
+
 @router.post("/forensic/{session_id}/generate")
-async def forensic_generate(request: Request, session_id: str):
+async def forensic_generate(request: Request, session_id: str, lang: str = "en"):
     """Generate and download a forensic PDF for one session using the rich forensic template."""
-    try:
-        from weasyprint import HTML as WeasyprintHTML
-    except ImportError:
+    if not _WEASY_AVAILABLE:
         raise HTTPException(status_code=503, detail="WeasyPrint not installed")
 
+    correlation_id = uuid.uuid4().hex[:12]
     try:
         ctx = await _build_forensic_context(session_id)
-    except Exception as exc:
-        log.exception("forensic context build failed for %s", session_id)
-        raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+    except Exception:
+        log.exception("[%s] forensic context build failed for %s", correlation_id, session_id)
+        raise HTTPException(status_code=500, detail=f"context build failed (cid={correlation_id})")
 
     # Session not found in ES or PG
     if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
@@ -1597,16 +1787,11 @@ async def forensic_generate(request: Request, session_id: str):
 
     v2_ctx = _adapt_context_for_v2(ctx)
 
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=select_autoescape(["html"]),
-    )
-    env.globals["enumerate"] = enumerate
     try:
-        html_body = env.get_template("forenhive_rapport_v2.html").render(**v2_ctx)
-    except Exception as exc:
-        log.exception("template render failed")
-        raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
+        html_body = _JINJA_ENV.get_template(_pick_report_template(lang)).render(**v2_ctx)
+    except Exception:
+        log.exception("[%s] template render failed", correlation_id)
+        raise HTTPException(status_code=500, detail=f"template render failed (cid={correlation_id})")
 
     settings = get_settings()
     out_dir = Path(settings.reports_dir)
@@ -1614,19 +1799,31 @@ async def forensic_generate(request: Request, session_id: str):
     pdf_path = out_dir / f"forensic-{session_id}-{uuid.uuid4().hex[:8]}.pdf"
 
     try:
-        WeasyprintHTML(string=html_body).write_pdf(str(pdf_path))
-    except Exception as exc:
-        log.exception("WeasyPrint render failed")
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
+        _WeasyHTML(string=html_body).write_pdf(str(pdf_path))
+    except Exception:
+        log.exception("[%s] WeasyPrint render failed", correlation_id)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed (cid={correlation_id})")
 
     pdf_bytes = pdf_path.read_bytes()
     sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    etag = f'W/"{sha256}"'
+
+    # If-None-Match → 304 short-circuit (re-downloads of an unchanged report)
+    inm = request.headers.get("if-none-match")
+    if inm and sha256 in inm:
+        return JSONResponse(
+            status_code=304,
+            content=None,
+            headers={"ETag": etag, "X-PDF-SHA256": sha256, "X-ForenHive-SHA256": sha256},
+        )
 
     return FileResponse(
         path=str(pdf_path),
         media_type="application/pdf",
         filename=f"ForenHive-{v2_ctx['report_id']}.pdf",
         headers={
+            "ETag": etag,
+            "Cache-Control": "private, max-age=60",
             "X-PDF-SHA256": sha256,
             "X-ForenHive-SHA256": sha256,
             "Content-Disposition": f'attachment; filename="ForenHive-{v2_ctx["report_id"]}.pdf"',
@@ -1728,13 +1925,14 @@ async def forensic_session_detail(session_id: str) -> Dict[str, Any]:
 
 
 @router.get("/forensic/{session_id}/preview")
-async def forensic_preview(session_id: str):
+async def forensic_preview(session_id: str, lang: str = "en"):
     """Full forensic HTML dossier for a single session (rich preview matching the PDF design)."""
+    correlation_id = uuid.uuid4().hex[:12]
     try:
         ctx = await _build_forensic_context(session_id)
-    except Exception as exc:
-        log.exception("forensic context build failed for %s", session_id)
-        raise HTTPException(status_code=500, detail=f"context build failed: {exc}")
+    except Exception:
+        log.exception("[%s] forensic context build failed for %s", correlation_id, session_id)
+        raise HTTPException(status_code=500, detail=f"context build failed (cid={correlation_id})")
 
     # Session not found in ES or PG
     if not ctx["session"].get("source_ip") and not ctx["profile"].get("ip"):
@@ -1742,14 +1940,10 @@ async def forensic_preview(session_id: str):
 
     v2_ctx = _adapt_context_for_v2(ctx)
 
-    env = Environment(
-        loader=FileSystemLoader(TEMPLATE_DIR),
-        autoescape=select_autoescape(["html"]),
-    )
-    env.globals["enumerate"] = enumerate
+    correlation_id = uuid.uuid4().hex[:12]
     try:
-        html_body = env.get_template("forenhive_rapport_v2.html").render(**v2_ctx)
-    except Exception as exc:
-        log.exception("template render failed")
-        raise HTTPException(status_code=500, detail=f"template render failed: {exc}")
+        html_body = _JINJA_ENV.get_template(_pick_report_template(lang)).render(**v2_ctx)
+    except Exception:
+        log.exception("[%s] template render failed", correlation_id)
+        raise HTTPException(status_code=500, detail=f"template render failed (cid={correlation_id})")
     return HTMLResponse(html_body)
