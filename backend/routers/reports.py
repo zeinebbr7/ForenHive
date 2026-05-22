@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -38,6 +38,11 @@ _JINJA_ENV = Environment(
     loader=FileSystemLoader(TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),
     auto_reload=False,
+    # StrictUndefined surfaces template ↔ adapter gaps as 500s instead of
+    # blank cells. Every variable referenced by forenhive_rapport_v2.html
+    # must now either be supplied by _adapt_context_for_v2 or carry an
+    # explicit `| default(...)` in the template.
+    undefined=StrictUndefined,
 )
 _JINJA_ENV.globals["enumerate"] = enumerate
 
@@ -334,12 +339,30 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         for s in ctx.get("score_signals", [])
     ]
 
+    def _ev_severity(ev: dict) -> str:
+        """Pick a severity class for the timeline row. The template colors
+        the row based on this; missing severity used to crash under
+        StrictUndefined (audit M-2 / ev.severity)."""
+        act = (ev.get("action") or "").lower()
+        src = (ev.get("source") or "").upper()
+        mid = (ev.get("mitre") or "")
+        if "succ" in act or "succès" in act or mid == "T1078":
+            return "CRITICAL"
+        if "commande" in act or mid.startswith("T1059") or mid == "T1105":
+            return "HIGH"
+        if "tentative" in act or mid == "T1110.001":
+            return "HIGH"
+        if src == "SESSION":
+            return "INFO"
+        return "INFO"
+
     all_timeline = [
         {
             "timestamp":  str(ev.get("ts", "")),
             "event_type": ev.get("action", ev.get("source", "")),
             "details":    ev.get("detail", ""),
             "mitre_tid":  ev.get("mitre") or None,
+            "severity":   _ev_severity(ev),
         }
         for ev in ctx.get("timeline", [])
     ]
@@ -615,6 +638,18 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "honeypots_hit":     ctx.get("honeypots_hit", []),
         "sessions_count":    ctx.get("sessions_count", 1),
         "extra_references":  [],
+        # Variables the template references at top level but the audit
+        # M-2 list flagged as never supplied. Under StrictUndefined the
+        # bare references (e.g. `{% if vt_top_engines %}`) raise instead
+        # of silently rendering empty, so we supply explicit empty
+        # values/strings. exec_narrative / bottom_line use `is defined`
+        # guards in the template so they're safe undefined, but supplying
+        # them explicitly keeps the report's narrative section consistent
+        # whether the engine produced a forensic_narrative or not.
+        "vt_top_engines":    [],
+        "vt_total":          (ctx.get("vt_result") or {}).get("total"),
+        "bottom_line":       verdict,
+        "exec_narrative":    profile.get("mistral_analysis", "") or ctx.get("engine_enrichment", {}).get("forensic_narrative", ""),
     }
 
 
