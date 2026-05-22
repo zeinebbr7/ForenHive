@@ -38,7 +38,8 @@ from db.init_db import init_schema, wait_for_postgres, get_conn_params
 from enricher import IPEnricher
 from yara_scanner import YARAScanner
 from virustotal import VirusTotalScanner
-from risk_score_optimized import RiskScorer, calculate_risk_score, risk_level
+from risk_score import score_session, score_ip, SCORE_VERSION
+from risk_thresholds import risk_level
 from risk_thresholds import ALERT_INDEX_MIN
 from mitre_mapper import MitreMapper
 from timeline_builder import TimelineBuilder
@@ -328,6 +329,27 @@ def _query_cowrie_commands(es: Elasticsearch, session_id: str) -> list:
         return []
 
 
+def _query_cowrie_file_downloads(es: Elasticsearch, session_id: str) -> int:
+    """Count cowrie.session.file_download events for a session (T1105 indicator)."""
+    query = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term":   {"session.id.keyword": session_id}},
+                    {"prefix": {"event.id": "cowrie.session.file_download"}}
+                ]
+            }
+        }
+    }
+    try:
+        resp = es.search(index=config.ES_INDEX, body=query)
+        return int(resp.get("hits", {}).get("total", {}).get("value", 0))
+    except Exception as e:
+        log.debug(f"file_download count query failed for {session_id}: {e}")
+        return 0
+
+
 def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
     """Get distinct SHA-256 hashes from Cowrie file downloads."""
     since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
@@ -436,10 +458,13 @@ def _load_file_analysis_from_pg(hours_back: int = 168) -> dict:
                 for row in cur.fetchall():
                     sha256 = row["sha256"]
                     yara = row["yara_matches"] or []
-                    rule_names = [m["rule"] for m in yara if isinstance(m, dict) and "rule" in m]
+                    yara_with_sev = [
+                        {"rule": m["rule"], "severity": (m.get("meta") or {}).get("severity", "medium")}
+                        for m in yara if isinstance(m, dict) and "rule" in m
+                    ]
                     vt = row["virustotal_result"] or {}
                     results[sha256] = {
-                        "yara_matches":  rule_names,
+                        "yara_matches":  yara_with_sev,
                         "vt_malicious":  int(vt.get("malicious", 0)),
                         "vt_family":     vt.get("family", "") or "",
                         "vt_tags":       vt.get("tags", []) or [],
@@ -505,15 +530,20 @@ def _compute_time_metrics(started_at, ended_at, attempts: int) -> dict:
 _SESSION_INSERT_SQL = """
 INSERT INTO forensic_sessions
     (session_id, honeypot_type, source_ip, started_at, ended_at,
-     risk_score, mitre_techniques, enrichment_data,
+     risk_score, risk_level, confidence,
+     mitre_techniques, enrichment_data, signal_breakdown,
      kill_chain_phase, kill_chain_stage,
      primary_technique, forensic_narrative,
      login_attempts, success_count, attack_velocity,
+     score_version,
      created_at, updated_at)
 VALUES %s
 ON CONFLICT (session_id) DO UPDATE
     SET risk_score         = EXCLUDED.risk_score,
+        risk_level         = EXCLUDED.risk_level,
+        confidence         = EXCLUDED.confidence,
         enrichment_data    = EXCLUDED.enrichment_data,
+        signal_breakdown   = EXCLUDED.signal_breakdown,
         mitre_techniques   = EXCLUDED.mitre_techniques,
         kill_chain_phase   = EXCLUDED.kill_chain_phase,
         kill_chain_stage   = EXCLUDED.kill_chain_stage,
@@ -522,11 +552,12 @@ ON CONFLICT (session_id) DO UPDATE
         login_attempts     = EXCLUDED.login_attempts,
         success_count      = EXCLUDED.success_count,
         attack_velocity    = EXCLUDED.attack_velocity,
+        score_version      = EXCLUDED.score_version,
         updated_at         = NOW()
 """
 
 _SESSION_ROW_TEMPLATE = (
-    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"
+    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"
 )
 
 
@@ -538,8 +569,11 @@ def _session_row(session: dict) -> tuple:
         session.get("started_at"),
         session.get("ended_at"),
         session.get("risk_score"),
+        session.get("risk_level"),
+        session.get("confidence"),
         json.dumps(session.get("mitre_techniques", [])),
         json.dumps(session.get("enrichment_data", {})),
+        json.dumps(session.get("signal_breakdown", {})),
         session.get("kill_chain_phase"),
         session.get("kill_chain_stage"),
         session.get("primary_technique"),
@@ -547,6 +581,7 @@ def _session_row(session: dict) -> tuple:
         session.get("login_attempts", 0),
         session.get("success_count", 0),
         session.get("attack_velocity", 0.0),
+        session.get("score_version") or SCORE_VERSION,
     )
 
 
@@ -795,6 +830,7 @@ class ForensicEngine:
                             honeypots_hit, honeypot_count, honeypot_summary, sessions_count,
                             key_findings, recommendations,
                             enrichment_snapshot,
+                            score_version,
                             scored_at, updated_at
                         ) VALUES (
                             %s::inet,
@@ -802,6 +838,7 @@ class ForensicEngine:
                             %s,
                             %s, %s, %s, %s,
                             %s, %s,
+                            %s,
                             %s,
                             NOW(), NOW()
                         )
@@ -818,6 +855,7 @@ class ForensicEngine:
                             key_findings        = EXCLUDED.key_findings,
                             recommendations     = EXCLUDED.recommendations,
                             enrichment_snapshot = EXCLUDED.enrichment_snapshot,
+                            score_version       = EXCLUDED.score_version,
                             updated_at          = NOW()
                         """,
                         (
@@ -834,6 +872,7 @@ class ForensicEngine:
                             score_data.get("key_findings", []),
                             json.dumps(score_data.get("recommendations", [])),
                             json.dumps(score_data.get("enrichment_snapshot", {})),
+                            score_data.get("score_version", SCORE_VERSION),
                         ),
                     )
                 conn.commit()
@@ -1096,71 +1135,93 @@ class ForensicEngine:
                 **time_metrics,
             }
 
-            # ── Deterministic risk scoring (18 signals) ───────────────────────
-            result = calculate_risk_score(session_data)
-            score  = result["score"]
-            level  = result["level"]
-
-            # ── Hybrid MITRE mapping (deterministic IDs + LLM narrative) ────────
+            # ── Fetch behavioral data BEFORE scoring ────────────────────────────
             if session.get("honeypot_type") == "cowrie":
                 session_data["commands"] = _query_cowrie_commands(
                     self.es, session["session_id"]
                 )
+                session_data["file_download_count"] = _query_cowrie_file_downloads(
+                    self.es, session["session_id"]
+                )
+            else:
+                session_data["commands"] = []
+                session_data["file_download_count"] = 0
 
-            mitre_result       = self.mitre.map_session(session_data)
-            mitre_techniques   = mitre_result["techniques"]
-            kill_chain_phase   = mitre_result["kill_chain_phase"]
-            kill_chain_stage   = mitre_result["kill_chain_stage"]
-            primary_technique  = mitre_result["primary_technique"]
-            forensic_narrative = mitre_result["forensic_narrative"]
+            # ── MITRE deterministic mapping (techniques feed the scorer) ────────
+            from mitre_mapper import (get_techniques_deterministic, get_kill_chain_phase,
+                                      get_kill_chain_stage_number, KILL_CHAIN_LABELS)
+            tech_ids         = get_techniques_deterministic(session_data)
+            kill_chain_phase = get_kill_chain_phase(tech_ids)
+            kill_chain_stage = get_kill_chain_stage_number(kill_chain_phase)
 
-            session["risk_score"]         = score
-            session["mitre_techniques"]   = [t["id"] for t in mitre_techniques
-                                              if isinstance(t, dict)]
+            session_data["mitre_techniques"] = tech_ids
+            session_data["kill_chain_phase"] = kill_chain_phase
+            session_data["kill_chain_stage"] = kill_chain_stage
+
+            # ── 9-signal risk scoring (v2.0.0) ──────────────────────────────────
+            result = score_session(session_data)
+
+            # ── LLM narrative (techniques already mapped above) ─────────────────
+            mitre_full         = self.mitre.narrative_for(session_data, tech_ids)
+            mitre_techniques   = mitre_full["techniques"]
+            primary_technique  = mitre_full["primary_technique"]
+            forensic_narrative = mitre_full["forensic_narrative"]
+
+            session["risk_score"]         = result.risk_score
+            session["risk_level"]         = result.risk_level
+            session["confidence"]         = result.confidence
+            session["signal_breakdown"]   = result.signal_breakdown
+            session["score_version"]      = result.score_version
+            session["mitre_techniques"]   = tech_ids
             session["kill_chain_phase"]   = kill_chain_phase
             session["kill_chain_stage"]   = kill_chain_stage
             session["primary_technique"]  = primary_technique
             session["forensic_narrative"] = forensic_narrative
             session["enrichment_data"]    = {
                 **enrich,
-                "risk_level":          level,
-                "confidence":          result["confidence"],
-                "attack_types":        result["attack_types"],
-                "lateral_movement":    result["lateral_movement"],
-                "signal_breakdown":    result["signal_breakdown"],
-                "data_quality":        result["data_quality"],
-                "notes":               result["notes"],
-                "narrative":           result["narrative"],
-                "recommended_actions": result["recommended_actions"],
-                "iocs":                result["iocs"],
-                "attribution":         result["attribution"],
+                "risk_level":          result.risk_level,
+                "confidence":          result.confidence,
+                "score_version":       result.score_version,
+                "signal_breakdown":    result.signal_breakdown,
+                "active_signals":      result.active_signals,
+                "command_count":       session_data.get("command_count", 0),
+                "file_download_count": session_data["file_download_count"],
+                "exfil_bytes":         session.get("exfil_bytes", 0),
                 "mitre_techniques":    mitre_techniques,
                 "kill_chain_phase":    kill_chain_phase,
                 "kill_chain_stage":    kill_chain_stage,
-                "kill_chain_label":    mitre_result["kill_chain_label"],
+                "kill_chain_label":    KILL_CHAIN_LABELS.get(kill_chain_phase, kill_chain_phase),
                 "primary_technique":   primary_technique,
                 "forensic_narrative":  forensic_narrative,
-                "mapping_source":      mitre_result["mapping_source"],
+                "mapping_source":      mitre_full.get("mapping_source", "deterministic"),
                 "yara_matches":        yara_matches,
                 "vt_malicious":        vt_malicious,
                 "vt_family":           vt_family,
                 "vt_available":        vt_was_available,
+                # Persist new fields so Phase 9 can read them back
+                "smb_share_enum":      session_data.get("smb_share_enum", False),
+                "epmapper_prescan":    session_data.get("epmapper_prescan", 0),
+                "exploit_cve":         session_data.get("exploit_cve", []),
+                "previously_seen":     session_data.get("previously_seen", False),
+                "previous_sessions":   session_data.get("previous_sessions", 0),
+                "shodan_vulns":        session_data.get("shodan_vulns", []),
+                "is_bogon":            session_data.get("is_bogon", False),
+                "geo_country_code":    session_data.get("geo_country_code", ""),
+                "destination_port":    session_data.get("destination_port", 0),
             }
 
             sessions_to_save.append(session)
-            scored.append((session["session_id"], source_ip, score, level,
-                           session.get("honeypot_type", "")))
+            scored.append((session["session_id"], source_ip, result.risk_score,
+                           result.risk_level, session.get("honeypot_type", "")))
 
-            if score >= 40:
-                flags = ""
-                if result["lateral_movement"]:
-                    flags += " [LATERAL]"
-                if kill_chain_phase:
-                    flags += f" [{kill_chain_phase}]"
+            if result.risk_score >= 40:
+                lm = result.signal_breakdown.get("lateral_movement", {}).get("points", 0) > 0
+                flags = " [LATERAL]" if lm else ""
+                if kill_chain_phase: flags += f" [{kill_chain_phase}]"
                 log.info(
-                    f"[{level}] {session.get('honeypot_type','?'):7s} "
+                    f"[{result.risk_level}] {session.get('honeypot_type','?'):7s} "
                     f"Session {session['session_id'][:12]}... "
-                    f"IP={source_ip} score={score}{flags}"
+                    f"IP={source_ip} score={result.risk_score}{flags}"
                 )
 
         # Bulk upsert all scored sessions in one transaction.
@@ -1223,23 +1284,103 @@ class ForensicEngine:
 
         # Phase 9 — Unified risk scoring (one score per IP across all honeypots)
         log.info("=== Phase 9: Unified Risk Scoring (All Honeypots) ===")
-        scorer = RiskScorer()
         unique_ips = list({src_ip for _, src_ip, _, _, _ in scored})
         unified_count = 0
-        for src_ip in unique_ips:
-            try:
-                unified_score = scorer.calculate_risk_score(
-                    source_ip=src_ip,
-                    time_window_hours=hours_back,
-                )
-                log.info(
-                    f"Unified score for {src_ip}: "
-                    f"{unified_score['risk_score']}/{unified_score['risk_level']}"
-                )
-                self._store_unified_risk_score(unified_score)
-                unified_count += 1
-            except Exception as e:
-                log.warning(f"Unified scoring failed for {src_ip}: {e}")
+
+        with _pg_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            for src_ip in unique_ips:
+                try:
+                    # Narrowed SELECT (audit fix P-2)
+                    cur.execute("""
+                        SELECT honeypot_type, login_attempts, success_count,
+                               attack_velocity, mitre_techniques, kill_chain_stage,
+                               kill_chain_phase, enrichment_data, started_at
+                        FROM forensic_sessions
+                        WHERE source_ip = %s
+                          AND started_at > NOW() - make_interval(hours => %s)
+                          AND honeypot_type != 'unified'
+                        ORDER BY started_at DESC
+                    """, (src_ip, hours_back))
+
+                    sessions_for_ip = []
+                    for row in cur.fetchall():
+                        ed = row["enrichment_data"] or {}
+                        if isinstance(ed, str):
+                            import json as _json
+                            ed = _json.loads(ed)
+                        sessions_for_ip.append({
+                            "honeypot_type":     row["honeypot_type"],
+                            "login_attempts":    row["login_attempts"] or 0,
+                            "success_count":     row["success_count"] or 0,
+                            "attack_velocity":   row["attack_velocity"] or 0.0,
+                            "command_count":     ed.get("command_count", 0),
+                            "exfil_bytes":       ed.get("exfil_bytes", 0),
+                            "file_download_count": ed.get("file_download_count", 0),
+                            "mitre_techniques":  row["mitre_techniques"] or [],
+                            "kill_chain_stage":  row["kill_chain_stage"] or 0,
+                            "kill_chain_phase":  row["kill_chain_phase"] or "",
+                            "yara_matches":      ed.get("yara_matches", []),
+                            "vt_malicious":      ed.get("vt_malicious", 0),
+                            "vt_family":         ed.get("vt_family", ""),
+                            "smb_share_enum":    ed.get("smb_share_enum", False),
+                            "epmapper_prescan":  ed.get("epmapper_prescan", 0),
+                            "exploit_cve":       ed.get("exploit_cve", []),
+                            "previously_seen":   ed.get("previously_seen", False),
+                            "previous_sessions": ed.get("previous_sessions", 0),
+                            "command_quality_tags": (
+                                ed.get("signal_breakdown", {})
+                                  .get("compromise_depth", {})
+                                  .get("evidence", {})
+                                  .get("command_quality_tags", [])
+                            ),
+                        })
+
+                    # Load enrichment once per IP (same connection)
+                    cur.execute(
+                        "SELECT data FROM ip_enrichment_cache WHERE ip = %s LIMIT 1",
+                        (src_ip,))
+                    row = cur.fetchone()
+                    enrichment = (row["data"] if row else {}) or {}
+                    if isinstance(enrichment, str):
+                        import json as _json
+                        enrichment = _json.loads(enrichment)
+
+                    unified = score_ip(src_ip, sessions_for_ip, enrichment)
+                    log.info(f"Unified score for {src_ip}: "
+                             f"{unified.risk_score}/{unified.risk_level}")
+
+                    hps = sorted({s["honeypot_type"] for s in sessions_for_ip})
+                    self._store_unified_risk_score({
+                        "source_ip":         src_ip,
+                        "risk_score":        unified.risk_score,
+                        "risk_level":        unified.risk_level,
+                        "confidence":        unified.confidence,
+                        "active_signals":    unified.active_signals,
+                        "signal_breakdown":  unified.signal_breakdown,
+                        "honeypots_hit":     hps,
+                        "honeypot_count":    len(hps),
+                        "honeypot_summary":  {hp: sum(1 for s in sessions_for_ip
+                                                      if s["honeypot_type"] == hp)
+                                              for hp in hps},
+                        "sessions_count":    unified.sessions_aggregated or 0,
+                        "key_findings":      [],
+                        "recommendations":   [],
+                        "enrichment_snapshot": {
+                            "country":     (enrichment.get("geo") or {}).get("country"),
+                            "city":        (enrichment.get("geo") or {}).get("city"),
+                            "asn":         (enrichment.get("geo") or {}).get("asn"),
+                            "org":         (enrichment.get("geo") or {}).get("org"),
+                            "is_tor":      (enrichment.get("privacy") or {}).get("is_tor", False),
+                            "is_vpn":      (enrichment.get("privacy") or {}).get("is_vpn", False),
+                            "abuse_score": (enrichment.get("reputation") or {}).get("abuse_score", 0),
+                        },
+                        "score_version": unified.score_version,
+                    })
+                    unified_count += 1
+                except Exception as e:
+                    log.warning(f"Unified scoring failed for {src_ip}: {e}")
+
         log.info(f"Unified scoring complete: {unified_count}/{len(unique_ips)} IPs scored")
 
         # ── Summary ───────────────────────────────────────────────────────────
