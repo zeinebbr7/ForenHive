@@ -308,9 +308,9 @@ services:
     networks:
       - backend-net
 
-  # ─── SPA (Vite build → nginx + HTTPS) ─────────────────────────────────────
+  # ─── SPA (Vite build → nginx) ─────────────────────────────────────────────
   # Frontend Vite/React buildé en multi-stage Docker, servi par nginx
-  # (HTTP:3000 + HTTPS:3443 avec cert auto-signé pour téléchargement PDF).
+  # sur HTTP:3000 uniquement.
   # Le SPA est composé de partiels pages/*.html chargés dynamiquement.
   forenhive-frontend:
     build: ./frontend
@@ -318,7 +318,6 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
-      - "3443:443"
     networks:
       - backend-net
     depends_on:

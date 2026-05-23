@@ -36,7 +36,7 @@ chronologique inverse (le plus récent en haut).
   détecter immédiatement tout champ manquant.
 - Export STIX 2.1 (Indicator + Observed-Data + Relationship SDOs).
 - Alertes email + Twilio (SMS + WhatsApp).
-- Nginx + HTTPS auto-signé pour téléchargement PDF (Chrome HTTPS-First).
+- Nginx servant la SPA sur HTTP:3000.
 
 ## Sprint 3 — Forensic Engine (mars 2026)
 

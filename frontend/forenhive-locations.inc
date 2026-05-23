@@ -1,5 +1,4 @@
-# Shared location blocks, included by both the HTTP (:80) and HTTPS (:443)
-# server blocks in nginx.conf.
+# Shared location blocks, included by the HTTP (:80) server block in nginx.conf.
 
 # Proxy API and health check to FastAPI backend
 location /api/ {

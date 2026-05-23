@@ -88,8 +88,7 @@ curl -fsS http://localhost:11434/api/tags
 | Cible | Depuis le LAN | Depuis la VM Kali (tests) |
 |-------|---------------|---------------------------|
 | Cowrie SSH | `ssh root@172.16.1.100 -p 2222` | idem |
-| SPA HTTP | `http://172.16.1.100:3000` | idem |
-| SPA HTTPS | `https://172.16.1.100:3443` | accepter cert auto-signé |
+| SPA | `http://172.16.1.100:3000` | idem |
 | Backend API | `http://172.16.1.100:8000` | accès via SPA |
 
 ## Commandes de debug courantes

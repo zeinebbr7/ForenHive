@@ -48,7 +48,7 @@ ForenHive est structuré en **4 couches** strictement isolées par réseaux Dock
 │        ├─ services : ES, PG, Ollama, Twilio, report_*        │
 │        └─ /api/reports/forensic/{sid}/generate ──► PDF       │
 │                                                              │
-│   nginx :3000/3443 ──► SPA (Vite build, partiels HTML)       │
+│   nginx :3000 ──► SPA (Vite build, partiels HTML)            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +87,7 @@ ForenHive est structuré en **4 couches** strictement isolées par réseaux Dock
 ### Analyse → consultation (C3 → C4)
 
 8. Le backend FastAPI (`:8000`) expose les données via 13 routers REST.
-9. La SPA (`:3000` ou `:3443` HTTPS) consomme l'API avec JWT Bearer
+9. La SPA (`:3000`) consomme l'API avec JWT Bearer
    (clé localStorage `forenhive.token`).
 10. Sur demande utilisateur, `POST /api/reports/forensic/{sid}/generate`
     rend un PDF WeasyPrint à partir des templates Jinja2

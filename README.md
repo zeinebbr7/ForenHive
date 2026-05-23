@@ -81,8 +81,7 @@ docker compose exec forensic-engine python db/init_db.py
 | Elasticsearch   | 9200  | Logs + mémoire profils (127.0.0.1)   |
 | Ollama          | 11434 | LLM local Mistral 7B (interne)       |
 | Backend FastAPI | 8000  | API REST                             |
-| Frontend HTTP   | 3000  | SPA (HTTP)                           |
-| Frontend HTTPS  | 3443  | SPA (HTTPS, cert auto-signé)         |
+| Frontend        | 3000  | SPA (HTTP)                           |
 | Forensic Engine | 8001  | Healthcheck / status                 |
 
 ## Structure du dépôt
@@ -94,7 +93,7 @@ forenhive/
 ├── geoip/              # C2 — Bases MaxMind (volumes Docker)
 ├── forensic-engine/    # C3 — 11 modules d'analyse Python
 ├── backend/            # C4 — API FastAPI (13 routers)
-├── frontend/           # C4 — SPA (Vite + nginx + HTTPS)
+├── frontend/           # C4 — SPA (Vite + nginx)
 ├── docs/               # Documentation technique
 ├── archive/            # Prototypes archivés (non actifs)
 ├── docker-compose.yml  # Orchestration complète
