@@ -1,10 +1,47 @@
 """
-ForenHive Risk Scoring v2.0.0 — 9-signal model.
+risk_score.py — ForenHive Forensic Engine
+==========================================
+Rôle    : calcul du score de risque d'une session ou d'une IP attaquante.
+Entrée  : enrichissements (geoip, abuseipdb, shodan), événements timeline,
+          matchs YARA/VirusTotal, techniques MITRE détectées.
+Sortie  : objet `ScoreResult` (total 0-100, niveau, ventilation par signal).
+Appelé  : par `engine.py` après l'extraction d'IoCs et le mapping MITRE.
+Deps    : `risk_thresholds` (seuils LOW/MEDIUM/HIGH/CRITICAL).
 
-Signal taxonomy (mapped to FBI BAU criminology framework):
-  WHO  (33): reputation - anonymization - threat_history
-  WHAT (43): intent_volume - compromise_depth - exfiltration - lateral_movement
-  HOW  (24): malware - mitre_sophistication
+═══════════════════════════════════════════════════════════════════════════════
+SYSTÈME DE SCORE DE RISQUE — MODÈLE v2.0.0 À 9 SIGNAUX
+═══════════════════════════════════════════════════════════════════════════════
+Score total max : 100 (somme cappée des 9 signaux).
+Niveaux        : INFO (<LOW) | LOW | MEDIUM | HIGH | CRITICAL
+                 (bornes définies dans risk_thresholds.py)
+
+TAXONOMIE — mappée au cadre criminologique du FBI Behavioral Analysis Unit :
+
+  WHO  (33 pts) — Qui est l'attaquant ?
+    • reputation      (15) — score AbuseIPDB (réputation publique)
+    • anonymization   (10) — Tor/VPN/proxy détectés (intention de cacher)
+    • threat_history  (8)  — récidive sur honeypot, ASN connu malveillant
+
+  WHAT (43 pts) — Que fait-il ?
+    • intent_volume      (10) — vélocité, pages scannées, ciblage admin
+    • compromise_depth   (15) — login réussi, commandes shell exécutées
+    • exfiltration       (8)  — données téléchargées hors du honeypot
+    • lateral_movement   (10) — multi-honeypot, scan interne, SMB enum
+
+  HOW  (24 pts) — Avec quels moyens ?
+    • malware              (15) — match YARA + détections VirusTotal
+    • mitre_sophistication (9)  — diversité des tactiques ATT&CK observées
+
+RÈGLE SPÉCIALE — IPs PRIVÉES (RFC1918) :
+Les services de réputation (AbuseIPDB/Tor/VPN) ne couvrent pas l'espace
+d'adressage privé. Une IP interne malveillante = menace interne critique :
+les signaux comportementaux sont donc traités sans atténuation pour
+refléter la criticité.
+
+HISTORIQUE : modèle précédent à 18 signaux dans risk_score_optimized.py
+(supprimé) ; consolidé en 9 signaux v2.0.0 pour réduire les corrélations
+et améliorer l'interprétabilité (un signal = une dimension orthogonale).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations

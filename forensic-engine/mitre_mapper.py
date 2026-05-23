@@ -1,11 +1,37 @@
 """
-ForenHive — Hybrid MITRE ATT&CK Mapper
-=======================================
-Technique IDs: deterministic rules (always correct, no hallucination)
-Forensic narrative: Mistral 7B via Ollama (short prompt, ~15s, 80 tokens)
+mitre_mapper.py — ForenHive Forensic Engine
+============================================
+Rôle    : mapping des comportements observés vers MITRE ATT&CK + narration.
+Entrée  : événements timeline + IoCs extraits d'une session.
+Sortie  : liste de techniques ATT&CK (ID, nom, tactic, confidence=1.0) +
+          phrase de contexte tactique (narrative, ≤ 80 tokens).
+Appelé  : par `engine.py` après `ioc_extractor.py`.
+Deps    : Ollama (Mistral 7B Q4_K_M) pour la narration uniquement.
 
-If Ollama is down → graceful fallback narrative, no crash.
-Confidence is always 1.0 because IDs are deterministic.
+═══════════════════════════════════════════════════════════════════════════════
+MAPPING MITRE ATT&CK — APPROCHE HYBRIDE EN 2 NIVEAUX
+═══════════════════════════════════════════════════════════════════════════════
+
+NIVEAU 1 — DÉTERMINISTE (15 techniques, confidence = 1.0) :
+  Règles if/else sur les indicateurs comportementaux observés.
+  Exemples :
+    • bruteforce SSH (≥10 logins échoués)        → T1110.001 Brute Force: Password Guessing
+    • commande `wget <url>`                       → T1105     Ingress Tool Transfer
+    • exploitation SMB (port 445, EternalBlue)    → T1210     Exploitation of Remote Services
+    • scan multi-port (≥5 ports distincts)        → T1046     Network Service Discovery
+  Précision : 100% (pas d'hallucination), latence ≈ 0 ms.
+
+NIVEAU 2 — NARRATION LLM (Mistral 7B, prompt court ~200 tok) :
+  Mistral génère UNIQUEMENT une phrase de contexte tactique en langage
+  naturel (≤ 80 tokens), JAMAIS de nouveaux IDs ATT&CK.
+  Si Ollama est injoignable → fallback narratif générique, pas de crash.
+
+JUSTIFICATION DE LA SÉPARATION :
+La version v1 (`ollama_mitre.py`, supprimée) laissait Mistral générer
+les IDs eux-mêmes → hallucinations fréquentes (IDs inexistants, tactic
+incorrecte). Le mapping hybride sépare la DÉTECTION (déterministe, fiable)
+de la NARRATION (LLM, créativité contextuelle uniquement).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import logging

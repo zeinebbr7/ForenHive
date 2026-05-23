@@ -1,22 +1,41 @@
 """
-ForenHive Forensic Engine — IP Enrichment
+enricher.py — ForenHive Forensic Engine
+========================================
+Rôle    : enrichissement d'une adresse IP avec géoloc + réputation + ASN.
+Entrée  : adresse IP (str) extraite des logs honeypot.
+Sortie  : dict d'enrichissement persisté dans `ip_enrichment_cache` (PG).
+Appelé  : par `engine.py` en première étape de la chaîne forensique.
+Deps    : MaxMind GeoLite2 (offline), IPLocate, Shodan InternetDB, AbuseIPDB,
+          RDAP/Whois, PTR reverse DNS.
 
-Aggregates the maximum amount of useful intelligence per IP from every
-available source. The pipeline runs offline-first (MaxMind) and falls back
-to free public APIs (IPLocate, Shodan InternetDB, AbuseIPDB) plus optional
-paid Shodan when SHODAN_KEY is set.
+═══════════════════════════════════════════════════════════════════════════════
+PIPELINE D'ENRICHISSEMENT — OFFLINE D'ABORD, PUIS APIs PUBLIQUES
+═══════════════════════════════════════════════════════════════════════════════
+1. MaxMind GeoLite2 City + ASN (offline, gratuit) :
+   pays/ville/lat-lon, ASN/organisation. Pas de quota, latence ~ms.
+2. IPLocate (gratuit, no-auth) :
+   flags vie privée, complément ASN, contact abuse.
+3. AbuseIPDB (clé API) :
+   score réputation 0-100, catégories d'abus, usage_type, hostnames.
+4. Shodan InternetDB (gratuit) :
+   ports ouverts, CVE vulns, CPEs, tags.
+5. Shodan host API (optionnel, payant) :
+   bannières, OS, services, last_update.
+6. RDAP / Whois :
+   réseau, CIDR, contact abuse, date d'enregistrement.
+7. Reverse DNS (PTR) :
+   noms d'hôtes associés.
 
-Sources combined per IP:
-  • MaxMind GeoLite2 City + ASN  (offline, country/city/lat-lon/asn/org)
-  • IPLocate                     (privacy flags, ASN, company, abuse contact)
-  • AbuseIPDB                    (abuse score, reports, usage_type, hostnames)
-  • Shodan InternetDB (free)     (open ports, vulns, hostnames, cpes, tags)
-  • Shodan host API (optional)   (banners, OS, services, last_update)
-  • RDAP/Whois                   (network, CIDR, abuse contact, registration)
-  • Reverse DNS (PTR)            (hostnames)
+Un `threat_summary` dérivé regroupe les signaux les plus actionnables.
 
-Plus a derived "threat_summary" flattening the most-actionable signals.
-Results cached in PostgreSQL (24h TTL).
+CAS PARTICULIER — IPs PRIVÉES (RFC1918) :
+Les APIs publiques ne couvrent pas l'espace d'adressage privé. L'enricher
+court-circuite la réputation et marque l'IP comme "internal" → le scoring
+(risk_score.py) la traite en mode comportemental pur.
+
+CACHE PostgreSQL (`ip_enrichment_cache`, TTL 24h) :
+Évite les appels répétés, économise les quotas APIs externes.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import ipaddress

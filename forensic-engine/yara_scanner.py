@@ -1,7 +1,32 @@
 """
-ForenHive Forensic Engine — YARA Scanner
-Scans Dionaea malware captures with YARA rules.
-Results are saved to the file_analysis table in PostgreSQL.
+yara_scanner.py — ForenHive Forensic Engine
+============================================
+Rôle    : détection de signatures malware (YARA) sur payloads capturés.
+Entrée  : fichiers déposés par Dionaea (binaires, scripts, executables).
+Sortie  : table PG `file_analysis` (matchs YARA + métadonnées).
+Appelé  : par `engine.py` après l'enrichissement IP.
+Deps    : python-yara, règles YARA dans `forensic-engine/yara_rules/`.
+
+═══════════════════════════════════════════════════════════════════════════════
+SCANNER YARA — DÉTECTION DE SIGNATURES MALWARE
+═══════════════════════════════════════════════════════════════════════════════
+Applique les règles YARA du projet sur les payloads capturés par Dionaea.
+
+SCORING TIERED selon la criticité de la règle matchée (contribution
+au signal `malware` du risk_score) :
+  CRITICAL rules  : +30 points  (ransomware, exploits 0-day)
+  HIGH rules      : +20 points  (backdoors, shells web connus)
+  MEDIUM rules    : +10 points  (suspects, packers)
+
+COUVERTURE DES RÈGLES :
+  • Ransomware (WannaCry, NotPetya, Locky, Ryuk…)
+  • Backdoors (Metasploit, Cobalt Strike, ShellBot)
+  • Shells web (PHP, ASP, JSP webshells)
+  • Exploits connus (EternalBlue payloads, BlueKeep)
+
+IDEMPOTENCE :
+Hash SHA-256 du fichier comme clé → re-scan ne crée pas de doublons.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import hashlib

@@ -1,5 +1,28 @@
 /* ═══════════════════════════════════════════════════════════════
    ForenHive SOC Platform — Router + Auth + Helpers
+   ════════════════════════════════════════════════════════════════
+
+   LOADER DYNAMIQUE DE PARTIELS HTML
+   ─────────────────────────────────
+   Les pages/*.html sont des FRAGMENTS HTML (sans balises
+   <html>/<head>/<body>). Ce fichier les injecte dans le conteneur
+   principal de app.html à chaque navigation, met à jour le titre
+   de la topbar (#tb-title) et déclenche le script inline du
+   fragment. Une SPA classique sans framework lourd.
+
+   GESTION DU TOKEN D'AUTHENTIFICATION
+   ───────────────────────────────────
+   Clé de stockage : 'forenhive.token' (localStorage) — IMMUABLE.
+   Toutes les requêtes API passent par api._call() (api.js) qui
+   injecte automatiquement l'header Authorization: Bearer <token>.
+   Cette clé ne doit JAMAIS être changée (briserait toutes les
+   sessions utilisateurs existantes).
+
+   AUTORISATION PAR RÔLE
+   ─────────────────────
+   2 rôles : admin (toutes pages) et analyst (sauf admin-only).
+   Filtré côté navigation (NAV_GROUPS) ET vérifié côté backend
+   via les `dependencies=_protected_deps` dans main.py.
 ═══════════════════════════════════════════════════════════════ */
 
 const ROLES = {

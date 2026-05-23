@@ -1,17 +1,33 @@
 """
-ForenHive Forensic Engine — Timeline Builder
+timeline_builder.py — ForenHive Forensic Engine
+================================================
+Rôle    : construction d'une timeline forensique unifiée par IP source.
+Entrée  : événements ES (Cowrie + Dionaea + Galah + Zeek) sur une fenêtre.
+Sortie  : table PG `forensic_timeline_events` (chronologie ms-précision).
+Appelé  : par `engine.py` après scoring, alimente le PDF + UI Reconstruction.
+Deps    : Elasticsearch (lecture), PostgreSQL (écriture).
 
-Builds a per-IP unified event timeline by fusing Cowrie, Dionaea, Galah and
-Zeek events from Elasticsearch into a single stream persisted in PostgreSQL
-(`forensic_timeline_events`).
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRUCTEUR DE TIMELINE FORENSIQUE
+═══════════════════════════════════════════════════════════════════════════════
+Agrège tous les événements d'une session ou d'une IP en ordre chronologique
+strict. Précision MILLISECONDE (ISO 8601 avec ms) pour respecter l'ordre
+réel des événements lors d'attaques rapides (bruteforce SSH, exploitation
+SMB, scan multi-port).
 
-Each attacker event — TCP connect, login attempt, shell command, HTTP
-request, SMB exploit, file drop, Zeek conn/weird — becomes one row with
-millisecond-precise timestamp, enabling cross-honeypot reconstruction of
-the kill chain for a given source IP.
+ÉVÉNEMENTS UNIFIÉS :
+  • TCP connect           (Cowrie/Dionaea)
+  • login attempt         (Cowrie ssh/telnet)
+  • shell command         (Cowrie input)
+  • HTTP request          (Galah)
+  • SMB exploit / payload (Dionaea)
+  • file drop             (Dionaea downloads)
+  • Zeek conn / weird     (réseau IDS)
 
-Idempotent: uses the ES `_id` as a unique key so re-running the builder on
-overlapping time windows does not create duplicates.
+IDEMPOTENCE :
+Utilise l'`_id` ES comme clé unique → relancer le builder sur des fenêtres
+temporelles chevauchantes ne crée pas de doublons.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import logging

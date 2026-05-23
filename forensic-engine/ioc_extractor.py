@@ -1,23 +1,31 @@
 """
-ForenHive Forensic Engine — IOC Extractor
+ioc_extractor.py — ForenHive Forensic Engine
+=============================================
+Rôle    : extraction et normalisation des Indicateurs de Compromission (IoC).
+Entrée  : `forensic_timeline_events` (champs event_action, summary, raw JSONB).
+Sortie  : table PG `forensic_iocs` (upsert avec compteurs + provenance) +
+          format compatible STIX 2.1 pour export threat intelligence.
+Appelé  : par `engine.py` après `timeline_builder.py`.
+Deps    : PostgreSQL.
 
-Reads forensic_timeline_events, extracts structured indicators of
-compromise (URLs, domains, external IPs, hashes, CVEs, user-agents,
-commands, file paths, email addresses) and upserts them into
-`forensic_iocs` with seen counts and provenance.
+═══════════════════════════════════════════════════════════════════════════════
+EXTRACTEUR D'INDICATEURS DE COMPROMISSION (IoC)
+═══════════════════════════════════════════════════════════════════════════════
+TYPES D'IoC PRODUITS :
+  url            — URL http(s) complète (commande shell ou requête HTTP)
+  domain         — FQDN (dérivé des URLs ou mention directe)
+  ipv4_external  — IPv4 publique référencée par l'attaquant (C2, drop host)
+  sha256, md5    — hashes de fichiers (Dionaea offers, Cowrie downloads)
+  cve            — identifiant CVE-YYYY-NNNN dans n'importe quel champ
+  user_agent     — chaînes User-Agent HTTP (Galah)
+  cmdline        — commande shell brute exécutée (Cowrie input)
+  file_path      — chemins absolus déposés/touchés (/tmp/x, /etc/passwd…)
+  email          — adresses email (souvent dans malware/phishing)
 
-IoC types produced:
-  url            — full http(s) URL found in a command / HTTP request
-  domain         — FQDN (derived from URLs or direct mention)
-  ipv4_external  — public IPv4 referenced by an attacker (e.g. C2/drop host)
-  sha256, md5    — file hashes from Dionaea offers or Cowrie downloads
-  cve            — CVE-YYYY-NNNN identifier in any field
-  user_agent     — Galah HTTP User-Agent strings
-  cmdline        — raw shell command executed in Cowrie
-  file_path      — absolute paths dropped/touched (/tmp/x, /etc/passwd…)
-  email          — email addresses (often embedded in malware/phishing)
-
-Sources scanned: event_action, summary, raw JSONB (full ES doc).
+EXPORT STIX 2.1 :
+Les IoCs sont sérialisés au format STIX 2.1 (Indicator SDO + Observed-Data
+SDO + Relationship SRO) pour interopérabilité avec les SIEM/SOC tiers.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import ipaddress

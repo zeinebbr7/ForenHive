@@ -1,24 +1,42 @@
 """
-ForenHive Forensic Engine — Chain of Custody
+chain_of_custody.py — ForenHive Forensic Engine
+================================================
+Rôle    : scellement cryptographique des preuves forensiques (intégrité).
+Entrée  : sessions forensiques complétées (toutes phases précédentes OK).
+Sortie  : 2 tables PG (`forensic_chain_of_custody`, `forensic_coc_batches`)
+          + réponse TSA signée RFC 3161 (preuve de non-répudiation).
+Appelé  : par `engine.py` en DERNIÈRE étape (sceau après écriture).
+Deps    : freetsa.org (TSA RFC 3161, gratuite) + TSAs de fallback.
 
-Seals each forensic_session with:
+═══════════════════════════════════════════════════════════════════════════════
+CHAÎNE DE CUSTODY NUMÉRIQUE — PRINCIPE DE LOCARD APPLIQUÉ AU CYBER
+═══════════════════════════════════════════════════════════════════════════════
+"Toute interaction laisse une trace" — Edmond Locard, 1910.
+Adaptation cyber : toute action sur les preuves doit être traçable et
+auditée, et leur intégrité doit être démontrable mathématiquement.
 
-  1. Canonical JSON serialization (deterministic, sorted keys, no volatile
-     fields) of the forensic record's load-bearing columns.
-  2. SHA-256 hash of the canonical bytes — `record_hash`.
-  3. Append-only hash chain — each new record links to the previous head
-     via `prev_hash`. Any tampering propagates downstream and breaks
-     verification for every subsequent record.
-  4. Batched RFC 3161 timestamp — a Merkle root of all records sealed in
-     one run is submitted to a public TSA (freetsa.org by default); the
-     signed response is stored so the chain head can be cryptographically
-     proven to have existed before a certified wall-clock time.
+PROCÉDURE EN 4 ÉTAPES POUR CHAQUE SESSION :
+  1. SÉRIALISATION CANONIQUE — JSON déterministe (clés triées, pas de
+     champs volatiles type timestamps) des colonnes "load-bearing".
+  2. SHA-256 — empreinte cryptographique des octets canoniques
+     → colonne `record_hash`. Choix de SHA-256 vs MD5/SHA-1 :
+     résistance aux collisions (MD5/SHA-1 cryptanalysés/cassés).
+  3. CHAÎNE APPEND-ONLY — chaque nouvelle ligne lie à la précédente
+     via `prev_hash`. Toute altération propage en aval et invalide
+     toute la chaîne (vérifiable par `verify_coc.py`).
+  4. HORODATAGE RFC 3161 BATCH — racine Merkle de toutes les
+     sessions scellées d'un run, soumise à une TSA (freetsa.org).
+     La réponse signée prouve cryptographiquement que la racine
+     existait AVANT une date certifiée par tiers de confiance.
 
-Tables:
-  forensic_chain_of_custody : one row per sealed session
-  forensic_coc_batches      : one row per TSA request (Merkle root anchor)
+USAGE LÉGAL :
+SHA-256 + RFC 3161 = preuves recevables en investigation numérique
+selon la norme ISO/IEC 27037 (lignes directrices pour l'identification,
+la collecte, l'acquisition et la préservation des preuves numériques).
 
-Idempotent: already-sealed sessions are skipped (session_id UNIQUE).
+IDEMPOTENCE :
+Les sessions déjà scellées sont sautées (contrainte UNIQUE sur session_id).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import hashlib

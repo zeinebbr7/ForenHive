@@ -1,7 +1,32 @@
 """
-ForenHive Forensic Engine — VirusTotal SHA-256 Lookup
-Looks up file hashes against VirusTotal v3 API.
-Results are merged into the file_analysis table in PostgreSQL.
+virustotal.py — ForenHive Forensic Engine
+==========================================
+Rôle    : lookup des hashes SHA-256 contre la base VirusTotal API v3.
+Entrée  : hashes des fichiers capturés (Dionaea, Cowrie downloads).
+Sortie  : table PG `file_analysis` (détections multi-AV + métadonnées).
+Appelé  : par `engine.py` après `yara_scanner.py`.
+Deps    : VirusTotal API v3 (clé via VT_API_KEY env), `quota_tracker.py`.
+
+═══════════════════════════════════════════════════════════════════════════════
+CLIENT VIRUSTOTAL API v3
+═══════════════════════════════════════════════════════════════════════════════
+Soumet les hashes SHA-256 des fichiers capturés à l'API VirusTotal.
+Résultat : nombre d'antivirus détectant le fichier comme malveillant +
+liste détaillée (top engines, family name).
+
+GESTION DU QUOTA (`quota_tracker.py`) :
+L'API publique limite à ~500 requêtes/jour. Un flag de quota épuisé
+évite les appels inutiles jusqu'à la fenêtre suivante (UTC midnight).
+Retry avec backoff exponentiel sur erreur 429 (rate limit).
+
+CONTRIBUTION AU RISK SCORE :
+Si détections VirusTotal > seuil (config VT_MIN_DETECTIONS) → signal
+`malware` augmenté de +15 points (en complément du score YARA).
+
+DÉSACTIVATION AUTOMATIQUE :
+Si VT_API_KEY absent du .env, le module est skippé silencieusement
+(pas de crash, juste un log info au démarrage).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import json

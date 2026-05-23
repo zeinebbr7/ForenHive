@@ -1,17 +1,32 @@
 #!/usr/bin/env python3
 """
-ForenHive SMB Forensic Analyzer
-================================
-Extracts and correlates SMB honeypot evidence from:
-  - Dionaea SQLite  (/opt/dionaea/var/lib/dionaea/dionaea.sqlite)
-  - Zeek NTLM logs  (/usr/local/zeek/logs/**/ntlm*.log.gz)
+smb_analyzer.py — ForenHive Forensic Engine
+============================================
+Rôle    : extraction et corrélation des preuves SMB/NTLM (attaques Windows).
+Entrée  : Dionaea SQLite (/opt/dionaea/var/lib/dionaea/dionaea.sqlite)
+          + Zeek NTLM logs (/usr/local/zeek/logs/**/ntlm*.log.gz).
+Sortie  : 1 "suspect profile" par IP source + index ES `forenhive-smb-analysis`.
+Appelé  : par `engine.py` (phase analyse SMB) ; aussi en CLI standalone.
+Deps    : `enricher.IPEnricher` (GeoIP + AbuseIPDB + Shodan), Elasticsearch.
 
-Produces one "suspect profile" per source IP, enriches each with
-IPEnricher (GeoIP + AbuseIPDB + Shodan InternetDB), and indexes
-results to Elasticsearch index "forenhive-smb-analysis".
+═══════════════════════════════════════════════════════════════════════════════
+ANALYSEUR SMB — DÉTECTION D'ATTAQUES RÉSEAU WINDOWS
+═══════════════════════════════════════════════════════════════════════════════
+SOURCES DE DONNÉES CROISÉES :
+  1. Dionaea SQLite : connexions, tentatives d'exploitation, payloads
+     capturés. Tables : `connections` + `downloads`.
+  2. Zeek NTLM logs : authentifications Windows (NTLM v1/v2) capturées
+     par l'IDS réseau. Champs clés : `auth_success`, `user`, `domain`.
 
-Usage (inside forensic-engine container):
+DÉTECTIONS CLÉS (contribution au risk score) :
+  • EternalBlue (CVE-2017-0144) : exploit SMBv1, signature réseau
+    spécifique. Vecteur ransomware WannaCry/NotPetya. → +40 pts CRITIQUE
+  • Énumération SMB : scan de partages, sessions null, reconnaissance. → +30
+  • EPMapper : énumération des services via port 135 (MS-RPC).        → +15
+
+USAGE CLI :
     python smb_analyzer.py [--days N] [--no-enrich] [--no-es]
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import argparse

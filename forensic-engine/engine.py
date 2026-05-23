@@ -1,22 +1,43 @@
 """
-ForenHive Forensic Engine — Main Orchestrator
-Coordinates all 4 analysis phases:
+engine.py — ForenHive Forensic Engine
+======================================
+Rôle    : orchestration séquentielle de la chaîne forensique complète.
+Entrée  : fenêtre temporelle (--hours), sessions ES non encore analysées.
+Sortie  : 4 tables PG (forensic_sessions, file_analysis, forensic_iocs,
+          forensic_chain_of_custody) + index ES forenhive-suspect-profiles.
+Appelé  : CLI standalone (cron/systemd) ; aussi via le scheduler backend.
+Deps    : tous les modules de l'engine + PostgreSQL + Elasticsearch + Ollama.
 
-  1. IP Enrichment   : GeoIP, AbuseIPDB, Shodan InternetDB, Whois, Tor/VPN
-  2. YARA Scan       : Dionaea captured malware binaries
-  3. VirusTotal      : SHA-256 lookup for YARA-matched + Cowrie-downloaded files
-  4. Session Scoring : risk score (0-100) + deterministic MITRE mapping
-                       + LLM-based MITRE enrichment via Ollama/Mistral 7B
+═══════════════════════════════════════════════════════════════════════════════
+MOTEUR D'ORCHESTRATION — POINT D'ENTRÉE PRINCIPAL DU FORENSIC ENGINE
+═══════════════════════════════════════════════════════════════════════════════
+ORDRE D'EXÉCUTION (chaîne séquentielle stricte) :
+   1. enricher.py         → Enrichissement GeoIP + réputation par IP
+   2. yara_scanner.py     → Scan YARA sur payloads Dionaea
+   3. virustotal.py       → Lookup VT (si quota dispo, sinon skip)
+   4. smb_analyzer.py     → Analyse logs SMB/NTLM Dionaea+Zeek
+   5. timeline_builder.py → Timeline ms-précision multi-honeypot
+   6. ioc_extractor.py    → Extraction IoCs (URLs, hashes, CVEs…)
+   7. mitre_mapper.py     → Mapping ATT&CK hybride (15 IDs + narration LLM)
+   8. risk_score.py       → Score de risque 9 signaux (v2.0.0)
+   9. profiler.py         → Profil criminologique Mistral (BAU framework)
+  10. chain_of_custody.py → Scellement SHA-256 + RFC 3161 (TSA freetsa.org)
+  11. PostgreSQL commit   → Persistance atomique des 4 tables forensiques
 
-Multi-honeypot support: Cowrie (SSH/Telnet), Dionaea (SMB/services), Galah (HTTP)
+SUPPORT MULTI-HONEYPOT :
+  • Cowrie  (SSH:2222, Telnet:2223)
+  • Dionaea (11 protocoles : SMB, FTP, HTTP, MySQL, SIP…)
+  • Galah   (HTTP:8080/8888 — Mistral LLM honeypot)
+  • Zeek    (IDS réseau passif, host network)
 
-Usage:
-  python engine.py                      # full analysis (last 24h)
-  python engine.py --hours 48           # look back 48 hours
-  python engine.py --enrich-only        # IP enrichment only
-  python engine.py --yara-only          # YARA scan only
-  python engine.py --score-only         # scoring + MITRE only (skip enrichment/YARA)
-  python engine.py --init-db            # initialize PostgreSQL schema
+USAGE CLI :
+  python engine.py                  # analyse complète (24h dernières)
+  python engine.py --hours 48       # fenêtre étendue 48h
+  python engine.py --enrich-only    # uniquement l'enrichissement IP
+  python engine.py --yara-only      # uniquement le scan YARA
+  python engine.py --score-only     # scoring + MITRE (skip enrich/YARA)
+  python engine.py --init-db        # initialise le schéma PostgreSQL
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import argparse
