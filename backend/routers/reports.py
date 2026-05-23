@@ -30,6 +30,24 @@ log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
+# YARA rule count computed at module load — the forensic-engine yara_rules
+# directory is bind-mounted read-only at /app/yara_rules (see docker-compose).
+# Falls back to a static count if the mount is unavailable in dev so the
+# report still renders rather than 500'ing on a missing path.
+def _count_yara_rules() -> int:
+    for candidate in (Path("/app/yara_rules"),
+                      Path(__file__).resolve().parent.parent.parent / "forensic-engine" / "yara_rules"):
+        try:
+            if candidate.is_dir():
+                n = sum(1 for _ in candidate.glob("*.yar"))
+                if n > 0:
+                    return n
+        except Exception:
+            continue
+    return 10
+
+_YARA_RULE_COUNT = _count_yara_rules()
+
 # ── Hoisted Jinja environment + WeasyPrint import ─────────────────────
 # Building these per-request adds ~1-2 s of cold-start latency on each call;
 # at module scope the templates stay compiled and WeasyPrint warms its font
@@ -629,7 +647,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "mitre_narrative":   profile.get("mistral_analysis", ""),
         # Malware
         "yara_matches":      yara_matches,
-        "yara_rules_used":   10,
+        "yara_rules_used":   _YARA_RULE_COUNT,
         "malware_family":    malware_family,
         "dropped_files":     dropped_files,
         # Risk signals

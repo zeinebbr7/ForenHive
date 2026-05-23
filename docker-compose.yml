@@ -212,6 +212,11 @@ services:
     volumes:
       - reports-data:/reports
       - /var/run/docker.sock:/var/run/docker.sock
+      # Read-only mount of the engine's YARA rule directory so the report
+      # adapter can display the real ruleset size (M-6) instead of a
+      # hardcoded 10. Bind-mount, not a named volume: the count must
+      # reflect what the engine actually loads on the host.
+      - ./forensic-engine/yara_rules:/app/yara_rules:ro
     networks:
       - backend-net
     depends_on:
@@ -244,6 +249,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
+      - "3443:443"
     networks:
       - backend-net
     depends_on:
