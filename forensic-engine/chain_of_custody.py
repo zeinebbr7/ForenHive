@@ -25,7 +25,7 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg2
 import psycopg2.extras
@@ -59,6 +59,7 @@ SEALED_COLUMNS = [
 # Canonical serialization & hashing
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def _canonicalize(value):
     """Recursively convert a value into a JSON-serializable form with
     deterministic ordering: datetimes → ISO-8601 UTC, dicts sorted."""
@@ -66,8 +67,8 @@ def _canonicalize(value):
         return value
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).isoformat()
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat()
     if isinstance(value, (list, tuple)):
         return [_canonicalize(v) for v in value]
     if isinstance(value, dict):
@@ -94,6 +95,7 @@ def sha256_hex(data: bytes) -> str:
 # Merkle root (simple binary tree, duplicate-last on odd levels)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def merkle_root(hashes: list[str]) -> str:
     if not hashes:
         return sha256_hex(b"")
@@ -101,16 +103,14 @@ def merkle_root(hashes: list[str]) -> str:
     while len(level) > 1:
         if len(level) % 2:
             level.append(level[-1])
-        level = [
-            hashlib.sha256(level[i] + level[i + 1]).digest()
-            for i in range(0, len(level), 2)
-        ]
+        level = [hashlib.sha256(level[i] + level[i + 1]).digest() for i in range(0, len(level), 2)]
     return level[0].hex()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # RFC 3161 TSA client
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def request_rfc3161_timestamp(digest_hex: str) -> dict:
     """
@@ -122,11 +122,11 @@ def request_rfc3161_timestamp(digest_hex: str) -> dict:
     hard-failing when offline or when the lib is missing.
     """
     result = {
-        "status":       "unavailable",
-        "provider":     TSA_PROVIDER,
-        "tsa_time":     None,
+        "status": "unavailable",
+        "provider": TSA_PROVIDER,
+        "tsa_time": None,
         "tsa_response": None,
-        "error":        None,
+        "error": None,
     }
 
     try:
@@ -139,12 +139,7 @@ def request_rfc3161_timestamp(digest_hex: str) -> dict:
         return result
 
     try:
-        tsq = (
-            TimestampRequestBuilder()
-            .data(bytes.fromhex(digest_hex))
-            .nonce(nonce=True)
-            .build()
-        )
+        tsq = TimestampRequestBuilder().data(bytes.fromhex(digest_hex)).nonce(nonce=True).build()
         resp = requests.post(
             TSA_URL,
             data=tsq.as_bytes(),
@@ -159,12 +154,12 @@ def request_rfc3161_timestamp(digest_hex: str) -> dict:
         tsr = decode_timestamp_response(resp.content)
         # `tst_info.gen_time` is a timezone-aware datetime
         gen_time = getattr(tsr.tst_info, "gen_time", None)
-        result["status"]       = "ok"
-        result["tsa_time"]     = gen_time
+        result["status"] = "ok"
+        result["tsa_time"] = gen_time
         result["tsa_response"] = resp.content
     except Exception as exc:
         result["status"] = "error"
-        result["error"]  = str(exc)[:500]
+        result["error"] = str(exc)[:500]
 
     return result
 
@@ -173,8 +168,8 @@ def request_rfc3161_timestamp(digest_hex: str) -> dict:
 # Sealer
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ChainOfCustody:
 
+class ChainOfCustody:
     def __init__(self, pg_conn_factory):
         self._pg = pg_conn_factory
 
@@ -202,9 +197,9 @@ class ChainOfCustody:
 
     def _fetch_stale_sessions(self, cur) -> list[dict]:
         """Return sessions whose CoC seal predates their last re-score."""
-        cols = ", ".join(SEALED_COLUMNS)
+        ", ".join(SEALED_COLUMNS)
         cur.execute(f"""
-            SELECT s.{', s.'.join(SEALED_COLUMNS)}
+            SELECT s.{", s.".join(SEALED_COLUMNS)}
             FROM forensic_sessions s
             JOIN forensic_chain_of_custody c ON c.session_id = s.session_id
             WHERE s.updated_at IS NOT NULL
@@ -218,7 +213,7 @@ class ChainOfCustody:
         conn = self._pg()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                new_sessions   = self._fetch_unsealed_sessions(cur)
+                new_sessions = self._fetch_unsealed_sessions(cur)
                 stale_sessions = self._fetch_stale_sessions(cur)
 
             sessions = new_sessions + stale_sessions
@@ -228,7 +223,9 @@ class ChainOfCustody:
                 return {"sealed": 0, "batch_id": None, "tsa_status": "skipped"}
 
             if stale_sessions:
-                log.info(f"  {len(new_sessions)} new + {len(stale_sessions)} re-scored sessions to seal")
+                log.info(
+                    f"  {len(new_sessions)} new + {len(stale_sessions)} re-scored sessions to seal"
+                )
             else:
                 log.info(f"  {len(new_sessions)} new sessions to seal")
 
@@ -239,7 +236,7 @@ class ChainOfCustody:
                     stale_ids = [s["session_id"] for s in stale_sessions]
                     cur.execute(
                         "DELETE FROM forensic_chain_of_custody WHERE session_id = ANY(%s)",
-                        (stale_ids,)
+                        (stale_ids,),
                     )
                     log.info(f"  removed {len(stale_ids)} stale seal(s) for re-sealing")
 
@@ -250,15 +247,17 @@ class ChainOfCustody:
                 record_hashes: list[str] = []
                 for sess in sessions:
                     canon_bytes = canonical_bytes(sess)
-                    canon_json  = json.loads(canon_bytes.decode("utf-8"))
+                    canon_json = json.loads(canon_bytes.decode("utf-8"))
                     linked = canon_bytes + (prev_hash or "").encode()
                     rhash = sha256_hex(linked)
-                    sealed_rows.append({
-                        "session_id":     sess["session_id"],
-                        "record_hash":    rhash,
-                        "prev_hash":      prev_hash,
-                        "canonical_json": canon_json,
-                    })
+                    sealed_rows.append(
+                        {
+                            "session_id": sess["session_id"],
+                            "record_hash": rhash,
+                            "prev_hash": prev_hash,
+                            "canonical_json": canon_json,
+                        }
+                    )
                     record_hashes.append(rhash)
                     prev_hash = rhash
 
@@ -266,8 +265,10 @@ class ChainOfCustody:
                 root = merkle_root(record_hashes)
                 log.info(f"  merkle_root={root[:16]}... submitting to {TSA_PROVIDER}")
                 tsa = request_rfc3161_timestamp(root)
-                log.info(f"  TSA status={tsa['status']}"
-                         + (f" error={tsa['error']}" if tsa.get("error") else ""))
+                log.info(
+                    f"  TSA status={tsa['status']}"
+                    + (f" error={tsa['error']}" if tsa.get("error") else "")
+                )
 
                 cur.execute(
                     """
@@ -315,8 +316,8 @@ class ChainOfCustody:
             conn.commit()
             log.info(f"  sealed {len(sealed_rows)} records in batch #{batch_id}")
             return {
-                "sealed":     len(sealed_rows),
-                "batch_id":   batch_id,
+                "sealed": len(sealed_rows),
+                "batch_id": batch_id,
                 "tsa_status": tsa["status"],
                 "merkle_root": root,
             }

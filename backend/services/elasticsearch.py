@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
-
-from elasticsearch import AsyncElasticsearch, NotFoundError
-from elasticsearch.helpers import async_bulk
+from datetime import UTC, datetime
+from typing import Any
 
 from config import get_settings
+from elasticsearch import AsyncElasticsearch, NotFoundError
+from elasticsearch.helpers import async_bulk
 from models.attack import (
     AttackEvent,
     AttackFilter,
@@ -20,7 +19,7 @@ log = logging.getLogger(__name__)
 
 
 class ESClient:
-    _instance: Optional["ESClient"] = None
+    _instance: ESClient | None = None
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -33,7 +32,7 @@ class ESClient:
         )
 
     @classmethod
-    def instance(cls) -> "ESClient":
+    def instance(cls) -> ESClient:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -113,7 +112,7 @@ class ESClient:
 
     # ---------- query builders ----------
     @staticmethod
-    def _severity_from_doc(src: Dict[str, Any]) -> Severity:
+    def _severity_from_doc(src: dict[str, Any]) -> Severity:
         level = (
             src.get("severity")
             or src.get("event", {}).get("severity")
@@ -138,7 +137,7 @@ class ESClient:
         return Severity.LOW
 
     @staticmethod
-    def _f(src: Dict[str, Any], *keys: str):
+    def _f(src: dict[str, Any], *keys: str):
         """Get a value from src, trying nested object access first then dot-notation fallback.
         Handles both Logstash dot-notation keys ("source.ip") and nested dicts ({"source": {"ip": ...}}).
         """
@@ -154,7 +153,7 @@ class ESClient:
         return src.get(".".join(keys))
 
     @staticmethod
-    def _honeypot_from_doc(src: Dict[str, Any], index: str) -> HoneypotType:
+    def _honeypot_from_doc(src: dict[str, Any], index: str) -> HoneypotType:
         fileset = src.get("fileset") if isinstance(src.get("fileset"), dict) else {}
         service = src.get("service") if isinstance(src.get("service"), dict) else {}
         # handle both {"honeypot": {"type": "cowrie"}} and {"honeypot.type": "cowrie"}
@@ -175,7 +174,7 @@ class ESClient:
                 return k
         return HoneypotType.UNKNOWN
 
-    def _doc_to_event(self, doc: Dict[str, Any]) -> AttackEvent:
+    def _doc_to_event(self, doc: dict[str, Any]) -> AttackEvent:
         src = doc.get("_source", {})
         f = self._f
 
@@ -195,7 +194,7 @@ class ESClient:
             else:
                 location = None
             org_raw = asn_src.get("organization")
-            as_org = (org_raw.get("name") if isinstance(org_raw, dict) else org_raw)
+            as_org = org_raw.get("name") if isinstance(org_raw, dict) else org_raw
             geo = GeoInfo(
                 country_name=geo_src.get("country_name"),
                 country_iso=geo_src.get("country_iso_code") or geo_src.get("country_code2"),
@@ -209,7 +208,7 @@ class ESClient:
         try:
             ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
         except Exception:
-            ts = datetime.now(timezone.utc)
+            ts = datetime.now(UTC)
 
         # session_id: handle {"session": {"id": "..."}} and {"session": "..."} and {"session.id": "..."}
         sess_raw = src.get("session")
@@ -248,8 +247,12 @@ class ESClient:
             honeypot=self._honeypot_from_doc(src, doc.get("_index", "")),
             source_ip=f(src, "source", "ip") or src.get("source.ip") or src.get("src_ip"),
             source_port=f(src, "source", "port") or src.get("source.port") or src.get("src_port"),
-            dest_port=f(src, "destination", "port") or src.get("destination.port") or src.get("dst_port"),
-            protocol=f(src, "network", "protocol") or src.get("network.protocol") or src.get("protocol"),
+            dest_port=f(src, "destination", "port")
+            or src.get("destination.port")
+            or src.get("dst_port"),
+            protocol=f(src, "network", "protocol")
+            or src.get("network.protocol")
+            or src.get("protocol"),
             severity=self._severity_from_doc(src),
             risk_score=src.get("risk_score"),
             event_type=event_type,
@@ -258,17 +261,25 @@ class ESClient:
             password=password,
             command=src.get("input") or src.get("cowrie.input") or src.get("command"),
             http_method=f(src, "http", "request", "method") or src.get("http.request.method"),
-            http_path=(f(src, "url", "path") or src.get("url.path")
-                       or f(src, "http", "request", "uri") or src.get("http.request.uri")),
-            user_agent=(f(src, "user_agent", "original") or src.get("user_agent.original")
-                        or f(src, "http", "request", "user_agent") or src.get("http.request.user_agent")),
+            http_path=(
+                f(src, "url", "path")
+                or src.get("url.path")
+                or f(src, "http", "request", "uri")
+                or src.get("http.request.uri")
+            ),
+            user_agent=(
+                f(src, "user_agent", "original")
+                or src.get("user_agent.original")
+                or f(src, "http", "request", "user_agent")
+                or src.get("http.request.user_agent")
+            ),
             geo=geo,
             raw=src,
         )
 
-    def _build_filter_query(self, f: AttackFilter) -> Dict[str, Any]:
-        must: List[Dict[str, Any]] = []
-        filt: List[Dict[str, Any]] = []
+    def _build_filter_query(self, f: AttackFilter) -> dict[str, Any]:
+        must: list[dict[str, Any]] = []
+        filt: list[dict[str, Any]] = []
         if f.ip:
             filt.append({"term": {"source.ip": f.ip}})
         if f.country:
@@ -276,12 +287,10 @@ class ESClient:
         if f.severity:
             filt.append({"term": {"severity": f.severity.value}})
         if f.honeypot:
-            filt.append(
-                {"term": {"honeypot.type.keyword": f.honeypot.value}}
-            )
+            filt.append({"term": {"honeypot.type.keyword": f.honeypot.value}})
         # Always cap at now to prevent future-timestamped injections from
         # dominating the sort (test data injected with tomorrow's date).
-        rng: Dict[str, str] = {"lte": "now"}
+        rng: dict[str, str] = {"lte": "now"}
         if f.date_from:
             rng["gte"] = f.date_from.isoformat()
         if f.date_to:
@@ -292,7 +301,7 @@ class ESClient:
         return {"bool": {"must": must or [{"match_all": {}}], "filter": filt}}
 
     # ---------- queries ----------
-    async def search_attacks(self, f: AttackFilter) -> Tuple[int, List[AttackEvent]]:
+    async def search_attacks(self, f: AttackFilter) -> tuple[int, list[AttackEvent]]:
         body = {
             "query": self._build_filter_query(f),
             "sort": [{"@timestamp": {"order": "desc"}}],
@@ -311,7 +320,7 @@ class ESClient:
         events = [self._doc_to_event(h) for h in hits["hits"]]
         return total, events
 
-    async def get_attack(self, doc_id: str) -> Optional[AttackEvent]:
+    async def get_attack(self, doc_id: str) -> AttackEvent | None:
         body = {"query": {"ids": {"values": [doc_id]}}, "size": 1}
         resp = await self.client.search(
             index=self.settings.honeypot_indices,
@@ -334,7 +343,7 @@ class ESClient:
         )
         return int(resp.get("count", 0))
 
-    async def hourly_breakdown(self, hours: int = 24) -> List[Dict[str, Any]]:
+    async def hourly_breakdown(self, hours: int = 24) -> list[dict[str, Any]]:
         body = {
             "size": 0,
             "query": {"range": {"@timestamp": {"gte": f"now-{hours}h"}}},
@@ -362,14 +371,14 @@ class ESClient:
             per_hp = {sub["key"]: sub["doc_count"] for sub in b["per_honeypot"]["buckets"]}
             buckets.append(
                 {
-                    "hour": datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc),
+                    "hour": datetime.fromtimestamp(b["key"] / 1000, tz=UTC),
                     "count": b["doc_count"],
                     "by_honeypot": per_hp,
                 }
             )
         return buckets
 
-    async def country_breakdown(self, top: int = 25) -> List[Dict[str, Any]]:
+    async def country_breakdown(self, top: int = 25) -> list[dict[str, Any]]:
         body = {
             "size": 0,
             "aggs": {
@@ -395,9 +404,12 @@ class ESClient:
             name = name_bucket[0]["key"] if name_bucket else b["key"]
             avg_risk = b["avg_risk"]["value"] or 0
             risk_level = (
-                "critical" if avg_risk >= 80
-                else "high" if avg_risk >= 60
-                else "medium" if avg_risk >= 40
+                "critical"
+                if avg_risk >= 80
+                else "high"
+                if avg_risk >= 60
+                else "medium"
+                if avg_risk >= 40
                 else "low"
             )
             out.append(
@@ -412,7 +424,7 @@ class ESClient:
             )
         return out
 
-    async def top_attackers(self, limit: int = 50) -> List[Dict[str, Any]]:
+    async def top_attackers(self, limit: int = 50) -> list[dict[str, Any]]:
         """Aggregate the top attacker IPs with summary stats.
 
         One row per source.ip with event_count, distinct honeypots, country,
@@ -441,36 +453,43 @@ class ESClient:
             ignore_unavailable=True,
             allow_no_indices=True,
         )
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for b in resp["aggregations"]["ips"]["buckets"]:
             avg = float(b["avg_risk"]["value"] or 0)
             mx = float(b["max_risk"]["value"] or 0)
             score = round(max(avg, mx), 1)
             # Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0.
             severity = (
-                "CRITICAL" if score >= 70
-                else "HIGH" if score >= 45
-                else "MEDIUM" if score >= 25
+                "CRITICAL"
+                if score >= 70
+                else "HIGH"
+                if score >= 45
+                else "MEDIUM"
+                if score >= 25
                 else "LOW"
             )
             country_buckets = b["country"]["buckets"]
-            out.append({
-                "source_ip": b["key"],
-                "event_count": b["doc_count"],
-                "honeypots": [hp["key"] for hp in b["honeypots"]["buckets"]],
-                "country": country_buckets[0]["key"] if country_buckets else None,
-                "risk_score": score,
-                "severity": severity,
-                "first_seen": b["first_seen"].get("value_as_string"),
-                "last_seen": b["last_seen"].get("value_as_string"),
-            })
+            out.append(
+                {
+                    "source_ip": b["key"],
+                    "event_count": b["doc_count"],
+                    "honeypots": [hp["key"] for hp in b["honeypots"]["buckets"]],
+                    "country": country_buckets[0]["key"] if country_buckets else None,
+                    "risk_score": score,
+                    "severity": severity,
+                    "first_seen": b["first_seen"].get("value_as_string"),
+                    "last_seen": b["last_seen"].get("value_as_string"),
+                }
+            )
         return out
 
-    async def honeypot_split(self) -> List[Dict[str, Any]]:
+    async def honeypot_split(self) -> list[dict[str, Any]]:
         body = {
             "size": 0,
             "aggs": {
-                "per_honeypot": {"terms": {"field": "honeypot.type.keyword", "size": 10, "missing": "unknown"}}
+                "per_honeypot": {
+                    "terms": {"field": "honeypot.type.keyword", "size": 10, "missing": "unknown"}
+                }
             },
         }
         resp = await self.client.search(
@@ -490,14 +509,18 @@ class ESClient:
             for b in buckets
         ]
 
-    async def top_source_ips(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def top_source_ips(self, limit: int = 10) -> list[dict[str, Any]]:
         body = {
             "size": 0,
-            "query": {"bool": {
-                "must": [{"exists": {"field": "source.ip"}}],
-                "filter": [{"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}],
-                "must_not": [{"wildcard": {"source.ip.keyword": "*:*"}}],
-            }},
+            "query": {
+                "bool": {
+                    "must": [{"exists": {"field": "source.ip"}}],
+                    "filter": [
+                        {"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}
+                    ],
+                    "must_not": [{"wildcard": {"source.ip.keyword": "*:*"}}],
+                }
+            },
             "aggs": {
                 "ips": {
                     "terms": {"field": "source.ip.keyword", "size": limit},
@@ -509,29 +532,37 @@ class ESClient:
             },
         }
         resp = await self.client.search(
-            index=self.settings.honeypot_indices, body=body,
-            ignore_unavailable=True, allow_no_indices=True,
+            index=self.settings.honeypot_indices,
+            body=body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
         )
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for b in resp["aggregations"]["ips"]["buckets"]:
             cb = b["country"]["buckets"]
             hb = b["honeypot"]["buckets"]
-            out.append({
-                "ip": b["key"],
-                "count": b["doc_count"],
-                "country": cb[0]["key"] if cb else None,
-                "honeypot": hb[0]["key"] if hb else None,
-            })
+            out.append(
+                {
+                    "ip": b["key"],
+                    "count": b["doc_count"],
+                    "country": cb[0]["key"] if cb else None,
+                    "honeypot": hb[0]["key"] if hb else None,
+                }
+            )
         return out
 
-    async def top_dest_ports(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def top_dest_ports(self, limit: int = 10) -> list[dict[str, Any]]:
         body = {
             "size": 0,
-            "query": {"bool": {
-                "must": [{"exists": {"field": "destination.port"}}],
-                "filter": [{"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}],
-                "must_not": [{"term": {"destination.port": 0}}],
-            }},
+            "query": {
+                "bool": {
+                    "must": [{"exists": {"field": "destination.port"}}],
+                    "filter": [
+                        {"terms": {"honeypot.type.keyword": ["cowrie", "dionaea", "galah"]}}
+                    ],
+                    "must_not": [{"term": {"destination.port": 0}}],
+                }
+            },
             "aggs": {
                 "ports": {
                     "terms": {"field": "destination.port", "size": limit},
@@ -543,33 +574,39 @@ class ESClient:
             },
         }
         resp = await self.client.search(
-            index=self.settings.honeypot_indices, body=body,
-            ignore_unavailable=True, allow_no_indices=True,
+            index=self.settings.honeypot_indices,
+            body=body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
         )
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for b in resp["aggregations"]["ports"]["buckets"]:
             pb = b["proto"]["buckets"]
             hb = b["honeypot"]["buckets"]
-            out.append({
-                "port": b["key"],
-                "count": b["doc_count"],
-                "protocol": pb[0]["key"] if pb else "tcp",
-                "honeypot": hb[0]["key"] if hb else None,
-            })
+            out.append(
+                {
+                    "port": b["key"],
+                    "count": b["doc_count"],
+                    "protocol": pb[0]["key"] if pb else "tcp",
+                    "honeypot": hb[0]["key"] if hb else None,
+                }
+            )
         return out
 
-    async def sessions(
-        self, limit: int = 100, active_only: bool = False
-    ) -> List[Dict[str, Any]]:
-        must: List[Dict[str, Any]] = []
+    async def sessions(self, limit: int = 100, active_only: bool = False) -> list[dict[str, Any]]:
+        must: list[dict[str, Any]] = []
         if active_only:
             must.append({"range": {"@timestamp": {"gte": "now-10m"}}})
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "size": 0,
             "query": {"bool": {"must": must or [{"match_all": {}}]}},
             "aggs": {
                 "sessions": {
-                    "terms": {"field": "session.id.keyword", "size": limit, "order": {"latest": "desc"}},
+                    "terms": {
+                        "field": "session.id.keyword",
+                        "size": limit,
+                        "order": {"latest": "desc"},
+                    },
                     "aggs": {
                         "latest": {"max": {"field": "@timestamp"}},
                         "earliest": {"min": {"field": "@timestamp"}},
@@ -578,10 +615,14 @@ class ESClient:
                         "src_port": {"terms": {"field": "source.port", "size": 1}},
                         "username": {"terms": {"field": "user.name.keyword", "size": 1}},
                         "cmd_count": {
-                            "filter": {"bool": {"should": [
-                                {"term": {"eventid": "cowrie.command.input"}},
-                                {"term": {"event.id": "cowrie.command.input"}},
-                            ]}}
+                            "filter": {
+                                "bool": {
+                                    "should": [
+                                        {"term": {"eventid": "cowrie.command.input"}},
+                                        {"term": {"event.id": "cowrie.command.input"}},
+                                    ]
+                                }
+                            }
                         },
                         "auth_count": {
                             "filter": {
@@ -607,13 +648,13 @@ class ESClient:
         )
         out = []
         for b in resp["aggregations"]["sessions"]["buckets"]:
-            latest = datetime.fromtimestamp(b["latest"]["value"] / 1000, tz=timezone.utc)
-            earliest = datetime.fromtimestamp(b["earliest"]["value"] / 1000, tz=timezone.utc)
+            latest = datetime.fromtimestamp(b["latest"]["value"] / 1000, tz=UTC)
+            earliest = datetime.fromtimestamp(b["earliest"]["value"] / 1000, tz=UTC)
             hp_b = b["honeypot"]["buckets"]
             ip_b = b["src_ip"]["buckets"]
             user_b = b["username"]["buckets"]
             port_b = b["src_port"]["buckets"]
-            active = (datetime.now(tz=timezone.utc) - latest).total_seconds() < 600
+            active = (datetime.now(tz=UTC) - latest).total_seconds() < 600
             out.append(
                 {
                     "session_id": b["key"],
@@ -632,14 +673,19 @@ class ESClient:
             )
         return out
 
-    async def session_detail(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def session_detail(self, session_id: str) -> dict[str, Any] | None:
         body = {
             "size": 500,
-            "query": {"bool": {"should": [
-                {"term": {"session.id.keyword": session_id}},
-                {"term": {"session": session_id}},
-                {"term": {"session_id": session_id}},
-            ], "minimum_should_match": 1}},
+            "query": {
+                "bool": {
+                    "should": [
+                        {"term": {"session.id.keyword": session_id}},
+                        {"term": {"session": session_id}},
+                        {"term": {"session_id": session_id}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            },
             "sort": [{"@timestamp": {"order": "asc"}}],
         }
         resp = await self.client.search(
@@ -656,11 +702,14 @@ class ESClient:
         last = events[-1]
         commands, downloads, logins = [], [], []
         for e in events:
-            evid = (e.get("eventid") or e.get("event.id")
-                    or (e.get("event") or {}).get("id", ""))
+            evid = e.get("eventid") or e.get("event.id") or (e.get("event") or {}).get("id", "")
             ts = e.get("@timestamp")
             if evid == "cowrie.command.input":
-                cmd = e.get("input") or e.get("cowrie.input") or (e.get("process") or {}).get("command_line")
+                cmd = (
+                    e.get("input")
+                    or e.get("cowrie.input")
+                    or (e.get("process") or {}).get("command_line")
+                )
                 commands.append({"timestamp": ts, "input": cmd, "success": True})
             elif evid in ("cowrie.session.file_download", "cowrie.session.file_upload"):
                 url = e.get("url") or e.get("outfile")
@@ -672,9 +721,13 @@ class ESClient:
                     {
                         "success": evid == "cowrie.login.success",
                         "username": (user_raw.get("name") if isinstance(user_raw, dict) else None)
-                                    or e.get("user.name") or e.get("username"),
-                        "password": (user_raw.get("password") if isinstance(user_raw, dict) else None)
-                                    or e.get("user.password") or e.get("password"),
+                        or e.get("user.name")
+                        or e.get("username"),
+                        "password": (
+                            user_raw.get("password") if isinstance(user_raw, dict) else None
+                        )
+                        or e.get("user.password")
+                        or e.get("password"),
                         "timestamp": ts,
                     }
                 )
@@ -682,14 +735,26 @@ class ESClient:
             started = datetime.fromisoformat(str(first["@timestamp"]).replace("Z", "+00:00"))
             ended = datetime.fromisoformat(str(last["@timestamp"]).replace("Z", "+00:00"))
         except Exception:
-            started = ended = datetime.now(tz=timezone.utc)
+            started = ended = datetime.now(tz=UTC)
         hp_raw = first.get("honeypot")
-        hp_str = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or first.get("honeypot.type", "unknown")
+        hp_str = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or first.get(
+            "honeypot.type", "unknown"
+        )
         src_raw = first.get("source")
-        src_ip = (src_raw.get("ip") if isinstance(src_raw, dict) else None) or first.get("source.ip") or first.get("src_ip")
-        src_port = (src_raw.get("port") if isinstance(src_raw, dict) else None) or first.get("source.port")
+        src_ip = (
+            (src_raw.get("ip") if isinstance(src_raw, dict) else None)
+            or first.get("source.ip")
+            or first.get("src_ip")
+        )
+        src_port = (src_raw.get("port") if isinstance(src_raw, dict) else None) or first.get(
+            "source.port"
+        )
         user_raw = first.get("user")
-        uname = (user_raw.get("name") if isinstance(user_raw, dict) else None) or first.get("user.name") or first.get("username")
+        uname = (
+            (user_raw.get("name") if isinstance(user_raw, dict) else None)
+            or first.get("user.name")
+            or first.get("username")
+        )
         return {
             "session_id": session_id,
             "honeypot": hp_str,
@@ -710,10 +775,15 @@ class ESClient:
     async def mark_session_closed(self, session_id: str) -> bool:
         body = {
             "script": {"source": "ctx._source.session_closed_by_admin = true"},
-            "query": {"bool": {"should": [
-                {"term": {"session.id.keyword": session_id}},
-                {"term": {"session": session_id}},
-            ], "minimum_should_match": 1}},
+            "query": {
+                "bool": {
+                    "should": [
+                        {"term": {"session.id.keyword": session_id}},
+                        {"term": {"session": session_id}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            },
         }
         try:
             resp = await self.client.update_by_query(
@@ -728,7 +798,7 @@ class ESClient:
             log.warning("force close failed: %s", exc)
             return False
 
-    async def events_for_ip(self, ip: str, size: int = 200) -> List[Dict[str, Any]]:
+    async def events_for_ip(self, ip: str, size: int = 200) -> list[dict[str, Any]]:
         body = {
             "size": size,
             "query": {"term": {"source.ip": ip}},
@@ -742,7 +812,7 @@ class ESClient:
         )
         return [h["_source"] | {"_id": h["_id"]} for h in resp["hits"]["hits"]]
 
-    async def profile_aggregates(self, ip: str) -> Dict[str, Any]:
+    async def profile_aggregates(self, ip: str) -> dict[str, Any]:
         body = {
             "size": 0,
             "query": {"term": {"source.ip": ip}},
@@ -771,10 +841,10 @@ class ESClient:
         return resp["aggregations"]
 
     # ---------- generic index ops ----------
-    async def index_doc(self, index: str, doc_id: str, body: Dict[str, Any]) -> None:
+    async def index_doc(self, index: str, doc_id: str, body: dict[str, Any]) -> None:
         await self.client.index(index=index, id=doc_id, document=body, refresh="wait_for")
 
-    async def get_doc(self, index: str, doc_id: str) -> Optional[Dict[str, Any]]:
+    async def get_doc(self, index: str, doc_id: str) -> dict[str, Any] | None:
         try:
             resp = await self.client.get(index=index, id=doc_id)
             return resp["_source"]
@@ -788,10 +858,10 @@ class ESClient:
         except NotFoundError:
             return False
 
-    async def search_docs(self, index: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    async def search_docs(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
         return await self.client.search(index=index, body=body, ignore_unavailable=True)
 
-    async def bulk_index(self, actions: List[Dict[str, Any]]) -> None:
+    async def bulk_index(self, actions: list[dict[str, Any]]) -> None:
         await async_bulk(self.client, actions)
 
 

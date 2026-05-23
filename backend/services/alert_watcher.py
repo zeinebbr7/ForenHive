@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from config import get_settings
+
 from services.alert_engine import get_alert_engine
 from services.elasticsearch import get_es
 
@@ -23,7 +24,7 @@ class AlertWatcher:
 
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
     async def start(self) -> None:
@@ -34,7 +35,9 @@ class AlertWatcher:
             return
         self._stop.clear()
         self._task = asyncio.create_task(self._loop(), name="alert-watcher")
-        log.info("alert watcher started (interval=%ss)", self.settings.alert_watcher_interval_seconds)
+        log.info(
+            "alert watcher started (interval=%ss)", self.settings.alert_watcher_interval_seconds
+        )
 
     async def stop(self) -> None:
         self._stop.set()
@@ -52,7 +55,7 @@ class AlertWatcher:
         if doc and doc.get("watermark_ts"):
             return str(doc["watermark_ts"])
         # First run: start from 5 minutes ago to avoid replaying history.
-        return (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        return (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
 
     async def _set_watermark(self, iso_ts: str) -> None:
         await get_es().index_doc(
@@ -62,7 +65,7 @@ class AlertWatcher:
         )
 
     @staticmethod
-    def _ctx_from_event(src: Dict[str, Any]) -> Dict[str, Any]:
+    def _ctx_from_event(src: dict[str, Any]) -> dict[str, Any]:
         # Handle both nested {"source": {"ip": ...}} and dot-notation {"source.ip": ...}
         source_raw = src.get("source") or {}
         source = source_raw if isinstance(source_raw, dict) else {}
@@ -73,7 +76,9 @@ class AlertWatcher:
         if not isinstance(asn, dict):
             asn = {}
         ua_raw = src.get("user_agent") or {}
-        user_agent = (ua_raw.get("original") if isinstance(ua_raw, dict) else None) or src.get("user_agent.original")
+        user_agent = (ua_raw.get("original") if isinstance(ua_raw, dict) else None) or src.get(
+            "user_agent.original"
+        )
         http_raw = src.get("http") or {}
         http = http_raw if isinstance(http_raw, dict) else {}
         url_raw = src.get("url") or {}
@@ -81,11 +86,18 @@ class AlertWatcher:
 
         # honeypot: handle {"honeypot": {"type": "cowrie"}} and {"honeypot.type": "cowrie"}
         hp_raw = src.get("honeypot")
-        honeypot = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or src.get("honeypot.type")
+        honeypot = (hp_raw.get("type") if isinstance(hp_raw, dict) else hp_raw) or src.get(
+            "honeypot.type"
+        )
 
         # eventid: handle nested event.id and flat eventid
         ev_raw = src.get("event") or {}
-        eventid = src.get("eventid") or src.get("event.id") or (ev_raw.get("id") if isinstance(ev_raw, dict) else None) or ""
+        eventid = (
+            src.get("eventid")
+            or src.get("event.id")
+            or (ev_raw.get("id") if isinstance(ev_raw, dict) else None)
+            or ""
+        )
 
         return {
             "source_ip": source.get("ip") or src.get("source.ip") or src.get("src_ip"),
@@ -98,18 +110,23 @@ class AlertWatcher:
             "abuseipdb_score": src.get("abuseipdb_score"),
             "yara_match": src.get("yara_match"),
             "mitre_techniques": [
-                t.get("id") for t in (src.get("mitre") or {}).get("technique", [])
+                t.get("id")
+                for t in (src.get("mitre") or {}).get("technique", [])
                 if isinstance(t, dict) and t.get("id")
-            ] if isinstance(src.get("mitre"), dict) else [],
+            ]
+            if isinstance(src.get("mitre"), dict)
+            else [],
             "country": geo.get("country_name"),
             "country_iso": geo.get("country_iso_code"),
             "asn": asn.get("number") if isinstance(asn, dict) else None,
-            "as_org": asn.get("organization", {}).get("name") if isinstance(asn, dict) and isinstance(asn.get("organization"), dict) else None,
+            "as_org": asn.get("organization", {}).get("name")
+            if isinstance(asn, dict) and isinstance(asn.get("organization"), dict)
+            else None,
             "commands": [src["input"]] if src.get("input") else [],
             "http_path": url.get("path") or src.get("url.path") or http.get("path"),
             "user_agent": user_agent,
             "download_attempt": eventid.startswith("cowrie.session.file"),
-            "hour_of_day": datetime.now(timezone.utc).hour,
+            "hour_of_day": datetime.now(UTC).hour,
             "raw": src,
         }
 
@@ -169,11 +186,11 @@ class AlertWatcher:
                 log.exception("watcher loop error: %s", exc)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
 
-_watcher: Optional[AlertWatcher] = None
+_watcher: AlertWatcher | None = None
 
 
 def get_watcher() -> AlertWatcher:

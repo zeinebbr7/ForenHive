@@ -12,17 +12,14 @@ Each profile is indexed to both Elasticsearch (forenhive-suspect-profiles) and P
 
 import json
 import logging
-import os
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import UTC, datetime
 
+import config
 import psycopg2
 import psycopg2.extras
 import requests
 from elasticsearch import Elasticsearch, NotFoundError
-
-import config
 
 log = logging.getLogger("profiler")
 
@@ -67,7 +64,8 @@ KILL_CHAIN_PHASES = [
 # POSTGRESQL QUERIES
 # ─────────────────────────────────────────────────────────────────────────────
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     """Return a pooled PostgreSQL connection (auto-released on .close())."""
@@ -198,6 +196,7 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
 # ELASTICSEARCH QUERIES
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _query_smb_profile(es: Elasticsearch, source_ip: str) -> dict:
     """Query SMB analysis profile from forenhive-smb-analysis index."""
     try:
@@ -226,7 +225,9 @@ def _query_similar_profiles(
         should_clauses.append({"term": {"enrichment.geo.asn": asn}})
     if country:
         should_clauses.append({"term": {"enrichment.geo.country_code.keyword": country}})
-    should_clauses.append({"range": {"risk_score": {"gte": risk_score - 15, "lte": risk_score + 15}}})
+    should_clauses.append(
+        {"range": {"risk_score": {"gte": risk_score - 15, "lte": risk_score + 15}}}
+    )
 
     query = {
         "size": MEMORY_MAX_CASES,
@@ -276,7 +277,7 @@ def _store_profile_es(es: Elasticsearch, profile: dict, source_ip: str) -> bool:
         doc = {
             **profile,
             "source_ip": source_ip,
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
+            "@timestamp": datetime.now(UTC).isoformat(),
         }
         es.index(
             index=ES_PROFILES_INDEX,
@@ -293,6 +294,7 @@ def _store_profile_es(es: Elasticsearch, profile: dict, source_ip: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 # PROMPT BUILDERS
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _build_section1_system_role() -> str:
     """System role: FBI behavioral profiler persona."""
@@ -419,7 +421,9 @@ def _build_section3_evidence(
     if smb_data:
         section += "  <SMB_ACTIVITY>\n"
         section += f"    <share_enumeration>{smb_data.get('share_enumerated', False)}</share_enumeration>\n"
-        section += f"    <epmapper_prescan>{smb_data.get('epmapper_prescan', 0)}</epmapper_prescan>\n"
+        section += (
+            f"    <epmapper_prescan>{smb_data.get('epmapper_prescan', 0)}</epmapper_prescan>\n"
+        )
         ops = smb_data.get("dcerpc_operations", [])
         if ops:
             section += f"    <exploit_attempts>{len(ops)}</exploit_attempts>\n"
@@ -456,7 +460,8 @@ def _build_section4_reference_cases(cases: list) -> str:
 # OLLAMA INTEGRATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _call_ollama(prompt: str) -> Optional[str]:
+
+def _call_ollama(prompt: str) -> str | None:
     """Call Ollama/Mistral for profile generation."""
     try:
         resp = requests.post(
@@ -483,7 +488,7 @@ def _call_ollama(prompt: str) -> Optional[str]:
         return None
 
 
-def _parse_json_response(response: str) -> Optional[dict]:
+def _parse_json_response(response: str) -> dict | None:
     """Extract and parse JSON from Ollama response."""
     if not response:
         return None
@@ -509,6 +514,7 @@ def _parse_json_response(response: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # ATTACKER PROFILER
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AttackerProfiler:
     """LLM-powered attacker behavioral profiler."""

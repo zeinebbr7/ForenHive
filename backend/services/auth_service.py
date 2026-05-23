@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from config import get_settings
+from db import get_session, session_scope
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
+from models_sql.user import User, UserRole
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from config import get_settings
-from db import get_session, session_scope
-from models_sql.user import User, UserRole
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def _encode(sub: str, kind: str, ttl: timedelta, **claims) -> str:
     s = get_settings()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": sub,
         "typ": kind,
@@ -76,19 +74,19 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="invalid token")
 
 
-async def authenticate(db: AsyncSession, email: str, password: str) -> Optional[User]:
+async def authenticate(db: AsyncSession, email: str, password: str) -> User | None:
     res = await db.execute(select(User).where(User.email == email.lower()))
     user = res.scalar_one_or_none()
     if not user or not user.is_active:
         return None
     if not verify_password(password, user.password_hash):
         return None
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
     return user
 
 
-async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
+async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
     try:
         uid = uuid.UUID(user_id)
     except ValueError:
@@ -99,9 +97,9 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
 
 async def get_current_user(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),
+    token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_session),
-) -> Optional[User]:
+) -> User | None:
     """Resolve the current user from the bearer token.
 
     When `disable_auth=True`, anonymous access is allowed (returns None) but a
@@ -140,6 +138,7 @@ def require_role(*allowed: UserRole):
         if allowed and user.role not in allowed:
             raise HTTPException(status_code=403, detail="insufficient role")
         return user
+
     return _dep
 
 

@@ -4,12 +4,12 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import httpx
-
 from config import get_settings
+
 from services.elasticsearch import get_es
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class OllamaService:
     def _cache_key(self, ip: str) -> str:
         return hashlib.sha256(f"profile:{ip}".encode()).hexdigest()[:32]
 
-    async def _get_cached(self, ip: str) -> Optional[str]:
+    async def _get_cached(self, ip: str) -> str | None:
         es = get_es()
         doc = await es.get_doc(self.settings.es_index_profiles, self._cache_key(ip))
         if not doc:
@@ -81,7 +81,7 @@ class OllamaService:
             ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
         except Exception:
             return None
-        age = (datetime.now(timezone.utc) - ts).total_seconds()
+        age = (datetime.now(UTC) - ts).total_seconds()
         if age > self.settings.ollama_cache_ttl:
             return None
         return doc.get("mistral_analysis")
@@ -95,14 +95,14 @@ class OllamaService:
                 "ip": ip,
                 "mistral_analysis": analysis,
                 "risk_score": risk_score,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
         )
 
     def _recs_cache_key(self, ip: str) -> str:
         return hashlib.sha256(f"recs:{ip}".encode()).hexdigest()[:32]
 
-    async def _get_cached_recs(self, ip: str) -> Optional[List[Dict]]:
+    async def _get_cached_recs(self, ip: str) -> list[dict] | None:
         es = get_es()
         doc = await es.get_doc(self.settings.es_index_profiles, self._recs_cache_key(ip))
         if not doc:
@@ -114,11 +114,11 @@ class OllamaService:
             ts = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
         except Exception:
             return None
-        if (datetime.now(timezone.utc) - ts).total_seconds() > self.settings.ollama_cache_ttl:
+        if (datetime.now(UTC) - ts).total_seconds() > self.settings.ollama_cache_ttl:
             return None
         return doc.get("ollama_recommendations")
 
-    async def _store_cached_recs(self, ip: str, recs: List[Dict]) -> None:
+    async def _store_cached_recs(self, ip: str, recs: list[dict]) -> None:
         es = get_es()
         await es.index_doc(
             self.settings.es_index_profiles,
@@ -126,11 +126,11 @@ class OllamaService:
             {
                 "ip": ip,
                 "ollama_recommendations": recs,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
         )
 
-    def _parse_recs(self, raw: str) -> Optional[List[Dict]]:
+    def _parse_recs(self, raw: str) -> list[dict] | None:
         """Extract a JSON array from the LLM response (strips markdown fences)."""
         raw = re.sub(r"^```[a-z]*\s*", "", raw.strip(), flags=re.MULTILINE)
         raw = re.sub(r"\s*```$", "", raw.strip(), flags=re.MULTILINE)
@@ -145,11 +145,13 @@ class OllamaService:
         for item in items:
             if not isinstance(item, dict):
                 continue
-            result.append({
-                "priority":  str(item.get("priority", "MEDIUM")).upper(),
-                "action":    str(item.get("action", "")),
-                "rationale": str(item.get("rationale", "")),
-            })
+            result.append(
+                {
+                    "priority": str(item.get("priority", "MEDIUM")).upper(),
+                    "action": str(item.get("action", "")),
+                    "rationale": str(item.get("rationale", "")),
+                }
+            )
         return result if result else None
 
     async def generate_recommendations(
@@ -159,16 +161,16 @@ class OllamaService:
         country: str = "unknown",
         risk_score: int = 0,
         risk_level: str = "INFO",
-        honeypots: List[str] | None = None,
-        mitre: List[str] | None = None,
+        honeypots: list[str] | None = None,
+        mitre: list[str] | None = None,
         auth_attempts: int = 0,
         auth_success: bool = False,
-        yara: List[str] | None = None,
+        yara: list[str] | None = None,
         is_tor: bool = False,
         is_vpn: bool = False,
-        commands: List[str] | None = None,
+        commands: list[str] | None = None,
         use_cache: bool = True,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Return 3-5 Ollama-generated SOC recommendations for a given attacker."""
         if use_cache:
             cached = await self._get_cached_recs(ip)
@@ -190,7 +192,7 @@ class OllamaService:
             commands=", ".join((commands or [])[:5]) or "none",
         )
 
-        recs: Optional[List[Dict]] = None
+        recs: list[dict] | None = None
         try:
             async with httpx.AsyncClient(timeout=self.settings.ollama_timeout) as client:
                 resp = await client.post(
@@ -209,14 +211,18 @@ class OllamaService:
             log.warning("Ollama recommendations call failed for %s: %s", ip, exc)
 
         if not recs:
-            recs = [{"priority": "HIGH", "action": f"Block {ip} at perimeter firewall.", "rationale": "Ollama unavailable — fallback recommendation."}]
+            recs = [
+                {
+                    "priority": "HIGH",
+                    "action": f"Block {ip} at perimeter firewall.",
+                    "rationale": "Ollama unavailable — fallback recommendation.",
+                }
+            ]
 
         await self._store_cached_recs(ip, recs)
         return recs
 
-    async def analyze_profile(
-        self, profile: Dict[str, Any], *, use_cache: bool = True
-    ) -> str:
+    async def analyze_profile(self, profile: dict[str, Any], *, use_cache: bool = True) -> str:
         ip = profile.get("ip", "")
         if use_cache:
             cached = await self._get_cached(ip)
@@ -265,7 +271,7 @@ class OllamaService:
         return text
 
 
-_svc: Optional[OllamaService] = None
+_svc: OllamaService | None = None
 
 
 def get_ollama() -> OllamaService:

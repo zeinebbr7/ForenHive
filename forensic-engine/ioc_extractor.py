@@ -21,11 +21,9 @@ Sources scanned: event_action, summary, raw JSONB (full ES doc).
 """
 
 import ipaddress
-import json
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime
 from urllib.parse import urlparse
 
 import psycopg2
@@ -36,13 +34,15 @@ log = logging.getLogger("ioc")
 
 # ── Regexes (compiled once) ──────────────────────────────────────────────────
 
-RE_URL       = re.compile(r"https?://[^\s'\"<>`]+", re.IGNORECASE)
-RE_IPV4      = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-RE_SHA256    = re.compile(r"\b[a-fA-F0-9]{64}\b")
-RE_MD5       = re.compile(r"(?<![a-fA-F0-9])[a-fA-F0-9]{32}(?![a-fA-F0-9])")
-RE_CVE       = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
-RE_EMAIL     = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-RE_FILE_PATH = re.compile(r"(?:^|\s)(/(?:bin|sbin|tmp|var|etc|usr|root|home|opt|dev)/[^\s;|&'\"`<>]+)")
+RE_URL = re.compile(r"https?://[^\s'\"<>`]+", re.IGNORECASE)
+RE_IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+RE_SHA256 = re.compile(r"\b[a-fA-F0-9]{64}\b")
+RE_MD5 = re.compile(r"(?<![a-fA-F0-9])[a-fA-F0-9]{32}(?![a-fA-F0-9])")
+RE_CVE = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+RE_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+RE_FILE_PATH = re.compile(
+    r"(?:^|\s)(/(?:bin|sbin|tmp|var|etc|usr|root|home|opt|dev)/[^\s;|&'\"`<>]+)"
+)
 
 
 def _is_public_ipv4(s: str) -> bool:
@@ -50,8 +50,14 @@ def _is_public_ipv4(s: str) -> bool:
         ip = ipaddress.IPv4Address(s)
     except ValueError:
         return False
-    return not (ip.is_private or ip.is_loopback or ip.is_multicast
-                or ip.is_reserved or ip.is_link_local or ip.is_unspecified)
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_link_local
+        or ip.is_unspecified
+    )
 
 
 def _flatten_strings(obj, acc: list):
@@ -67,6 +73,7 @@ def _flatten_strings(obj, acc: list):
 
 
 # ── Per-event extractor ──────────────────────────────────────────────────────
+
 
 def extract_from_event(row: dict) -> list[tuple[str, str, dict]]:
     """
@@ -134,19 +141,19 @@ def extract_from_event(row: dict) -> list[tuple[str, str, dict]]:
 
     # Structured fields by honeypot
     if hp == "cowrie":
-        cmd = (raw.get("cowrie.input")
-               or (raw.get("cowrie") or {}).get("input")
-               or raw.get("input"))
+        cmd = raw.get("cowrie.input") or (raw.get("cowrie") or {}).get("input") or raw.get("input")
         if cmd and isinstance(cmd, str) and cmd.strip():
             found.append(("cmdline", cmd.strip()[:500], {"event": action}))
 
     if hp == "galah":
-        ua = (raw.get("http.request.user_agent")
-              or ((raw.get("http") or {}).get("request") or {}).get("user_agent"))
+        ua = raw.get("http.request.user_agent") or (
+            (raw.get("http") or {}).get("request") or {}
+        ).get("user_agent")
         if ua and isinstance(ua, str):
             found.append(("user_agent", ua[:300], {"via": "galah"}))
-        uri = (raw.get("http.request.uri")
-               or ((raw.get("http") or {}).get("request") or {}).get("uri"))
+        uri = raw.get("http.request.uri") or ((raw.get("http") or {}).get("request") or {}).get(
+            "uri"
+        )
         if uri and isinstance(uri, str) and len(uri) > 1:
             found.append(("http_path", uri[:300], {"method": raw.get("http.request.method")}))
 
@@ -155,8 +162,8 @@ def extract_from_event(row: dict) -> list[tuple[str, str, dict]]:
 
 # ── Main builder ─────────────────────────────────────────────────────────────
 
-class IOCExtractor:
 
+class IOCExtractor:
     def __init__(self, pg_conn_factory):
         self._pg = pg_conn_factory
 
@@ -165,20 +172,28 @@ class IOCExtractor:
         conn = self._pg()
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT ts, source_ip, honeypot_type, event_action, summary, raw
                     FROM forensic_timeline_events
                     WHERE ts >= NOW() - (%s * INTERVAL '1 hour')
-                """, (hours_back,))
+                """,
+                    (hours_back,),
+                )
                 rows = cur.fetchall()
 
             log.info(f"  scanning {len(rows)} timeline events")
 
             # Aggregate by (type, value, source_ip)
-            agg = defaultdict(lambda: {
-                "first": None, "last": None, "count": 0,
-                "honeypots": set(), "context": {},
-            })
+            agg = defaultdict(
+                lambda: {
+                    "first": None,
+                    "last": None,
+                    "count": 0,
+                    "honeypots": set(),
+                    "context": {},
+                }
+            )
             for row in rows:
                 ip = row["source_ip"]
                 ts = row["ts"]
@@ -203,9 +218,13 @@ class IOCExtractor:
 
             payload = [
                 (
-                    ioc_type, ioc_value, ip,
+                    ioc_type,
+                    ioc_value,
+                    ip,
                     list(rec["honeypots"]),
-                    rec["first"], rec["last"], rec["count"],
+                    rec["first"],
+                    rec["last"],
+                    rec["count"],
                     psycopg2.extras.Json(rec["context"]),
                 )
                 for (ioc_type, ioc_value, ip), rec in agg.items()

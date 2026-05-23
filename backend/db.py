@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
 
+from config import get_settings
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,8 +13,6 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from config import get_settings
-
 log = logging.getLogger(__name__)
 
 
@@ -21,8 +20,8 @@ class Base(DeclarativeBase):
     pass
 
 
-_engine: Optional[AsyncEngine] = None
-_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
+_engine: AsyncEngine | None = None
+_session_maker: async_sessionmaker[AsyncSession] | None = None
 
 
 def _build_engine() -> AsyncEngine:
@@ -70,6 +69,7 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
 async def init_db() -> None:
     # Import models so Base.metadata is populated.
     from models_sql import audit, user  # noqa: F401
+
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

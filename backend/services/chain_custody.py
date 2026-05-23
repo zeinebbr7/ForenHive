@@ -5,10 +5,9 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
-
 from config import get_settings
 
 log = logging.getLogger(__name__)
@@ -19,6 +18,7 @@ try:
         TimestampRequestBuilder,
         decode_timestamp_response,
     )
+
     _RFC3161_AVAILABLE = True
 except Exception:  # pragma: no cover
     _RFC3161_AVAILABLE = False
@@ -27,11 +27,11 @@ except Exception:  # pragma: no cover
 @dataclass
 class CustodyRecord:
     sha256: str
-    tsa_token_b64: Optional[str]
+    tsa_token_b64: str | None
     tsa_url: str
     tsa_ok: bool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "sha256": self.sha256,
             "tsa_token": self.tsa_token_b64,
@@ -56,7 +56,7 @@ class ChainOfCustody:
     def sha256_payload(cls, payload: Any) -> str:
         return hashlib.sha256(cls._serialize(payload)).hexdigest()
 
-    async def _request_token(self, raw: bytes) -> Optional[bytes]:
+    async def _request_token(self, raw: bytes) -> bytes | None:
         if not _RFC3161_AVAILABLE:
             return None
         req = (
@@ -99,7 +99,7 @@ class ChainOfCustody:
     async def timestamp(self, sha256_hex: str) -> CustodyRecord:
         return CustodyRecord(sha256_hex, None, self.settings.tsa_url, False)
 
-    async def verify(self, payload: Any, record: Dict[str, Any]) -> bool:
+    async def verify(self, payload: Any, record: dict[str, Any]) -> bool:
         if not record:
             return False
         computed = self.sha256_payload(payload)
@@ -117,7 +117,7 @@ class ChainOfCustody:
             return False
 
 
-_svc: Optional[ChainOfCustody] = None
+_svc: ChainOfCustody | None = None
 
 
 def get_custody() -> ChainOfCustody:

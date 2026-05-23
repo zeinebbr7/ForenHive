@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from config import get_settings
 from db import get_session
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from services.elasticsearch import get_es
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -46,10 +45,11 @@ class Msg(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[Msg] = []
-    lang: str = "en"   # "en" or "fr" — sent by frontend based on document.documentElement.lang
+    lang: str = "en"  # "en" or "fr" — sent by frontend based on document.documentElement.lang
 
 
 # ── backend detection ──────────────────────────────────────────────────────────
+
 
 async def _groq_reachable(settings) -> bool:
     """Check Groq reachability. Uses 12s timeout — server latency to api.groq.com is ~4s."""
@@ -67,6 +67,7 @@ async def _groq_reachable(settings) -> bool:
 
 
 # ── data context ───────────────────────────────────────────────────────────────
+
 
 async def _safe_pg(session: AsyncSession, query: str, params: dict | None = None) -> list[dict]:
     try:
@@ -101,8 +102,13 @@ async def build_context(message: str, session: AsyncSession) -> str:
                     "size": 10,
                     "sort": [{"@timestamp": {"order": "desc"}}],
                     "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
-                    "_source": ["@timestamp", "honeypot.type", "source.ip",
-                                "event.action", "geoip.country_name"],
+                    "_source": [
+                        "@timestamp",
+                        "honeypot.type",
+                        "source.ip",
+                        "event.action",
+                        "geoip.country_name",
+                    ],
                 },
             )
             rows = [h["_source"] for h in resp["hits"]["hits"]]
@@ -129,12 +135,10 @@ async def build_context(message: str, session: AsyncSession) -> str:
             stats = {
                 "total_events": resp["hits"]["total"]["value"],
                 "by_honeypot": {
-                    b["key"]: b["doc_count"]
-                    for b in aggs.get("by_honeypot", {}).get("buckets", [])
+                    b["key"]: b["doc_count"] for b in aggs.get("by_honeypot", {}).get("buckets", [])
                 },
                 "top_countries": {
-                    b["key"]: b["doc_count"]
-                    for b in aggs.get("by_country", {}).get("buckets", [])
+                    b["key"]: b["doc_count"] for b in aggs.get("by_country", {}).get("buckets", [])
                 },
             }
             parts.append(f"<stats>{json.dumps(stats)}</stats>")
@@ -186,6 +190,7 @@ async def build_context(message: str, session: AsyncSession) -> str:
 
 # ── streaming generators ───────────────────────────────────────────────────────
 
+
 async def _stream_groq(messages: list[dict], settings) -> AsyncIterator[dict]:
     try:
         async with httpx.AsyncClient(timeout=90) as c:
@@ -219,6 +224,7 @@ async def _stream_groq(messages: list[dict], settings) -> AsyncIterator[dict]:
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("/status")
 async def chat_status():
     settings = get_settings()
@@ -240,20 +246,25 @@ async def sessions_endpoint(n: int = 20):
                 # Only real honeypots — Zeek is a network sensor, not a honeypot.
                 "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                 "_source": [
-                    "@timestamp", "honeypot.type", "source.ip",
-                    "event.action", "geoip.country_name", "geoip.country_iso_code",
+                    "@timestamp",
+                    "honeypot.type",
+                    "source.ip",
+                    "event.action",
+                    "geoip.country_name",
+                    "geoip.country_iso_code",
                 ],
             },
         )
         rows = []
         for h in resp["hits"]["hits"]:
             s = h["_source"]
-            ts  = str(s.get("@timestamp", ""))[:19].replace("T", " ")
-            hp  = (s.get("honeypot") or {}).get("type") or s.get("honeypot.type", "—")
-            ip  = (s.get("source")   or {}).get("ip")   or s.get("source.ip",    "—")
-            act = (s.get("event")    or {}).get("action")or s.get("event.action", "—")
-            cc  = (s.get("geoip")    or {}).get("country_iso_code") or \
-                  s.get("geoip.country_iso_code", "—")
+            ts = str(s.get("@timestamp", ""))[:19].replace("T", " ")
+            hp = (s.get("honeypot") or {}).get("type") or s.get("honeypot.type", "—")
+            ip = (s.get("source") or {}).get("ip") or s.get("source.ip", "—")
+            act = (s.get("event") or {}).get("action") or s.get("event.action", "—")
+            cc = (s.get("geoip") or {}).get("country_iso_code") or s.get(
+                "geoip.country_iso_code", "—"
+            )
             rows.append({"ts": ts, "honeypot": hp, "ip": ip, "action": act, "cc": cc})
         return {"total": resp["hits"]["total"]["value"], "rows": rows}
     except Exception as exc:
@@ -271,8 +282,8 @@ async def chat_endpoint(
 
     lang_instruction = (
         "You MUST reply exclusively in English. Never use French, even if the data contains French text."
-        if req.lang != "fr" else
-        "Tu DOIS répondre exclusivement en français. N'utilise jamais l'anglais."
+        if req.lang != "fr"
+        else "Tu DOIS répondre exclusivement en français. N'utilise jamais l'anglais."
     )
     system = f"{SYSTEM_PROMPT}\n{lang_instruction}"
 
@@ -282,9 +293,11 @@ async def chat_endpoint(
 
     # Groq-only: HIVE uses the Groq free API exclusively, no local fallback.
     if not settings.groq_api_key:
+
         async def _no_key() -> AsyncIterator[dict]:
             yield {"data": json.dumps({"error": "GROQ_API_KEY is not set"})}
             yield {"data": "[DONE]"}
+
         return EventSourceResponse(_no_key())
 
     return EventSourceResponse(_stream_groq(messages, settings))

@@ -6,15 +6,15 @@ import math
 import re
 import uuid
 from collections import Counter
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
-
-from sqlalchemy import select
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from config import get_settings
 from db import session_scope
 from models.alert import AlertConfig, AlertRecord, AlertTrigger
 from models_sql.user import User
+from sqlalchemy import select
+
 from services.chain_custody import get_custody
 from services.elasticsearch import get_es
 from services.email_service import get_email
@@ -69,8 +69,8 @@ class RiskScorer:
         return -sum((c / length) * math.log2(c / length) for c in counts.values())
 
     @classmethod
-    def score(cls, ctx: Dict[str, Any]) -> Tuple[int, Dict[str, int]]:
-        breakdown: Dict[str, int] = {k: 0 for k in cls.SIGNALS}
+    def score(cls, ctx: dict[str, Any]) -> tuple[int, dict[str, int]]:
+        breakdown: dict[str, int] = {k: 0 for k in cls.SIGNALS}
 
         fa = int(ctx.get("failed_auth_count", 0))
         breakdown["failed_auth_count"] = min(10, fa // 3)
@@ -149,7 +149,7 @@ class RiskScorer:
 class AlertEngine:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._recent_alerts: Dict[str, datetime] = {}
+        self._recent_alerts: dict[str, datetime] = {}
         self._lock = asyncio.Lock()
 
     # ---------- config persistence ----------
@@ -182,7 +182,7 @@ class AlertEngine:
 
     # ---------- dedup ----------
     def _should_dedup(self, source_ip: str, window_min: int) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cutoff = now - timedelta(minutes=window_min)
         for ip, ts in list(self._recent_alerts.items()):
             if ts < cutoff:
@@ -194,7 +194,7 @@ class AlertEngine:
         return False
 
     # ---------- evaluation + dispatch ----------
-    async def evaluate_event(self, ctx: Dict[str, Any]) -> Optional[AlertRecord]:
+    async def evaluate_event(self, ctx: dict[str, Any]) -> AlertRecord | None:
         async with self._lock:
             cfg = await self.get_config()
             if not cfg.enabled:
@@ -203,10 +203,13 @@ class AlertEngine:
             risk_score, _ = RiskScorer.score(ctx)
             # Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0 (70/45/25).
             severity = ctx.get("severity") or (
-                "critical" if risk_score >= 70 else
-                "high" if risk_score >= 45 else
-                "medium" if risk_score >= 25 else
-                "low"
+                "critical"
+                if risk_score >= 70
+                else "high"
+                if risk_score >= 45
+                else "medium"
+                if risk_score >= 25
+                else "low"
             )
 
             triggered = False
@@ -214,14 +217,19 @@ class AlertEngine:
                 triggered = True
             if AlertTrigger.HIGH_SEVERITY in cfg.triggers and severity in ("high", "critical"):
                 triggered = True
-            if AlertTrigger.BRUTE_FORCE in cfg.triggers and int(ctx.get("failed_auth_count", 0)) >= 20:
+            if (
+                AlertTrigger.BRUTE_FORCE in cfg.triggers
+                and int(ctx.get("failed_auth_count", 0)) >= 20
+            ):
                 triggered = True
             if AlertTrigger.MALWARE_DETECTED in cfg.triggers and ctx.get("yara_match"):
                 triggered = True
             if AlertTrigger.TOR_EXIT in cfg.triggers and ctx.get("is_tor"):
                 triggered = True
             if AlertTrigger.C2_MATCH in cfg.triggers:
-                blob = " ".join(str(x) for x in (ctx.get("commands") or []) + [ctx.get("http_path") or ""]).lower()
+                blob = " ".join(
+                    str(x) for x in (ctx.get("commands") or []) + [ctx.get("http_path") or ""]
+                ).lower()
                 if any(k in blob for k in C2_IOC_KEYWORDS):
                     triggered = True
             if AlertTrigger.NEW_IP in cfg.triggers and ctx.get("new_ip"):
@@ -264,7 +272,9 @@ class AlertEngine:
                 log.warning("mistral enrichment failed during alert: %s", exc)
                 mistral = None
 
-            is_internal = bool(ctx.get("is_internal")) or (ctx.get("network_class") == "corporate_internal")
+            is_internal = bool(ctx.get("is_internal")) or (
+                ctx.get("network_class") == "corporate_internal"
+            )
             network_class = ctx.get("network_class") or ""
             threat_type = ctx.get("threat_type") or ctx.get("event_type") or "suspicious_activity"
             if is_internal and "insider" not in threat_type.lower():
@@ -272,7 +282,7 @@ class AlertEngine:
 
             record = AlertRecord(
                 id=str(uuid.uuid4()),
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 severity=severity,
                 threat_type=threat_type,
                 source_ip=src_ip,
@@ -305,24 +315,23 @@ class AlertEngine:
             return record
 
     @staticmethod
-    async def _all_user_emails() -> List[str]:
+    async def _all_user_emails() -> list[str]:
         """Return emails of all active admins and analysts from PostgreSQL."""
         try:
             async with session_scope() as db:
-                result = await db.execute(
-                    select(User.email).where(User.is_active == True)
-                )
+                result = await db.execute(select(User.email).where(User.is_active))
                 return [row[0] for row in result.all()]
         except Exception as exc:
             log.warning("could not fetch user emails from DB: %s", exc)
             return []
 
-    async def _dispatch(self, record: AlertRecord) -> Tuple[bool, Optional[str]]:
+    async def _dispatch(self, record: AlertRecord) -> tuple[bool, str | None]:
         errors = []
 
         # WhatsApp / voice call
         try:
             from alerts.alert_manager import send_alert
+
             await asyncio.to_thread(
                 send_alert,
                 record.source_ip,
@@ -330,8 +339,12 @@ class AlertEngine:
                 record.is_internal,
                 record.network_class or "",
             )
-            log.info("WhatsApp/call alert dispatched for %s score=%d is_internal=%s",
-                     record.source_ip, record.risk_score, record.is_internal)
+            log.info(
+                "WhatsApp/call alert dispatched for %s score=%d is_internal=%s",
+                record.source_ip,
+                record.risk_score,
+                record.is_internal,
+            )
         except Exception as exc:
             log.error("WhatsApp dispatch failed: %s", exc)
             errors.append(str(exc))
@@ -365,7 +378,11 @@ class AlertEngine:
                     "network_class": record.network_class or "",
                 }
                 await asyncio.to_thread(get_email().send_alert, recipients, subject, ctx)
-                log.info("Email alert dispatched for %s to %d recipient(s)", record.source_ip, len(recipients))
+                log.info(
+                    "Email alert dispatched for %s to %d recipient(s)",
+                    record.source_ip,
+                    len(recipients),
+                )
         except Exception as exc:
             log.error("Email dispatch failed: %s", exc)
             errors.append(str(exc))
@@ -374,7 +391,7 @@ class AlertEngine:
             return False, "; ".join(errors)
         return True, None
 
-    async def history(self, limit: int = 100) -> Tuple[int, List[AlertRecord]]:
+    async def history(self, limit: int = 100) -> tuple[int, list[AlertRecord]]:
         es = get_es()
         body = {
             "size": limit,
@@ -391,7 +408,7 @@ class AlertEngine:
         return total, items
 
 
-_svc: Optional[AlertEngine] = None
+_svc: AlertEngine | None = None
 
 
 def get_alert_engine() -> AlertEngine:

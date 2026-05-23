@@ -13,10 +13,10 @@ proxy that:
 
 import os
 import threading
-import psycopg2
-import psycopg2.pool
 
 import config
+import psycopg2
+import psycopg2.pool
 
 _pool = None
 _lock = threading.Lock()

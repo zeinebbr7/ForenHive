@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
-from sqlalchemy import text
-
 from config import get_settings
 from db import session_scope
+from sqlalchemy import text
+
 from services.quota_tracker import get_tracker
 
 log = logging.getLogger(__name__)
@@ -24,24 +24,30 @@ log = logging.getLogger(__name__)
 _IP_CACHE_TTL = timedelta(hours=1)
 
 
-async def _ip_cache_read(ip: str) -> Optional[Dict[str, Any]]:
+async def _ip_cache_read(ip: str) -> dict[str, Any] | None:
     try:
         async with session_scope() as db:
-            row = (await db.execute(
-                text(
-                    "SELECT data, expires_at FROM ip_enrichment_cache "
-                    "WHERE ip = :ip LIMIT 1"
-                ),
-                {"ip": ip},
-            )).mappings().fetchone()
+            row = (
+                (
+                    await db.execute(
+                        text(
+                            "SELECT data, expires_at FROM ip_enrichment_cache "
+                            "WHERE ip = :ip LIMIT 1"
+                        ),
+                        {"ip": ip},
+                    )
+                )
+                .mappings()
+                .fetchone()
+            )
             if not row:
                 return None
             exp = row["expires_at"]
             if exp is not None:
                 # Cached row stored without tz info; compare naive-utc-safe.
-                now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+                now_naive = datetime.now(UTC).replace(tzinfo=None)
                 if hasattr(exp, "tzinfo") and exp.tzinfo is not None:
-                    now_naive = datetime.now(timezone.utc)
+                    now_naive = datetime.now(UTC)
                 if exp <= now_naive:
                     return None
             data = row["data"]
@@ -56,18 +62,24 @@ async def _ip_cache_read(ip: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def _ip_cache_write(ip: str, key: str, payload: Dict[str, Any]) -> None:
+async def _ip_cache_write(ip: str, key: str, payload: dict[str, Any]) -> None:
     """Merge `payload` under `data[key]` so abuseipdb + iplocate can share a row."""
     if not payload:
         return
-    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + _IP_CACHE_TTL
+    expires_at = datetime.now(UTC).replace(tzinfo=None) + _IP_CACHE_TTL
     try:
         async with session_scope() as db:
-            existing = (await db.execute(
-                text("SELECT data FROM ip_enrichment_cache WHERE ip = :ip LIMIT 1"),
-                {"ip": ip},
-            )).mappings().fetchone()
-            merged: Dict[str, Any] = {}
+            existing = (
+                (
+                    await db.execute(
+                        text("SELECT data FROM ip_enrichment_cache WHERE ip = :ip LIMIT 1"),
+                        {"ip": ip},
+                    )
+                )
+                .mappings()
+                .fetchone()
+            )
+            merged: dict[str, Any] = {}
             if existing and existing["data"]:
                 d = existing["data"]
                 if isinstance(d, str):
@@ -100,7 +112,7 @@ class EnrichmentService:
     def __init__(self) -> None:
         self.settings = get_settings()
 
-    async def abuseipdb(self, ip: str) -> Dict[str, Any]:
+    async def abuseipdb(self, ip: str) -> dict[str, Any]:
         if not self.settings.abuseipdb_api_key:
             return {}
         # Cache + quota gate — see module docstring.
@@ -139,7 +151,7 @@ class EnrichmentService:
             log.warning("AbuseIPDB lookup failed for %s: %s", ip, exc)
             return {}
 
-    async def iplocate(self, ip: str) -> Dict[str, Any]:
+    async def iplocate(self, ip: str) -> dict[str, Any]:
         cached = await _ip_cache_read(ip)
         if cached and isinstance(cached.get("backend_iplocate"), dict):
             return cached["backend_iplocate"]
@@ -168,8 +180,12 @@ class EnrichmentService:
                     "country": data.get("country"),
                     "country_iso": data.get("country_code"),
                     "city": data.get("city"),
-                    "asn": (data.get("asn") or {}).get("asn") if isinstance(data.get("asn"), dict) else None,
-                    "as_org": (data.get("asn") or {}).get("name") if isinstance(data.get("asn"), dict) else None,
+                    "asn": (data.get("asn") or {}).get("asn")
+                    if isinstance(data.get("asn"), dict)
+                    else None,
+                    "as_org": (data.get("asn") or {}).get("name")
+                    if isinstance(data.get("asn"), dict)
+                    else None,
                 }
                 await _ip_cache_write(ip, "backend_iplocate", payload)
                 return payload
@@ -177,7 +193,7 @@ class EnrichmentService:
             log.warning("IPLocate lookup failed for %s: %s", ip, exc)
             return {}
 
-    async def virustotal_hash(self, sha256: str) -> Dict[str, Any]:
+    async def virustotal_hash(self, sha256: str) -> dict[str, Any]:
         if not self.settings.virustotal_api_key:
             return {}
         tracker = get_tracker()
@@ -210,7 +226,7 @@ class EnrichmentService:
             return {}
 
 
-_svc: Optional[EnrichmentService] = None
+_svc: EnrichmentService | None = None
 
 
 def get_enrichment() -> EnrichmentService:

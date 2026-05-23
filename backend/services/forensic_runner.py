@@ -9,16 +9,16 @@ because the backend container has no Docker socket.
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 
 log = logging.getLogger(__name__)
 
-last_forensic_run: Dict[str, Any] = {"timestamp": None, "status": "idle"}
+last_forensic_run: dict[str, Any] = {"timestamp": None, "status": "idle"}
 
 # Prevents two callers (scheduler + manual trigger) from overlapping
 _invoke_lock = threading.Lock()
@@ -37,6 +37,7 @@ def run_forensic_engine() -> None:
 
     try:
         from config import get_settings
+
         base = get_settings().forensic_engine_url.rstrip("/")
 
         r = httpx.post(f"{base}/run-now", timeout=15)

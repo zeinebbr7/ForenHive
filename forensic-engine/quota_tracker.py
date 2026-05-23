@@ -21,42 +21,36 @@ Reset windows (heuristic, conservative):
 """
 
 import logging
-import os
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-
-import psycopg2
-
-import config
+from datetime import UTC, datetime, timedelta
 
 log = logging.getLogger("quota_tracker")
 
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     return db_pool.pooled_conn()
 
 
 def _next_utc_midnight() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tomorrow = (now + timedelta(days=1)).date()
-    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc)
+    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=UTC)
 
 
 _RESET_POLICY = {
     "virustotal": _next_utc_midnight,
-    "abuseipdb":  _next_utc_midnight,
-    "iplocate":   _next_utc_midnight,
-    "shodan":      lambda: datetime.now(timezone.utc) + timedelta(hours=1),
-    "shodan_host": lambda: datetime.now(timezone.utc) + timedelta(hours=1),
+    "abuseipdb": _next_utc_midnight,
+    "iplocate": _next_utc_midnight,
+    "shodan": lambda: datetime.now(UTC) + timedelta(hours=1),
+    "shodan_host": lambda: datetime.now(UTC) + timedelta(hours=1),
 }
 
 
 class QuotaTracker:
-
     def __init__(self):
-        self._cache: dict[str, bool] = {}   # in-memory cache within a single run
+        self._cache: dict[str, bool] = {}  # in-memory cache within a single run
 
     def is_exhausted(self, api: str) -> bool:
         """
@@ -71,7 +65,7 @@ class QuotaTracker:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT exhausted, reset_at FROM api_quota_status WHERE api_name = %s",
-                        (api,)
+                        (api,),
                     )
                     row = cur.fetchone()
                     if not row:
@@ -84,13 +78,13 @@ class QuotaTracker:
                         return False
 
                     # Auto-reset if the reset window has passed
-                    if reset_at and reset_at <= datetime.now(timezone.utc):
+                    if reset_at and reset_at <= datetime.now(UTC):
                         log.info(f"{api}: quota reset window passed, clearing flag")
                         cur.execute(
                             "UPDATE api_quota_status "
                             "SET exhausted = FALSE, updated_at = NOW() "
                             "WHERE api_name = %s",
-                            (api,)
+                            (api,),
                         )
                         conn.commit()
                         self._cache[api] = False
@@ -109,8 +103,7 @@ class QuotaTracker:
         reset_at = reset_fn()
 
         log.warning(
-            f"{api}: marking quota EXHAUSTED until {reset_at.isoformat()} "
-            f"({reason or 'no reason'})"
+            f"{api}: marking quota EXHAUSTED until {reset_at.isoformat()} ({reason or 'no reason'})"
         )
         self._cache[api] = True
 
@@ -127,7 +120,7 @@ class QuotaTracker:
                                 last_error = EXCLUDED.last_error,
                                 updated_at = NOW()
                         """,
-                        (api, reset_at, reason[:500])
+                        (api, reset_at, reason[:500]),
                     )
                 conn.commit()
         except Exception as e:
@@ -143,7 +136,7 @@ class QuotaTracker:
                         "UPDATE api_quota_status "
                         "SET exhausted = FALSE, updated_at = NOW() "
                         "WHERE api_name = %s",
-                        (api,)
+                        (api,),
                     )
                 conn.commit()
             log.info(f"{api}: quota flag manually reset")
@@ -165,10 +158,10 @@ class QuotaTracker:
                     cur.execute(
                         "SELECT api_name, exhausted, reset_at "
                         "FROM api_quota_status WHERE api_name = ANY(%s)",
-                        (apis,)
+                        (apis,),
                     )
                     rows = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     stale = []
                     for api in apis:
                         exhausted, reset_at = rows.get(api, (False, None))
@@ -182,7 +175,7 @@ class QuotaTracker:
                             "UPDATE api_quota_status "
                             "SET exhausted = FALSE, updated_at = NOW() "
                             "WHERE api_name = ANY(%s)",
-                            (stale,)
+                            (stale,),
                         )
                         conn.commit()
                         log.info(f"Quota prefetch: cleared stale flags for {stale}")
@@ -219,7 +212,7 @@ class QuotaTracker:
 
 
 # Module-level singleton — share one tracker across all callers in a run
-_tracker: Optional[QuotaTracker] = None
+_tracker: QuotaTracker | None = None
 
 
 def get_tracker() -> QuotaTracker:

@@ -1,11 +1,7 @@
 import asyncio
-import json
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
-from sse_starlette.sse import EventSourceResponse
-
 from models.attack import (
     AttackEvent,
     AttackFilter,
@@ -16,18 +12,19 @@ from models.attack import (
     Severity,
 )
 from services.elasticsearch import get_es
+from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/api/attacks", tags=["attacks"])
 
 
 @router.get("", response_model=AttackListResponse)
 async def list_attacks(
-    ip: Optional[str] = Query(None),
-    country: Optional[str] = Query(None, min_length=2, max_length=2),
-    severity: Optional[Severity] = Query(None),
-    honeypot: Optional[HoneypotType] = Query(None),
-    date_from: Optional[datetime] = Query(None),
-    date_to: Optional[datetime] = Query(None),
+    ip: str | None = Query(None),
+    country: str | None = Query(None, min_length=2, max_length=2),
+    severity: Severity | None = Query(None),
+    honeypot: HoneypotType | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
 ) -> AttackListResponse:
@@ -74,7 +71,7 @@ async def stats_live(window: int = Query(60, ge=5, le=3600)):
                     window_seconds=window,
                     count=count,
                     events_per_second=round(count / max(window, 1), 3),
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                 )
                 yield {
                     "event": "tick",

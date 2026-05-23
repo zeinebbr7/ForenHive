@@ -20,8 +20,9 @@ import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List
+from typing import Any
 
+import config
 import psycopg2
 import psycopg2.extras
 import requests
@@ -29,8 +30,6 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-import config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,13 +46,15 @@ _engine_lock = threading.Lock()
 
 # ── PostgreSQL helper ─────────────────────────────────────────────────────────
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     return db_pool.pooled_conn()
 
 
 # ── Engine scheduler ──────────────────────────────────────────────────────────
+
 
 def _engine_loop(interval_minutes: int) -> None:
     """Run engine.py on a fixed interval in a background daemon thread."""
@@ -83,6 +84,7 @@ def _engine_loop(interval_minutes: int) -> None:
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     t = threading.Thread(target=_engine_loop, args=(INTERVAL_MINUTES,), daemon=True)
@@ -95,8 +97,10 @@ app = FastAPI(title="ForenHive Forensic Engine API", lifespan=lifespan)
 
 # ── Request / response models ─────────────────────────────────────────────────
 
+
 class EnrichRequest(BaseModel):
     ip: str
+
 
 class MitreRequest(BaseModel):
     text: str
@@ -104,8 +108,9 @@ class MitreRequest(BaseModel):
 
 # ── YARA endpoints ────────────────────────────────────────────────────────────
 
+
 @app.get("/yara/scan/{sha256}")
-def yara_scan_sha256(sha256: str) -> Dict[str, Any]:
+def yara_scan_sha256(sha256: str) -> dict[str, Any]:
     try:
         with _pg_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -127,7 +132,7 @@ def yara_scan_sha256(sha256: str) -> Dict[str, Any]:
 
 
 @app.get("/yara/scan-dionaea")
-def yara_scan_dionaea(limit: int = 50) -> List[Dict[str, Any]]:
+def yara_scan_dionaea(limit: int = 50) -> list[dict[str, Any]]:
     limit = min(max(1, limit), 500)
     try:
         with _pg_conn() as conn:
@@ -155,12 +160,14 @@ def yara_scan_dionaea(limit: int = 50) -> List[Dict[str, Any]]:
 
 # ── IP enrichment endpoint ────────────────────────────────────────────────────
 
+
 @app.post("/enrich/ip")
-def enrich_ip(req: EnrichRequest) -> Dict[str, Any]:
+def enrich_ip(req: EnrichRequest) -> dict[str, Any]:
     if not req.ip:
         raise HTTPException(status_code=400, detail="ip is required")
     try:
         from enricher import IPEnricher
+
         enricher = IPEnricher()
         data = enricher.enrich(req.ip)
         return {"ip": req.ip, "engine_available": True, **data}
@@ -171,34 +178,45 @@ def enrich_ip(req: EnrichRequest) -> Dict[str, Any]:
 
 # ── MITRE ATT&CK mapping endpoint ────────────────────────────────────────────
 
+
 @app.post("/mitre/map")
-def mitre_map(req: MitreRequest) -> Dict[str, Any]:
+def mitre_map(req: MitreRequest) -> dict[str, Any]:
     text = req.text or ""
     tl = text.lower()
 
     # Build a minimal session dict by detecting keywords in the text so that
     # get_techniques_deterministic() can apply its deterministic rules.
-    session: Dict[str, Any] = {
-        "honeypot_type": "cowrie" if any(k in tl for k in ("ssh", "telnet", "login", "password")) else
-                         "dionaea" if any(k in tl for k in ("smb", "mssql", "ftp", "http exploit", "445", "1433")) else
-                         "galah" if any(k in tl for k in ("http", "get ", "post ", "user-agent")) else
-                         "zeek",
-        "login_attempts": 100 if "brute" in tl else (10 if "login" in tl or "password" in tl else 0),
-        "success_count":  1 if any(k in tl for k in ("success", "logged in", "authenticated", "shell")) else 0,
-        "command_count":  1 if any(k in tl for k in ("cmd", "exec", "shell", "bash", "sh ")) else 0,
-        "commands":       [text],
+    session: dict[str, Any] = {
+        "honeypot_type": "cowrie"
+        if any(k in tl for k in ("ssh", "telnet", "login", "password"))
+        else "dionaea"
+        if any(k in tl for k in ("smb", "mssql", "ftp", "http exploit", "445", "1433"))
+        else "galah"
+        if any(k in tl for k in ("http", "get ", "post ", "user-agent"))
+        else "zeek",
+        "login_attempts": 100
+        if "brute" in tl
+        else (10 if "login" in tl or "password" in tl else 0),
+        "success_count": 1
+        if any(k in tl for k in ("success", "logged in", "authenticated", "shell"))
+        else 0,
+        "command_count": 1 if any(k in tl for k in ("cmd", "exec", "shell", "bash", "sh ")) else 0,
+        "commands": [text],
         # key must match what get_techniques_deterministic() reads
-        "yara_matches":   [f for f in ("mirai", "wannacry", "emotet", "miner", "rat", "backdoor") if f in tl],
-        "http_paths":     [],
+        "yara_matches": [
+            f for f in ("mirai", "wannacry", "emotet", "miner", "rat", "backdoor") if f in tl
+        ],
+        "http_paths": [],
         "smb_share_enum": "share" in tl or "netshareenum" in tl,
-        "smb_pipe_enum":  "pipe" in tl or "epmapper" in tl,
-        "exploit_cves":   ["CVE-2017-0144"] if "eternalblue" in tl or "cve-2017-0144" in tl else [],
-        "exfil_bytes":    1 if any(k in tl for k in ("wget", "curl", "download", "tftp")) else 0,
+        "smb_pipe_enum": "pipe" in tl or "epmapper" in tl,
+        "exploit_cves": ["CVE-2017-0144"] if "eternalblue" in tl or "cve-2017-0144" in tl else [],
+        "exfil_bytes": 1 if any(k in tl for k in ("wget", "curl", "download", "tftp")) else 0,
         "destination_port": 0,
     }
 
     try:
         from mitre_mapper import get_techniques_deterministic
+
         # get_techniques_deterministic returns list[str] (technique IDs directly)
         ids = get_techniques_deterministic(session)
         return {"techniques": ids}
@@ -209,14 +227,15 @@ def mitre_map(req: MitreRequest) -> Dict[str, Any]:
 
 # ── Manual trigger + status ──────────────────────────────────────────────────
 
+
 @app.get("/status")
-def engine_status() -> Dict[str, Any]:
+def engine_status() -> dict[str, Any]:
     """Returns whether an engine run is currently in progress."""
     return {"running": _engine_lock.locked()}
 
 
 @app.post("/run-now")
-def run_now() -> Dict[str, Any]:
+def run_now() -> dict[str, Any]:
     """Trigger an immediate engine run. Returns 409 if a run is already in progress."""
     if _engine_lock.locked():
         raise HTTPException(status_code=409, detail="Engine run already in progress")
@@ -240,19 +259,19 @@ def run_now() -> Dict[str, Any]:
 # ── Health check ──────────────────────────────────────────────────────────────
 
 # TCP endpoints used for reachability probes (no API quota consumed)
-_API_PROBE_HOSTS: Dict[str, tuple] = {
-    "abuseipdb":  ("api.abuseipdb.com",   443),
-    "virustotal": ("www.virustotal.com",   443),
-    "shodan":     ("internetdb.shodan.io", 443),
-    "iplocate":   ("www.iplocate.io",      443),
+_API_PROBE_HOSTS: dict[str, tuple] = {
+    "abuseipdb": ("api.abuseipdb.com", 443),
+    "virustotal": ("www.virustotal.com", 443),
+    "shodan": ("internetdb.shodan.io", 443),
+    "iplocate": ("www.iplocate.io", 443),
 }
 
 # APIs that require a configured key to be functional
-_API_NEEDS_KEY: Dict[str, bool] = {
-    "abuseipdb":  True,
+_API_NEEDS_KEY: dict[str, bool] = {
+    "abuseipdb": True,
     "virustotal": True,
-    "shodan":     False,  # free InternetDB works without a key
-    "iplocate":   False,
+    "shodan": False,  # free InternetDB works without a key
+    "iplocate": False,
 }
 
 
@@ -280,7 +299,7 @@ def health() -> JSONResponse:
     Returns HTTP 503 when any critical dependency is down.
     External API issues degrade the status to "degraded" but never raise to 503.
     """
-    checks: Dict[str, Any] = {}
+    checks: dict[str, Any] = {}
     critical_ok = True
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
@@ -304,38 +323,39 @@ def health() -> JSONResponse:
 
     # ── GeoIP databases ───────────────────────────────────────────────────────
     city_ok = os.path.exists(config.GEOIP_CITY_DB)
-    asn_ok  = os.path.exists(config.GEOIP_ASN_DB)
+    asn_ok = os.path.exists(config.GEOIP_ASN_DB)
     if city_ok and asn_ok:
         checks["geoip"] = {"status": "ok"}
     else:
         checks["geoip"] = {
-            "status":  "error",
+            "status": "error",
             "city_db": city_ok,
-            "asn_db":  asn_ok,
+            "asn_db": asn_ok,
         }
         critical_ok = False
 
     # ── External API keys ─────────────────────────────────────────────────────
-    api_keys: Dict[str, bool] = {
-        "abuseipdb":  bool(config.ABUSEIPDB_KEY),
+    api_keys: dict[str, bool] = {
+        "abuseipdb": bool(config.ABUSEIPDB_KEY),
         "virustotal": bool(config.VIRUSTOTAL_KEY),
-        "shodan":     True,
-        "iplocate":   True,
+        "shodan": True,
+        "iplocate": True,
     }
 
     # Pull quota state from PG (best-effort; empty dict if PG is already down)
-    quota_rows: Dict[str, Dict] = {}
+    quota_rows: dict[str, dict] = {}
     try:
         from quota_tracker import get_tracker
+
         for row in get_tracker().status():
             quota_rows[row["api_name"]] = row
     except Exception:
         pass
 
     for api, (host, port) in _API_PROBE_HOSTS.items():
-        key_ok    = api_keys[api]
+        key_ok = api_keys[api]
         needs_key = _API_NEEDS_KEY[api]
-        quota     = quota_rows.get(api, {})
+        quota = quota_rows.get(api, {})
         exhausted = bool(quota.get("exhausted", False))
         reachable = _tcp_reachable(host, port)
 
@@ -349,11 +369,11 @@ def health() -> JSONResponse:
             api_status = "ok"
 
         checks[api] = {
-            "status":          api_status,
-            "key_configured":  key_ok,
-            "reachable":       reachable,
+            "status": api_status,
+            "key_configured": key_ok,
+            "reachable": reachable,
             "quota_exhausted": exhausted,
-            "quota_reset_at":  quota.get("reset_at"),
+            "quota_reset_at": quota.get("reset_at"),
         }
 
     overall = "ok" if critical_ok else "degraded"

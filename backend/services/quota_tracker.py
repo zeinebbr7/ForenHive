@@ -9,47 +9,50 @@ quota-exhausted (HTTP 429/403), adding ~15 s per dead call.
 Reset policy is identical to the engine: UTC midnight for daily-tier APIs,
 1 hour for shodan rate-limits.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
-
-from sqlalchemy import text
+from datetime import UTC, datetime, timedelta
 
 from db import session_scope
+from sqlalchemy import text
 
 log = logging.getLogger(__name__)
 
 
 def _next_utc_midnight() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tomorrow = (now + timedelta(days=1)).date()
-    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc)
+    return datetime(tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=UTC)
 
 
 _RESET_POLICY = {
-    "virustotal":  _next_utc_midnight,
-    "abuseipdb":   _next_utc_midnight,
-    "iplocate":    _next_utc_midnight,
-    "shodan":      lambda: datetime.now(timezone.utc) + timedelta(hours=1),
-    "shodan_host": lambda: datetime.now(timezone.utc) + timedelta(hours=1),
+    "virustotal": _next_utc_midnight,
+    "abuseipdb": _next_utc_midnight,
+    "iplocate": _next_utc_midnight,
+    "shodan": lambda: datetime.now(UTC) + timedelta(hours=1),
+    "shodan_host": lambda: datetime.now(UTC) + timedelta(hours=1),
 }
 
 
 class QuotaTracker:
     def __init__(self) -> None:
-        self._cache: Dict[str, bool] = {}
+        self._cache: dict[str, bool] = {}
 
     async def is_exhausted(self, api: str) -> bool:
         if api in self._cache:
             return self._cache[api]
         try:
             async with session_scope() as db:
-                row = (await db.execute(
-                    text("SELECT exhausted, reset_at FROM api_quota_status WHERE api_name = :api"),
-                    {"api": api},
-                )).fetchone()
+                row = (
+                    await db.execute(
+                        text(
+                            "SELECT exhausted, reset_at FROM api_quota_status WHERE api_name = :api"
+                        ),
+                        {"api": api},
+                    )
+                ).fetchone()
                 if not row:
                     self._cache[api] = False
                     return False
@@ -57,7 +60,7 @@ class QuotaTracker:
                 if not exhausted:
                     self._cache[api] = False
                     return False
-                if reset_at and reset_at <= datetime.now(timezone.utc):
+                if reset_at and reset_at <= datetime.now(UTC):
                     log.info("%s: quota reset window passed, clearing flag", api)
                     await db.execute(
                         text(
@@ -81,7 +84,9 @@ class QuotaTracker:
         reset_at = reset_fn()
         log.warning(
             "%s: marking quota EXHAUSTED until %s (%s)",
-            api, reset_at.isoformat(), reason or "no reason",
+            api,
+            reset_at.isoformat(),
+            reason or "no reason",
         )
         self._cache[api] = True
         try:
@@ -105,7 +110,7 @@ class QuotaTracker:
             log.warning("QuotaTracker write failed for %s: %s", api, exc)
 
 
-_tracker: Optional[QuotaTracker] = None
+_tracker: QuotaTracker | None = None
 
 
 def get_tracker() -> QuotaTracker:

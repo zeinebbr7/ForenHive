@@ -1,14 +1,13 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 
 from db import get_session
+from fastapi import APIRouter, Depends, Query
 from models_sql.user import User, UserRole
+from pydantic import BaseModel
 from services import audit_service
 from services.auth_service import require_role
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
@@ -16,27 +15,27 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 class AuditEntry(BaseModel):
     id: str
     timestamp: datetime
-    actor_email: Optional[str] = None
+    actor_email: str | None = None
     action: str
-    target_type: Optional[str] = None
-    target_id: Optional[str] = None
-    method: Optional[str] = None
-    path: Optional[str] = None
-    status_code: Optional[int] = None
-    ip: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    target_type: str | None = None
+    target_id: str | None = None
+    method: str | None = None
+    path: str | None = None
+    status_code: int | None = None
+    ip: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class AuditListResponse(BaseModel):
     total: int
-    items: List[AuditEntry]
+    items: list[AuditEntry]
 
 
 @router.get("", response_model=AuditListResponse)
 async def list_audit(
     limit: int = Query(100, ge=1, le=1000),
-    actor_email: Optional[str] = Query(None),
-    action: Optional[str] = Query(None),
+    actor_email: str | None = Query(None),
+    action: str | None = Query(None),
     _admin: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_session),
 ) -> AuditListResponse:

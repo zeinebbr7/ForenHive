@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -82,22 +82,24 @@ class Settings(BaseSettings):
     ratelimit_sensitive: str = "10/minute"
 
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def alert_recipients_list(self) -> List[str]:
+    def alert_recipients_list(self) -> list[str]:
         return [r.strip() for r in self.alert_recipients.split(",") if r.strip()]
 
     @property
     def honeypot_indices(self) -> str:
-        return ",".join([
-            self.es_index_cowrie,
-            self.es_index_dionaea,
-            self.es_index_galah,
-            self.es_index_zeek,
-            self.es_index_honeypot,
-        ])
+        return ",".join(
+            [
+                self.es_index_cowrie,
+                self.es_index_dionaea,
+                self.es_index_galah,
+                self.es_index_zeek,
+                self.es_index_honeypot,
+            ]
+        )
 
     @property
     def pg_dsn(self) -> str:

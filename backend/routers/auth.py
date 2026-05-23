@@ -1,15 +1,11 @@
 from datetime import datetime
-from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from db import get_session
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
 from models_sql.user import User, UserRole
+from pydantic import BaseModel, EmailStr
 from services import audit_service
 from services.auth_service import (
     authenticate,
@@ -21,6 +17,8 @@ from services.auth_service import (
     hash_password,
     require_role,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -35,11 +33,11 @@ class TokenPair(BaseModel):
 class UserOut(BaseModel):
     id: str
     email: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
     role: UserRole
     is_active: bool
     created_at: datetime
-    last_login_at: Optional[datetime] = None
+    last_login_at: datetime | None = None
 
     @classmethod
     def from_orm_user(cls, u: User) -> "UserOut":
@@ -57,16 +55,16 @@ class UserOut(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
     role: UserRole = UserRole.ANALYST
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    password: Optional[str] = None
-    role: Optional[UserRole] = None
-    is_active: Optional[bool] = None
+    email: EmailStr | None = None
+    full_name: str | None = None
+    password: str | None = None
+    role: UserRole | None = None
+    is_active: bool | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -146,7 +144,9 @@ async def create_user(
     admin: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_session),
 ) -> UserOut:
-    existing = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+    existing = (
+        await db.execute(select(User).where(User.email == body.email.lower()))
+    ).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=409, detail="email already registered")
     user = User(
@@ -185,7 +185,9 @@ async def update_user(
 
     changes: dict = {}
     if body.email is not None and body.email.lower() != target.email:
-        exists = (await db.execute(select(User).where(User.email == body.email.lower()))).scalar_one_or_none()
+        exists = (
+            await db.execute(select(User).where(User.email == body.email.lower()))
+        ).scalar_one_or_none()
         if exists and str(exists.id) != str(target.id):
             raise HTTPException(status_code=409, detail="email already registered")
         target.email = body.email.lower()
@@ -235,9 +237,17 @@ async def delete_user(
     if str(target.id) == str(admin.id):
         raise HTTPException(status_code=400, detail="cannot delete yourself")
     if target.role == UserRole.ADMIN:
-        remaining = (await db.execute(
-            select(User).where(User.role == UserRole.ADMIN, User.is_active == True, User.id != target.id)  # noqa: E712
-        )).scalars().all()
+        remaining = (
+            (
+                await db.execute(
+                    select(User).where(
+                        User.role == UserRole.ADMIN, User.is_active, User.id != target.id
+                    )  # noqa: E712
+                )
+            )
+            .scalars()
+            .all()
+        )
         if not remaining:
             raise HTTPException(status_code=400, detail="cannot delete the last active admin")
     email = target.email
