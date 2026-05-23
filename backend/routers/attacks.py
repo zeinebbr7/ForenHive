@@ -1,3 +1,12 @@
+"""
+attacks.py — Événements d'attaque bruts
+Rôle : exposition paginée des événements honeypot indexés en ES.
+URL    : /api/attacks/*
+Deps   : Elasticsearch.
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import asyncio
 from datetime import UTC, datetime
 

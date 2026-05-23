@@ -1,3 +1,12 @@
+"""
+audit.py — Journal d'audit (admin)
+Rôle : exposition du journal d'audit des actions utilisateurs (login, modifs, suppressions).
+URL    : /api/audit/*
+Deps   : models_sql.audit (PostgreSQL).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from datetime import datetime
 from typing import Any
 

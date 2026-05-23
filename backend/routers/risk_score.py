@@ -1,3 +1,12 @@
+"""
+risk_score.py — Scores de risque par IP
+Rôle : lookup et listing des risk scores (table ip_risk_scores PG).
+URL    : /api/risk-scores/*
+Deps   : PostgreSQL (ip_risk_scores), alerts.alert_manager (notif si CRITICAL).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from __future__ import annotations
 
 import ipaddress

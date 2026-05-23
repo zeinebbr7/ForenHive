@@ -1,3 +1,12 @@
+"""
+alerts.py — Alertes & notifications
+Rôle : config et historique des alertes (email/SMS/WhatsApp via Twilio).
+URL    : /api/alerts/*
+Deps   : services.alert_engine, Twilio, SMTP.
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import asyncio
 import logging
 

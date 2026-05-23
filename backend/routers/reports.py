@@ -1,3 +1,12 @@
+"""
+reports.py — Rapports forensiques PDF + STIX
+Rôle : génération PDF WeasyPrint (FBI BAU complet), preview, listing, export STIX 2.1.
+URL    : /api/reports/*
+Deps   : Jinja2 (StrictUndefined), WeasyPrint, services.report_service, services.report_adapter.
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import hashlib
 import json
 import logging

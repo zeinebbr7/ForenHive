@@ -1,3 +1,12 @@
+"""
+auth.py — Authentification JWT
+Rôle : login, refresh, bootstrap admin initial, vérification du token Bearer.
+URL    : /api/auth/*
+Deps   : services.auth_service (bcrypt + JWT), models_sql.user.
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from datetime import datetime
 
 from config import get_settings

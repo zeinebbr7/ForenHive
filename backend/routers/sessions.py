@@ -1,3 +1,12 @@
+"""
+sessions.py — Sessions d'attaque agrégées
+Rôle : liste et détail des sessions d'attaque (groupement par IP/session_id).
+URL    : /api/sessions/*
+Deps   : Elasticsearch (honeypot-logs-*).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from models.session import SessionDetail, SessionListResponse, SessionSummary

@@ -1,3 +1,12 @@
+"""
+profiling.py — Profils criminologiques (Suspect Profiler)
+Rôle : exposition des profils BAU générés par forensic-engine/profiler.py.
+URL    : /api/profiling/*
+Deps   : Elasticsearch (forenhive-suspect-profiles), PostgreSQL (suspect_profiles).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import ipaddress
 from typing import Any
 

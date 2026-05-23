@@ -1,3 +1,12 @@
+"""
+chat.py — Endpoint chat conversationnel (HIVE)
+Rôle : proxy SSE vers Ollama Mistral pour le terminal forensique de la SPA.
+URL    : /api/chat
+Deps   : Ollama (LLM local), Elasticsearch (contexte logs).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from __future__ import annotations
 
 import json

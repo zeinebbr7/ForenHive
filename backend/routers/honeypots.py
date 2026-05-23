@@ -1,3 +1,11 @@
+"""
+honeypots.py — Gestion des honeypots (admin)
+Rôle : statut, démarrage/arrêt des conteneurs honeypot (via Docker socket).
+URL    : /api/honeypots/*
+Deps   : Docker SDK (socket /var/run/docker.sock).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from models_sql.user import User, UserRole

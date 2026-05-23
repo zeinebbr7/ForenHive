@@ -1,3 +1,12 @@
+"""
+geo.py — Données géographiques d'attaque
+Rôle : agrégations geoip pour la carte (Geo Map) et statistiques par pays/ASN.
+URL    : /api/geo/*
+Deps   : Elasticsearch (champs geoip enrichis par Logstash).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from typing import Any
 
 from fastapi import APIRouter, Query
