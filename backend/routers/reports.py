@@ -390,18 +390,26 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
     yara_matches   = profile.get("yara_matches") or []
     ioc_hashes     = profile.get("ioc_hashes") or []
 
-    # IOCs: file hashes + any download URLs seen in commands
-    iocs: List[Dict] = [
-        {"type": "SHA-256", "value": h, "context": "File captured by Dionaea"}
-        for h in ioc_hashes
-    ]
-    for cmd in (session.get("commands") or []):
-        inp = cmd.get("input") or ""
-        if any(x in inp for x in ["wget ", "curl "]):
-            for part in inp.split():
-                if part.startswith("http"):
-                    iocs.append({"type": "URL", "value": part, "context": f"Download command: {inp[:60]}"})
-                    break
+    # IOCs — prefer the engine-persisted forensic_iocs rows (aggregated by
+    # ioc_extractor across all timeline events) when present; fall back to
+    # the per-session inline build (file hashes + download URLs in commands)
+    # only when the engine has not yet processed this IP.
+    engine_iocs_list = ctx.get("engine_iocs") or []
+    iocs_from_db = bool(engine_iocs_list)
+    if iocs_from_db:
+        iocs: List[Dict] = list(engine_iocs_list)
+    else:
+        iocs = [
+            {"type": "SHA-256", "value": h, "context": "File captured by Dionaea"}
+            for h in ioc_hashes
+        ]
+        for cmd in (session.get("commands") or []):
+            inp = cmd.get("input") or ""
+            if any(x in inp for x in ["wget ", "curl "]):
+                for part in inp.split():
+                    if part.startswith("http"):
+                        iocs.append({"type": "URL", "value": part, "context": f"Download command: {inp[:60]}"})
+                        break
 
     # Dropped files (one entry per captured binary)
     dropped_files: List[Dict] = []
@@ -599,6 +607,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "profile":           profile_out,
         # IOCs
         "iocs":              iocs,
+        "iocs_from_db":      iocs_from_db,
         "stix_export_path":  None,
         # Chain of custody
         "chain_of_custody":        chain_of_custody,
@@ -1261,6 +1270,53 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception:
             pass
 
+    # ── Engine-persisted IOCs (forensic_iocs) ─────────────────────────────────
+    # The engine's ioc_extractor.py upserts every URL/domain/IP/hash/CVE/cmdline
+    # extracted from forensic_timeline_events into forensic_iocs, aggregated
+    # per (type, value, source_ip). Prefer those rows over the inline build
+    # (which only sees the current session's commands + the first captured
+    # hash) so the IOC section reflects the engine's full extraction.
+    engine_iocs: List[Dict[str, Any]] = []
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                ioc_res = await db.execute(
+                    text("""
+                        SELECT ioc_type, ioc_value, context, honeypot_types,
+                               occurrences, first_seen, last_seen
+                        FROM forensic_iocs
+                        WHERE source_ip = :ip
+                        ORDER BY occurrences DESC, last_seen DESC
+                        LIMIT 50
+                    """),
+                    {"ip": source_ip},
+                )
+                for r in ioc_res.mappings():
+                    ctx_obj = r["context"] or {}
+                    if isinstance(ctx_obj, str):
+                        try: ctx_obj = json.loads(ctx_obj)
+                        except Exception: ctx_obj = {}
+                    hp_list = list(r["honeypot_types"] or [])
+                    ctx_bits = []
+                    if hp_list:
+                        ctx_bits.append(f"seen by {'/'.join(hp_list)}")
+                    occ = int(r["occurrences"] or 0)
+                    if occ > 1:
+                        ctx_bits.append(f"×{occ}")
+                    if isinstance(ctx_obj, dict):
+                        for k in ("via", "url", "method", "event"):
+                            v = ctx_obj.get(k)
+                            if v:
+                                ctx_bits.append(f"{k}={str(v)[:60]}")
+                                break
+                    engine_iocs.append({
+                        "type":    str(r["ioc_type"] or "").upper(),
+                        "value":   r["ioc_value"] or "",
+                        "context": " · ".join(ctx_bits) if ctx_bits else "",
+                    })
+        except Exception as exc:
+            log.debug("forensic_iocs query failed for %s: %s", source_ip, exc)
+
     # ── Ollama recommendations ─────────────────────────────────────────────────
     ollama_recs: List[Dict[str, Any]] = []
     if source_ip:
@@ -1338,6 +1394,10 @@ async def _build_forensic_context(session_id: str) -> dict:
         "is_bogon":           bool((pg_row.get("enrichment_data") or {}).get("is_bogon")),
         "active_signals":     int((pg_row.get("enrichment_data") or {}).get("active_signals") or 0),
         "ollama_recommendations": ollama_recs,
+        # Engine-persisted artifacts (forensic_iocs / timeline / coc / ip_risk_scores).
+        # Empty lists/None mean the engine hasn't written rows yet for this
+        # session — the adapter falls back to its inline build in that case.
+        "engine_iocs":            engine_iocs,
         # Jinja2 helper
         "enumerate": enumerate,
     }
