@@ -1,0 +1,4 @@
+# Outils de développement — NE PAS installer en prod (image Docker)
+# Utilisation locale : pip install -r requirements-dev.txt
+
+ruff>=0.4.0
