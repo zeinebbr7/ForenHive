@@ -677,8 +677,16 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         # guards in the template so they're safe undefined, but supplying
         # them explicitly keeps the report's narrative section consistent
         # whether the engine produced a forensic_narrative or not.
-        "vt_top_engines":    [],
-        "vt_total":          (ctx.get("vt_result") or {}).get("total"),
+        # VT top engines + total — read the engine-normalized shape stored in
+        # file_analysis.virustotal_result (flat keys: malicious, total_engines,
+        # engine_hits). Older code used .get("total") which doesn't exist.
+        "vt_top_engines":    (
+            list(((ctx.get("vt_result") or {}).get("engine_hits") or {}).keys())[:3]
+        ),
+        "vt_total":          (
+            (ctx.get("vt_result") or {}).get("total_engines")
+            or (ctx.get("vt_result") or {}).get("total")
+        ),
         "bottom_line":       verdict,
         "exec_narrative":    profile.get("mistral_analysis", "") or ctx.get("engine_enrichment", {}).get("forensic_narrative", ""),
     }
