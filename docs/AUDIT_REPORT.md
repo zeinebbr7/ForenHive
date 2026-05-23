@@ -353,3 +353,100 @@ The remaining HIGH/MEDIUM/LOW items from §6 are not started: **H-2** (read `for
 1. **Run the engine sweep once** so the new `risk_level` / `confidence` columns get populated natively (currently only via backfill) and any newly-seen IP also lands in `suspect_profiles` — this is the only way to see Fix 1's effect on a rendered report.
 2. **Set the `*_API_KEY` env vars** so Fix 4's quota tracker / cache actually gates live traffic. Re-test under exhaustion (the `virustotal` row is already EXHAUSTED — the next report for a session with a captured-file SHA-256 should now return "Quota épuisé" instantly instead of timing out 15 s).
 3. Pick one of **H-2 / H-3 / H-4** as the next sprint — they all follow the same pattern (read what the engine already wrote) and would close the remaining silent-loss gaps.
+
+---
+
+## Verification log — 2026-05-22
+
+Post-fix verify-and-prove pass on `audit/report-pipeline-2026-05-22`. Goal: confirm that C-4 (FBI BAU profile) actually renders Mistral output once a `suspect_profiles` row exists for the demo session, plus confirm risk-band agreement and run the full StrictUndefined sweep.
+
+### 1. Demo session + IP
+
+| session_id | source_ip (`$DEMO_IP`) | honeypot | risk_score | started_at |
+|---|---|---|---|---|
+| `115bdfb649be` | `20.163.32.78` | cowrie | 34 | 2026-05-20 23:56:41 |
+
+### 2. Profiling run
+
+- Engine CLI has no `--ip` flag, but `forensic-engine/profiler.py --ip <ip>` is a usable single-IP entry point.
+- Ran `docker exec forenhive-forensic-engine python /app/profiler.py --ip 20.163.32.78` — Ollama (`mistral:latest`, 4.8 GB, CPU) was already loaded; completed in ~113 s.
+- Result: `suspect_profiles` row written for `20.163.32.78` at 2026-05-22 20:07:51.
+
+### 3. `suspect_profiles` row snapshot
+
+| field | value |
+|---|---|
+| `sophistication` | `Intermediate` |
+| `confidence` | `0.7` |
+| `primary_objective` | `reconnaissance` |
+| `organized_score` | `0.6` |
+| `dominant_tactic` | `Initial Access` |
+| `disguise_used` | `false` |
+| `escalation_detected` | `true` |
+| `behavioral_traits` | 4 entries: "Multiple sessions", "Usage of custom or modified tools", "Evidence of planning (session count and duration)", "No clear anti-forensics behavior" |
+| `signature_indicators` | 1 entry: "Moderate session length" |
+| `similar_past_cases` | scalar integer `1` (**not** an array — the Mistral schema returns a count, not a list. The cases themselves come from a separate SQL in `_build_forensic_context`) |
+| `detective_narrative` (full) | "The attacker exhibits signs of intermediate sophistication, using custom tools and demonstrating some planning. However, they do not employ anonymization layers or anti-forensics techniques. The primary objective is reconnaissance, and the attacker shows a signature behavior of moderate session length." |
+
+### 4. Rendered FBI BAU section (the proof)
+
+Rendered HTML preview for session `115bdfb649be` (`/api/reports/forensic/115bdfb649be/preview`, 74 107 bytes):
+
+```html
+<div class="profile-row"><span class="profile-key">Sophistication</span><span class="profile-val">INTERMEDIATE</span></div>
+<div class="profile-row"><span class="profile-key">Confidence</span><span class="profile-val">70%</span></div>
+<div class="profile-row"><span class="profile-key">Objective</span><span class="profile-val">reconnaissance</span></div>
+<div class="profile-row"><span class="profile-key">Organized score</span><span class="profile-val">6 <span class="profile-val-max">/ 10</span></span></div>
+<div class="profile-row"><span class="profile-key">Persistence</span><span class="profile-val">Escalating</span></div>
+<div class="profile-row"><span class="profile-key">Operator type</span><span class="profile-val">Direct</span></div>
+```
+
+Behavioral traits — rendered as a `<ul>` of `<li>`s, one per Mistral trait:
+
+```html
+<li>Multiple sessions</li>
+<li>Usage of custom or modified tools</li>
+<li>Evidence of planning (session count and duration)</li>
+<li>No clear anti-forensics behavior</li>
+```
+
+Detective narrative (Analytical narrative callout, verbatim from Mistral):
+
+> The attacker exhibits signs of intermediate sophistication, using custom tools and demonstrating some planning. However, they do not employ anonymization layers or anti-forensics techniques. The primary objective is reconnaissance, and the attacker shows a signature behavior of moderate session length.
+
+### 5. Explicit answers
+
+| Question | Answer |
+|---|---|
+| Does the rendered FBI BAU section now show Mistral output or heuristic placeholder? | **Mistral output**, not heuristic. Pre-fix baseline showed `Sophistication=MEDIUM` (heuristic from score band), `Objective=Credential harvesting` (heuristic from `auth_attempts`), `Organized score=7/10` (heuristic `org_pct // 10`), `Operator type / Persistence` rows absent, narrative callout absent. Post-fix shows `INTERMEDIATE / reconnaissance / 6/10 / Escalating / Direct` + 4 real behavioral_traits + Mistral narrative callout. Every value matches the `suspect_profiles` row from §3. |
+| Is `es_reference_cases` read from the profile row or still hard-coded `[]`? | **Read.** Adapter at `_adapt_context_for_v2` (post-Fix-1) sets `"es_reference_cases": profile.get("suspect_similar_cases") or []`. `suspect_similar_cases` is populated in `_build_forensic_context` from a `SELECT … FROM suspect_profiles WHERE source_ip != :ip AND (:obj='' OR primary_objective=:obj) ORDER BY ABS(risk_score - :score) LIMIT 5`. For `20.163.32.78` the query returns **0 rows** because no other IP shares `primary_objective='reconnaissance'` (it's the only `reconnaissance` IP across the 14 profiled IPs). The `or []` is just a None-safe default, **not** a hard-coded empty. The §"Similar Past Cases" template branch (`{% if profile.es_reference_cases ... | length > 0 %}`) correctly hides when empty. The wiring is verified by reading `backend/routers/reports.py` and by the fact that swapping in a different objective would return entries. |
+| Is `organized_score` a Mistral-derived value or the heuristic? | **Mistral.** `6/10` = `int(round(0.6 * 10))` from the profile's `organized_score: 0.6`. The heuristic path (`org_pct // 10`) would have given `7/10` (with `org_pct=70`), which is what the pre-fix preview showed. |
+
+### 6. C-1b — risk_label banding agreement
+
+`_risk_label_color` thresholds in [reports.py:146-152](backend/routers/reports.py#L146-L152) are `CRITICAL≥70 / HIGH≥45 / MEDIUM≥25 / LOW≥10 / INFO<10`. These match `forensic-engine/risk_thresholds.py` (`CRITICAL=70, HIGH=45, MEDIUM=25, LOW=10`). Cross-checked across all 54 rows of `forensic_sessions`:
+
+```
+agree | disagree | total
+   54 |        0 |    54
+```
+
+**No disagreement.** Adapter still derives the rendered label from score rather than reading `pg_row['risk_level']`, but because the bands and the source-of-truth (engine writes `risk_level` from the same `risk_level(score)` function) are consistent, no demo PDF will ever show a label different from the DB column. C-1b is **not a problem in practice**; deferred. Note for future hardening: a defensive `pg_row.get('risk_level') or _risk_label_color(risk_score)[0]` in the adapter would make the contract explicit, but it is not load-bearing for the demo.
+
+### 7. Full 54-session StrictUndefined re-sweep
+
+Driven via `POST /api/reports/forensic/{session_id}/generate` with a fresh JWT, header check on every PDF (HTTP=200, size ≥100 KB, magic bytes `%PDF`):
+
+```
+PASS: 54 / FAIL: 0
+```
+
+Zero `UndefinedError` / template-render failures in backend logs over the sweep window. The C-4 profile merge for `20.163.32.78` did not introduce a new field shape that StrictUndefined would catch — the adapter `profile_out` schema is stable whether or not a `suspect_profiles` row is present.
+
+(First sweep attempt returned 401 on every request because the JWT cached from before the ~2-minute profiler run had expired — re-login fixed it. Not a real failure.)
+
+### 8. Demo readiness verdict
+
+**GREEN.** 54 / 54 pass under StrictUndefined; the FBI BAU section for the chosen demo session (`115bdfb649be`) shows real Mistral-derived `sophistication / objective / organized_score / behavioral_traits / detective_narrative / persistence / operator_type`; banding agrees across all 54 rows. The demo PDF can be generated live.
+
+`es_reference_cases` for the demo session is structurally empty because no other profiled IP shares its primary_objective — this is a data condition, not a bug. To populate it for the demo, either profile a second IP that also has `primary_objective='reconnaissance'` (the engine sweep would do this naturally) or accept that the §"Similar Past Cases" block is hidden for this particular IP.
