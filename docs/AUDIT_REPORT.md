@@ -450,3 +450,66 @@ Zero `UndefinedError` / template-render failures in backend logs over the sweep 
 **GREEN.** 54 / 54 pass under StrictUndefined; the FBI BAU section for the chosen demo session (`115bdfb649be`) shows real Mistral-derived `sophistication / objective / organized_score / behavioral_traits / detective_narrative / persistence / operator_type`; banding agrees across all 54 rows. The demo PDF can be generated live.
 
 `es_reference_cases` for the demo session is structurally empty because no other profiled IP shares its primary_objective — this is a data condition, not a bug. To populate it for the demo, either profile a second IP that also has `primary_objective='reconnaissance'` (the engine sweep would do this naturally) or accept that the §"Similar Past Cases" block is hidden for this particular IP.
+
+---
+
+## Visual update log — 2026-05-23
+
+Seven follow-up fixes (A–G) closing H-2 / H-3 / H-4 / H-6 / M-2 / M-3 / M-5 / M-6 / M-7. Branch `audit/report-pipeline-2026-05-22`, post-`eaaef6c` strict baseline.
+
+### 1. Adapter pipeline changes
+
+| Fix | Commit | DB rows found for demo session (`115bdfb649be` / `20.163.32.78`) | Visible in PDF? | Notes |
+|---|---|---|---|---|
+| **H-2** `forensic_iocs` read | [`00f9050`](#) | 3 rows | yes | §07 now shows engine-aggregated IOCs (incl. `MD5 ×3250`, `SHA-256 ×325`, `FILE_PATH ×17875`) instead of the per-session SHA-256-only build. `iocs_from_db=true`. |
+| **H-3** `forensic_timeline_events` read | [`8deff90`](#) | 10 rows by `session_id` (275 by IP) | yes | §04 timeline rebuilt from engine rows; ES rebuild bypassed. `timeline_from_db=true`. MITRE tids derived on read using the same heuristics as the ES path (table has no MITRE column). |
+| **H-4 + M-7** `forensic_chain_of_custody` read | [`4245922`](#) | 1 row (`record_hash=7b7e95de…`, `sealed_at=2026-05-21 23:59:11`, `tsa_status=error`) | yes | §08 shows the engine's persisted SHA-256 + `sealed_at` timestamp, not a per-render recomputed seal. `custody_ok=false` because the batch's TSA call returned `error` (no token); the seal itself is intact. `coc_from_db=true`. |
+| **H-6** `ip_risk_scores.recommendations`/`key_findings` read | [`3283de9`](#) | 1 row · recommendations=`[]` · key_findings=`{}` | no — falls back | Read path correct; engine has populated zero recs/findings for any of the 4 scored IPs today. `recs_from_db=false`. Activates with no further code change once the engine emits rows. |
+| **M-2** `vt_top_engines` + `vt_total` | [`fed5c0f`](#) | n/a (no captured file for this session) | conditional | Adapter now reads `engine_hits` / `total_engines` from the engine-normalized VT shape. Skipped `primary_technique` and `attack_velocity` per "no unused keys" rule — template references neither. `honeypot_port=2222` already wired from `enrichment_data.destination_port`. |
+| **M-3** VT shape normalization in `dropped_files` | [`8d74e3d`](#) | n/a (0 files for demo) | conditional | Old read used `vt.get("total")` (key never exists in either shape). Now defensively reads both engine-normalized (`total_engines`) and raw VT (`last_analysis_stats`) shapes. |
+| **M-5 + M-6** engine version / YARA count | [`fe26563`](#) | engine_version=`2.0.0` · 10 `.yar` files on disk | yes | M-5 was already wired via `pg_row.score_version` (no change). M-6 added `./forensic-engine/yara_rules → /app/yara_rules:ro` bind-mount in `docker-compose.yml`; `_count_yara_rules()` runs at module load with a fallback to the static count if the mount is missing. |
+
+### 2. Final sweep — StrictUndefined ON
+
+```
+54 / 54 PASS | 0 FAIL
+```
+
+No `UndefinedError`, no `TemplateError`, no 500. All 54 sessions render PDFs > 100 KB.
+
+### 3. Visual verification — demo session `115bdfb649be`
+
+```json
+{
+  "iocs_count": 3,
+  "iocs_source": "forensic_iocs table",
+  "timeline_count": 10,
+  "timeline_source": "forensic_timeline_events table",
+  "coc_timestamp": "2026-05-21 23:59:11.776151+00:00",
+  "coc_sha256": "7b7e95def6836ad6b40874ad9c03a108...",
+  "coc_source": "forensic_chain_of_custody table",
+  "custody_ok": false,
+  "rec_source": "heuristic",
+  "honeypot_port": "2222",
+  "engine_version": "2.0.0",
+  "yara_rules_used": 10,
+  "vt_top_engines": [],
+  "vt_total": null
+}
+```
+
+Every section reads from the source the audit prescribed except `recommendations` — the engine has not populated `ip_risk_scores.recommendations` / `key_findings` for any of the 4 scored IPs, so the heuristic still drives §9.2 today.
+
+### 4. Notable schema corrections vs. the prompt
+
+- `forensic_iocs` has `occurrences` + `honeypot_types[]`, **not** `confidence` / `session_count` (prompt assumption).
+- `forensic_timeline_events` has **no `mitre_technique_id` and no `severity`** columns — derived on read.
+- `forensic_chain_of_custody.sealed_at` exists; the RFC 3161 `tsa_time` lives one JOIN away in `forensic_coc_batches`.
+- `file_analysis.virustotal_result` is **already normalized** by the engine to flat `{malicious, suspicious, undetected, total_engines, engine_hits, …}` — `last_analysis_stats` does not appear in any current row.
+- `forenhive-backend` had **no bind-mount for `yara_rules/`**; added one.
+
+### 5. Remaining deferred
+
+Unchanged from the prior audit: **H-5** (alternate TSA chain — freeTSA fallback), **H-7** (MITRE mapper coverage on cowrie sessions), **H-8** (STIX 2.1 from forensic flow).
+
+Newly identified during this pass: the engine itself does not currently emit `ip_risk_scores.recommendations` / `key_findings` rows; H-6 is now fully consumable on the read side but invisible until the engine populates those columns.
