@@ -502,37 +502,52 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         ),
     }
 
-    # Recommendations
-    recommendations: List[Dict] = []
-    if score >= 70:
+    # Recommendations — prefer the engine's persisted recommendations
+    # (ip_risk_scores.recommendations) over heuristic. Key findings from
+    # the engine's risk_score are prepended as low-priority "FINDING"
+    # rows so the analyst sees the engine's reasoning even when the
+    # engine has not yet emitted action recommendations.
+    engine_recs = ctx.get("engine_recommendations") or []
+    engine_kfs  = ctx.get("engine_key_findings")    or []
+    recs_from_db = bool(engine_recs)
+    if recs_from_db:
+        recommendations: List[Dict] = list(engine_recs)
+    else:
+        recommendations = []
+        if score >= 70:
+            recommendations.append({
+                "priority":  "IMMEDIATE",
+                "action":    f"Block {source_ip} at perimeter firewall and upstream BGP if possible",
+                "rationale": "Critical risk score with confirmed malicious activity",
+            })
+        if ctx.get("auth_success"):
+            recommendations.append({
+                "priority":  "IMMEDIATE",
+                "action":    "Audit all systems for lateral movement originating from this IP",
+                "rationale": "Attacker achieved successful authentication on the honeypot",
+            })
+        if yara_matches:
+            recommendations.append({
+                "priority":  "HIGH",
+                "action":    "Submit captured binary to AV vendors and threat intelligence feeds",
+                "rationale": f"YARA matched: {', '.join(yara_matches[:2])}",
+            })
+        if auth_attempts:
+            recommendations.append({
+                "priority":  "HIGH",
+                "action":    "Enforce MFA and review credential policies on all internet-facing services",
+                "rationale": f"{len(auth_attempts)} authentication attempts observed",
+            })
         recommendations.append({
-            "priority":  "IMMEDIATE",
-            "action":    f"Block {source_ip} at perimeter firewall and upstream BGP if possible",
-            "rationale": "Critical risk score with confirmed malicious activity",
+            "priority":  "MEDIUM",
+            "action":    "Update SIEM detection rules with IOCs from this report",
+            "rationale": "Integrate findings into the operational threat intelligence pipeline",
         })
-    if ctx.get("auth_success"):
-        recommendations.append({
-            "priority":  "IMMEDIATE",
-            "action":    "Audit all systems for lateral movement originating from this IP",
-            "rationale": "Attacker achieved successful authentication on the honeypot",
-        })
-    if yara_matches:
-        recommendations.append({
-            "priority":  "HIGH",
-            "action":    "Submit captured binary to AV vendors and threat intelligence feeds",
-            "rationale": f"YARA matched: {', '.join(yara_matches[:2])}",
-        })
-    if auth_attempts:
-        recommendations.append({
-            "priority":  "HIGH",
-            "action":    "Enforce MFA and review credential policies on all internet-facing services",
-            "rationale": f"{len(auth_attempts)} authentication attempts observed",
-        })
-    recommendations.append({
-        "priority":  "MEDIUM",
-        "action":    "Update SIEM detection rules with IOCs from this report",
-        "rationale": "Integrate findings into the operational threat intelligence pipeline",
-    })
+    if engine_kfs:
+        recommendations = [
+            {"priority": "FINDING", "action": kf, "rationale": "ForenHive risk engine key finding"}
+            for kf in engine_kfs
+        ] + recommendations
 
     enrichment = ctx.get("enrichment_cache") or {}
     rep     = enrichment.get("reputation")     or {}
@@ -639,6 +654,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "ptr_hostname": dns.get("ptr", ""),
         # Deterministic recommendations
         "recommendations":         recommendations,
+        "recs_from_db":            recs_from_db,
         # Ollama recommendations (passed through from _build_forensic_context)
         "ollama_recommendations":  ctx.get("ollama_recommendations", []),
         # VirusTotal fields (fix: these were missing and caused "Quota épuisé" always)
@@ -1459,6 +1475,47 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.debug("forensic_iocs query failed for %s: %s", source_ip, exc)
 
+    # ── Engine-persisted recommendations & key_findings (ip_risk_scores) ──────
+    # The unified per-IP scorer writes structured recommendations (jsonb array
+    # of action objects) and a key_findings text[] when it runs. Prefer the
+    # engine's output over the adapter's heuristic-built list whenever the
+    # engine has actually populated those columns.
+    engine_recommendations: List[Dict[str, Any]] = []
+    engine_key_findings:    List[str]            = []
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                irs_r = await db.execute(
+                    text("""
+                        SELECT recommendations, key_findings
+                        FROM ip_risk_scores
+                        WHERE source_ip = CAST(:ip AS INET)
+                        ORDER BY scored_at DESC NULLS LAST
+                        LIMIT 1
+                    """),
+                    {"ip": source_ip},
+                )
+                irs_row = irs_r.mappings().fetchone()
+                if irs_row:
+                    raw_recs = irs_row["recommendations"] or []
+                    if isinstance(raw_recs, str):
+                        try: raw_recs = json.loads(raw_recs)
+                        except Exception: raw_recs = []
+                    if isinstance(raw_recs, list):
+                        for r in raw_recs:
+                            if not isinstance(r, dict):
+                                continue
+                            engine_recommendations.append({
+                                "priority":  str(r.get("priority") or r.get("severity") or "MEDIUM").upper(),
+                                "action":    str(r.get("action") or r.get("title") or r.get("recommendation") or ""),
+                                "rationale": str(r.get("rationale") or r.get("reason") or r.get("description") or ""),
+                            })
+                    kf = irs_row["key_findings"] or []
+                    if isinstance(kf, list):
+                        engine_key_findings = [str(x) for x in kf if x]
+        except Exception as exc:
+            log.debug("ip_risk_scores recommendations query failed for %s: %s", source_ip, exc)
+
     # ── Ollama recommendations ─────────────────────────────────────────────────
     ollama_recs: List[Dict[str, Any]] = []
     if source_ip:
@@ -1543,6 +1600,8 @@ async def _build_forensic_context(session_id: str) -> dict:
         # Empty lists/None mean the engine hasn't written rows yet for this
         # session — the adapter falls back to its inline build in that case.
         "engine_iocs":            engine_iocs,
+        "engine_recommendations": engine_recommendations,
+        "engine_key_findings":    engine_key_findings,
         # Jinja2 helper
         "enumerate": enumerate,
     }
