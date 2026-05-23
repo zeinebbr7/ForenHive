@@ -603,6 +603,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         # Timeline
         "timeline_summary":  all_timeline[:15],
         "full_timeline":     all_timeline,
+        "timeline_from_db":  bool(ctx.get("timeline_from_db")),
         # Profile
         "profile":           profile_out,
         # IOCs
@@ -998,38 +999,132 @@ async def _build_forensic_context(session_id: str) -> dict:
             log.warning("aggregated timeline fetch failed for %s: %s", source_ip, exc)
 
     # ── Timeline ──────────────────────────────────────────
-    timeline = []
+    # Prefer the engine-persisted forensic_timeline_events rows (built by
+    # timeline_builder.py with millisecond precision across all honeypots)
+    # over the per-request ES rebuild. Query by session_id first; for
+    # unified per-IP reports (or when the session's own row count is zero
+    # but other rows exist for the same IP) fall back to a source_ip query.
+    timeline: List[Dict[str, Any]] = []
+    timeline_from_db = False
+
+    def _ev_mitre_from_row(category: str, action: str, summary: str) -> str:
+        """Cheap MITRE technique guess for a forensic_timeline_events row,
+        kept consistent with the heuristics already used by the ES rebuild
+        below so timeline rows render with the same MITRE tags either way."""
+        cat = (category or "").lower()
+        act = (action or "").lower()
+        summ = (summary or "")
+        if "login.success" in act or cat == "auth" and "success" in summ.lower():
+            return "T1078"
+        if cat == "auth":
+            return "T1110.001"
+        if cat == "command":
+            text_blob = (summary or "")
+            if any(x in text_blob for x in ["wget", "curl", "tftp", "ftp"]):
+                return "T1105"
+            if any(x in text_blob for x in ["cat /etc", "cat /root", "cat /opt"]):
+                return "T1552.001"
+            if any(x in text_blob for x in ["whoami", " id", "uname"]):
+                return "T1033"
+            return "T1059.004"
+        if cat == "exploit":
+            return "T1190"
+        if cat == "http":
+            return "T1071"
+        if cat == "file":
+            return "T1105"
+        if cat == "recon" or "connect" in act:
+            return "T1046"
+        return ""
+
+    def _ev_source_from_category(category: str) -> str:
+        cat = (category or "").lower()
+        if cat == "auth":    return "AUTH"
+        if cat == "command": return "COMMAND"
+        if cat == "file":    return "FILE"
+        if cat == "http":    return "HTTP"
+        if cat == "exploit": return "EXPLOIT"
+        if cat == "recon":   return "RECON"
+        if cat == "connect": return "SESSION"
+        return "EVENT"
+
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                _tl_sql = text("""
+                    SELECT ts, honeypot_type, event_category, event_action,
+                           destination_port, protocol, summary
+                    FROM forensic_timeline_events
+                    WHERE session_id = :sid
+                    ORDER BY ts ASC
+                    LIMIT 200
+                """)
+                tl_res = await db.execute(_tl_sql, {"sid": session_id})
+                tl_rows = list(tl_res.mappings())
+                # Unified reports (per-IP) and sessions whose own row count
+                # is zero get the source_ip view.
+                if not tl_rows and (is_unified or True):
+                    tl_res = await db.execute(
+                        text("""
+                            SELECT ts, honeypot_type, event_category, event_action,
+                                   destination_port, protocol, summary
+                            FROM forensic_timeline_events
+                            WHERE source_ip = :ip
+                            ORDER BY ts ASC
+                            LIMIT 200
+                        """),
+                        {"ip": source_ip},
+                    )
+                    tl_rows = list(tl_res.mappings())
+                for r in tl_rows:
+                    cat = r["event_category"] or ""
+                    act = r["event_action"] or ""
+                    summary = r["summary"] or act
+                    timeline.append({
+                        "ts":     str(r["ts"]),
+                        "source": _ev_source_from_category(cat),
+                        "action": act or summary[:48],
+                        "detail": summary,
+                        "mitre":  _ev_mitre_from_row(cat, act, summary),
+                    })
+                if timeline:
+                    timeline_from_db = True
+        except Exception as exc:
+            log.debug("forensic_timeline_events query failed for %s: %s", session_id, exc)
+
     started = detail.get("started_at")
-    if started:
+    if not timeline_from_db and started:
         timeline.append({"ts": str(started), "source": "SESSION", "action": "Session ouverte",
                          "detail": f"Honeypot {(detail.get('honeypot') or 'unknown').upper()}", "mitre": "T1046"})
 
     logins = detail.get("login_attempts") or []
-    for a in logins[:25]:
-        ok = a.get("success", False)
-        timeline.append({
-            "ts": str(a.get("timestamp") or started or ""),
-            "source": "AUTH",
-            "action": "Tentative auth " + ("✓ SUCCÈS" if ok else "✗ échec"),
-            "detail": f"{a.get('username','?')} / {a.get('password','?')}",
-            "mitre": "T1078" if ok else "T1110.001",
-        })
+    if not timeline_from_db:
+        for a in logins[:25]:
+            ok = a.get("success", False)
+            timeline.append({
+                "ts": str(a.get("timestamp") or started or ""),
+                "source": "AUTH",
+                "action": "Tentative auth " + ("✓ SUCCÈS" if ok else "✗ échec"),
+                "detail": f"{a.get('username','?')} / {a.get('password','?')}",
+                "mitre": "T1078" if ok else "T1110.001",
+            })
 
     cmds = detail.get("commands") or []
-    for c in cmds[:25]:
-        inp = c.get("input") or c.get("command") or ""
-        mitre = "T1059.004"
-        if any(x in inp for x in ["wget", "curl", "tftp", "ftp"]):
-            mitre = "T1105"
-        elif any(x in inp for x in ["cat /etc", "cat /root", "cat /opt"]):
-            mitre = "T1552.001"
-        elif inp in ["whoami", "id", "uname"]:
-            mitre = "T1033"
-        timeline.append({"ts": str(c.get("timestamp") or ""), "source": "COMMAND",
-                         "action": "Commande exécutée", "detail": inp, "mitre": mitre})
+    if not timeline_from_db:
+        for c in cmds[:25]:
+            inp = c.get("input") or c.get("command") or ""
+            mitre = "T1059.004"
+            if any(x in inp for x in ["wget", "curl", "tftp", "ftp"]):
+                mitre = "T1105"
+            elif any(x in inp for x in ["cat /etc", "cat /root", "cat /opt"]):
+                mitre = "T1552.001"
+            elif inp in ["whoami", "id", "uname"]:
+                mitre = "T1033"
+            timeline.append({"ts": str(c.get("timestamp") or ""), "source": "COMMAND",
+                             "action": "Commande exécutée", "detail": inp, "mitre": mitre})
 
     ended = detail.get("ended_at")
-    if ended:
+    if not timeline_from_db and ended:
         timeline.append({"ts": str(ended), "source": "SESSION", "action": "Session fermée",
                          "detail": f"Durée : {detail.get('duration_seconds', 0):.1f}s", "mitre": ""})
 
@@ -1349,6 +1444,7 @@ async def _build_forensic_context(session_id: str) -> dict:
         "risk_color": risk_color,
         "risk_score": risk_score,
         "timeline": timeline,
+        "timeline_from_db": timeline_from_db,
         "mitre_rows": mitre_rows,
         "score_signals": score_signals,
         "sha256_session": sha256_session,
