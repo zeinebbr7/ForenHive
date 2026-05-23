@@ -423,13 +423,17 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
             "vt_total":      vt.get("total") if vt else None,
         })
 
-    # Chain of custody — uses the real RFC 3161 record from get_custody().seal()
-    _tsa_ok  = bool(ctx.get("custody_ok", False))
-    _tsa_url = ctx.get("tsa_url") or "https://freetsa.org/tsr"
+    # Chain of custody — prefers the engine-persisted seal in
+    # forensic_chain_of_custody. M-7: timestamp shows the TSA-anchored
+    # sealed_at (real evidence-fixation time), not session started_at.
+    _tsa_ok    = bool(ctx.get("custody_ok", False))
+    _tsa_url   = ctx.get("tsa_url") or "https://freetsa.org/tsr"
+    _coc_from_db = bool(ctx.get("coc_from_db"))
+    _sealed_at   = ctx.get("coc_sealed_at") or str(started_at)
     chain_of_custody = [{
-        "artifact":  "Session JSON snapshot",
+        "artifact":  "Forensic session record" if _coc_from_db else "Session JSON snapshot",
         "sha256":    ctx.get("sha256_session", ""),
-        "timestamp": str(started_at),
+        "timestamp": _sealed_at,
         "tsa":       _tsa_url if _tsa_ok else "—",
         "tsa_ok":    _tsa_ok,
     }]
@@ -614,6 +618,7 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
         "chain_of_custody":        chain_of_custody,
         "coc_timestamp_authority": _tsa_url if _tsa_ok else "freetsa.org",
         "custody_ok":              _tsa_ok,
+        "coc_from_db":             _coc_from_db,
         # Shodan / WHOIS / IPLocate enrichment
         "shodan_data":  shodan_data,
         "whois_data":   whois,
@@ -1301,21 +1306,63 @@ async def _build_forensic_context(session_id: str) -> dict:
             pass
 
     # ── SHA-256 + RFC 3161 chain of custody ─────────────────
-    # Real TSA call via services.chain_custody (rfc3161-client). Falls back
-    # gracefully to SHA-256-only if the TSA is unreachable or the lib missing.
+    # Prefer the engine-persisted seal in forensic_chain_of_custody (JOINed
+    # with forensic_coc_batches for the batched TSA anchor). This is the
+    # authoritative record sealed at engine run time — re-sealing on every
+    # report render produces a different SHA-256 each time and bypasses the
+    # RFC 3161 anchor the engine already stored.
+    sha256_session: str = ""
+    tsa_ok           = False
+    tsa_url          = ""
+    tsa_token_b64    = None
+    sealed_at_str: Optional[str] = None
+    coc_from_db      = False
     try:
-        _custody = await get_custody().seal(detail)
-        sha256_session   = _custody.sha256
-        tsa_ok           = bool(_custody.tsa_ok)
-        tsa_url          = _custody.tsa_url
-        tsa_token_b64    = _custody.tsa_token_b64
-    except Exception as _coc_exc:
-        log.warning("chain_of_custody seal failed: %s", _coc_exc)
-        session_bytes    = json.dumps(detail, sort_keys=True, default=str).encode()
-        sha256_session   = hashlib.sha256(session_bytes).hexdigest()
-        tsa_ok           = False
-        tsa_url          = ""
-        tsa_token_b64    = None
+        async with session_scope() as db:
+            coc_r = await db.execute(
+                text("""
+                    SELECT c.record_hash, c.sealed_at,
+                           b.tsa_status, b.tsa_provider, b.tsa_time,
+                           b.merkle_root
+                    FROM forensic_chain_of_custody c
+                    LEFT JOIN forensic_coc_batches b ON c.batch_id = b.id
+                    WHERE c.session_id = :sid
+                    ORDER BY c.sealed_at DESC
+                    LIMIT 1
+                """),
+                {"sid": session_id},
+            )
+            coc_row = coc_r.mappings().fetchone()
+            if coc_row:
+                sha256_session = coc_row["record_hash"] or ""
+                tsa_ok         = (coc_row["tsa_status"] == "ok")
+                tsa_url        = coc_row["tsa_provider"] or ""
+                # M-7: timestamp must reflect when the record was sealed,
+                # not the session's started_at. Prefer the TSA-signed time
+                # (cryptographically anchored) when available, else the
+                # local sealed_at timestamp.
+                ts_obj = coc_row["tsa_time"] or coc_row["sealed_at"]
+                sealed_at_str = str(ts_obj) if ts_obj is not None else None
+                coc_from_db = True
+    except Exception as exc:
+        log.debug("forensic_chain_of_custody query failed for %s: %s", session_id, exc)
+
+    if not coc_from_db:
+        # Engine hasn't sealed this session yet — fall back to a live seal so
+        # the report still ships with a verifiable SHA-256 + (best-effort) TSA.
+        try:
+            _custody = await get_custody().seal(detail)
+            sha256_session   = _custody.sha256
+            tsa_ok           = bool(_custody.tsa_ok)
+            tsa_url          = _custody.tsa_url
+            tsa_token_b64    = _custody.tsa_token_b64
+        except Exception as _coc_exc:
+            log.warning("chain_of_custody seal failed: %s", _coc_exc)
+            session_bytes    = json.dumps(detail, sort_keys=True, default=str).encode()
+            sha256_session   = hashlib.sha256(session_bytes).hexdigest()
+            tsa_ok           = False
+            tsa_url          = ""
+            tsa_token_b64    = None
 
     # ── Organised score (behavioural estimate) ─────────────
     n_cmd = len(cmds)
@@ -1451,6 +1498,8 @@ async def _build_forensic_context(session_id: str) -> dict:
         "custody_ok": tsa_ok,
         "tsa_url": tsa_url,
         "tsa_token_b64": tsa_token_b64,
+        "coc_sealed_at": sealed_at_str,
+        "coc_from_db": coc_from_db,
         "kc_reached": kc_reached,
         "kc_stages": _KC_STAGES,
         "kc_stages_labels": _KC_LABELS,
