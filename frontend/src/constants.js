@@ -1,9 +1,9 @@
-/* Risk-score thresholds — mirror of forensic-engine/risk_thresholds.py.
+/* Risk-score thresholds — mirror of forensic-engine/risk_thresholds.py (v2.0.0).
    Keep both files in sync if cutoffs change. */
-export const RISK_CRITICAL = 80;
-export const RISK_HIGH     = 60;
-export const RISK_MEDIUM   = 40;
-export const RISK_LOW      = 20;
+export const RISK_CRITICAL = 70;  // was 80 in v1
+export const RISK_HIGH     = 45;  // was 60 in v1
+export const RISK_MEDIUM   = 25;  // was 40 in v1
+export const RISK_LOW      = 10;  // was 20 in v1
 
 export function riskLevel(score) {
   const s = Number(score) || 0;
@@ -32,7 +32,6 @@ export const NAV_GROUPS = [
     { id: 'reconstruction', label: 'Attack Reconstruction', icon: '', sub: 'Step-by-step kill-chain reconstruction per session', roles: ['admin','analyst'] },
     { id: 'evidence',       label: 'Evidence Logs',         icon: '', sub: 'Raw honeypot logs · filter by sensor · SHA-256 verification', roles: ['admin','analyst'] },
     { id: 'profiling',      label: 'Profiling',             icon: '', sub: 'FBI methodology applied to cyber attacker behavioral analysis · LLM-powered', roles: ['admin','analyst'] },
-    { id: 'yara',           label: 'Détection malware',     icon: '', sub: 'YARA scanning · VirusTotal · Dionaea captured binaries', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [
     { id: 'geomap', label: 'Geo Map', icon: '', sub: 'Real geographic positions · MaxMind GeoIP enrichment', roles: ['admin','analyst'] },

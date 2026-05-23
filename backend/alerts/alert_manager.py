@@ -19,7 +19,7 @@ def _whatsapp_alert(ip: str, score: int, is_internal: bool = False, network_clas
     from twilio.rest import Client
 
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    level = "CRITICAL" if score >= 80 else "HIGH"
+    level = "CRITICAL" if score >= 70 else "HIGH"  # v2.0.0 CRITICAL cutoff
     if is_internal:
         body = (
             f"⚠️ [FORENHIVE] INSIDER THREAT\n"

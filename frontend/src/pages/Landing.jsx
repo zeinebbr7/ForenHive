@@ -368,9 +368,9 @@ export default function Landing() {
         <div className="lnd-feat-inner">
           <div className="lnd-fade-in">
             <div className="lnd-section-tag">Forensic Reporting</div>
-            <h3 className="lnd-feat-h3">Court-admissible<br /><em>forensic reports</em></h3>
-            <p className="lnd-feat-desc">Every analysis is sealed with an RFC 3161 timestamp, SHA-256 integrity hash and chain-of-custody documentation. Reports are generated as structured PDFs via WeasyPrint and can be exported as STIX 2.1 bundles for CTI platforms.</p>
-            <p className="lnd-feat-desc" style={{marginTop:-12}}>The full evidence chain — raw logs → enriched events → suspect profile → kill chain → certified PDF — is preserved and reproducible.</p>
+            <h3 className="lnd-feat-h3">Tamper-evident<br /><em>forensic reporting</em></h3>
+            <p className="lnd-feat-desc">Every analysis is sealed with an RFC 3161 trusted timestamp, a SHA-256 integrity hash and chain-of-custody documentation — so each artifact can be proven byte-identical to what was collected. Reports render as structured PDFs via WeasyPrint and export as STIX 2.1 bundles for CTI platforms.</p>
+            <p className="lnd-feat-desc" style={{marginTop:-12}}>Deterministic findings — YARA, the 18-signal risk score, MITRE mapping — are recorded as <strong>evidence</strong>. The AI-assisted suspect profile is flagged as an <strong>investigative lead</strong>, never offered as standalone proof. The whole chain is preserved and reproducible.</p>
             <Link to="/login" className="lnd-feat-link">View a sample report →</Link>
           </div>
           <div className="lnd-fade-in">
@@ -381,14 +381,33 @@ export default function Landing() {
               </div>
               <div className="lnd-report-body">
                 <div className="lnd-report-section">
-                  <div className="lnd-report-section-title">Incident Summary</div>
-                  {[['Source IP','185.220.101.5',null],['Risk Score','82 / 100','var(--red2)'],['Classification','Organised Attacker',null],['Tactics','5 MITRE tactics',null],['YARA','Mirai.B — MATCH','var(--red2)']].map(([k,v,c])=>(
-                    <div key={k} className="lnd-report-row"><span className="lnd-report-key">{k}</span><span className="lnd-report-val" style={c?{color:c}:{}}>{v}</span></div>
+                  <div className="lnd-report-section-title">
+                    Deterministic Findings&nbsp;&nbsp;<span className="lnd-report-section-sub">— reproducible evidence</span>
+                  </div>
+                  {[
+                    ['Source IP', <span>185.220.101.5 <span className="lnd-report-note">(Tor exit)</span></span>, null],
+                    ['Risk score', '82 / 100', 'var(--red2)'],
+                    ['MITRE tactics', '5 mapped (conf. 1.0)', null],
+                    ['YARA', 'Mirai variant — MATCH', 'var(--red2)'],
+                  ].map(([k,v,c])=>(
+                    <div key={k} className="lnd-report-row"><span className="lnd-report-key">{k}</span><span className="lnd-report-val" style={c?{color:c,fontWeight:700}:{}}>{v}</span></div>
                   ))}
                 </div>
                 <div className="lnd-report-section">
+                  <div className="lnd-report-section-title lnd-report-section-title-lead">
+                    Assessment&nbsp;&nbsp;<span className="lnd-report-section-sub lnd-report-section-sub-lead">— AI-assisted lead — not evidence</span>
+                  </div>
+                  {[
+                    ['Profile', 'Organised attacker', null],
+                    ['Confidence', <span>71% <span className="lnd-report-note">(Mistral 7B)</span></span>, null],
+                  ].map(([k,v,c])=>(
+                    <div key={k} className="lnd-report-row"><span className="lnd-report-key">{k}</span><span className="lnd-report-val" style={c?{color:c}:{}}>{v}</span></div>
+                  ))}
+                </div>
+                <div className="lnd-report-section" style={{marginBottom:0}}>
                   <div className="lnd-report-section-title">Evidence Integrity</div>
                   <div className="lnd-report-hash">SHA-256: a3f8d21c...e94b7701</div>
+                  <div className="lnd-report-ts">Timestamp: RFC 3161 token <span className="lnd-report-note">(freeTSA, fallback TSA on failure)</span></div>
                   <div className="lnd-report-stamps">
                     <span className="lnd-report-stamp lnd-stamp-rfc">RFC 3161 TSA</span>
                     <span className="lnd-report-stamp lnd-stamp-sha">SHA-256</span>

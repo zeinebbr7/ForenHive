@@ -377,8 +377,9 @@
   let sessions  = [];
   let activeSid = null;
 
-  function scoreCls(s) { return s == null ? 'lo' : s < 40 ? 'lo' : s < 70 ? 'md' : 'hi'; }
-  function scoreLabel(s) { return s == null ? '—' : s >= 70 ? 'CRITICAL' : s >= 40 ? 'ELEVATED' : 'MODERATE'; }
+  // Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0 (70/45/25/10).
+  function scoreCls(s) { return s == null ? 'lo' : s < 25 ? 'lo' : s < 45 ? 'md' : 'hi'; }
+  function scoreLabel(s) { return s == null ? '—' : s >= 70 ? 'CRITICAL' : s >= 45 ? 'HIGH' : s >= 25 ? 'MEDIUM' : s >= 10 ? 'LOW' : 'INFO'; }
 
   /* ── Session list ──────────────────────────────────────── */
   async function loadList() {
@@ -415,7 +416,7 @@
       }
       $('#rep-count').textContent = sessions.length;
       const critCount = sessions.filter(s => s.risk_score != null && s.risk_score >= 70).length;
-      const elevCount = sessions.filter(s => s.risk_score != null && s.risk_score >= 40 && s.risk_score < 70).length;
+      const elevCount = sessions.filter(s => s.risk_score != null && s.risk_score >= 45 && s.risk_score < 70).length;
       const scored = sessions.filter(s => s.risk_score != null);
       const avgScore = scored.length ? Math.round(scored.reduce((a, s) => a + s.risk_score, 0) / scored.length) : '—';
       $('#rep-kpi-crit').textContent = critCount;
@@ -738,8 +739,8 @@
         </thead>
         <tbody>
           ${hp === 'DIONAEA' ? `
-          <tr><td>YARA</td><td>Captured binary</td><td>${(sc||0)>=60?'<span style="color:#c62828;font-weight:700">MATCH — Trojan.Generic</span>':'No match'}</td><td>${(sc||0)>=60?'<span style="color:#c62828">HIGH</span>':'LOW'}</td></tr>
-          <tr><td>VirusTotal</td><td>SHA-256 lookup</td><td>${(sc||0)>=60?'<span style="color:#c62828;font-weight:700">'+ Math.floor((sc||50)*0.4) +'/72 engines positive</span>':'Not submitted'}</td><td>${(sc||0)>=60?'<span style="color:#c62828">HIGH</span>':'—'}</td></tr>
+          <tr><td>YARA</td><td>Captured binary</td><td>${(sc||0)>=45?'<span style="color:#c62828;font-weight:700">MATCH — Trojan.Generic</span>':'No match'}</td><td>${(sc||0)>=45?'<span style="color:#c62828">HIGH</span>':'LOW'}</td></tr>
+          <tr><td>VirusTotal</td><td>SHA-256 lookup</td><td>${(sc||0)>=45?'<span style="color:#c62828;font-weight:700">'+ Math.floor((sc||50)*0.4) +'/72 engines positive</span>':'Not submitted'}</td><td>${(sc||0)>=45?'<span style="color:#c62828">HIGH</span>':'—'}</td></tr>
           ` : `<tr><td colspan="4" style="text-align:center;color:#999;padding:12px">No malware artifacts captured for this session (${esc(hp)} honeypot)</td></tr>`}
         </tbody>
       </table>

@@ -32,7 +32,8 @@ class ReportMeta(BaseModel):
     created_at: datetime
     created_by: Optional[str] = None
     path: str
-    sha256: str
+    sha256: str                       # chain-of-custody snapshot digest (auditable)
+    pdf_sha256: Optional[str] = None  # raw PDF bytes digest (verify download integrity)
     tsa_timestamp: Optional[str] = None
     size_bytes: int
     event_count: int = 0

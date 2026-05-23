@@ -12,7 +12,7 @@ export const fmt = {
   dur(sec){ if (sec<60) return sec+'s'; if (sec<3600) return Math.floor(sec/60)+'m'+(sec%60)+'s'; return Math.floor(sec/3600)+'h'+Math.floor((sec%3600)/60)+'m'; },
   num(n){ if (n == null) return '—'; if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'k'; return String(n); },
   shortHash(h){ return h && h.length > 18 ? h.slice(0,10)+'…'+h.slice(-6) : (h || '—'); },
-  scoreClass(s){ if (s == null) return 'lo'; return s<40 ? 'lo' : (s<70 ? 'md' : 'hi'); },
+  scoreClass(s){ if (s == null) return 'lo'; return s<25 ? 'lo' : (s<45 ? 'md' : 'hi'); },
   sevToClass(s){ return {critical:'crit',high:'hi',medium:'md',low:'lo'}[String(s).toLowerCase()] || 'lo'; },
 };
 

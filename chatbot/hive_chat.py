@@ -37,18 +37,25 @@ except ImportError:
 # ── config ─────────────────────────────────────────────────────────────────────
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL    = os.getenv("GROQ_MODEL", "mixtral-8x7b-32768")
-OLLAMA_URL    = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL  = os.getenv("OLLAMA_MODEL", "mistral")
 ES_URL        = os.getenv("ES_URL", "http://localhost:9200")
 ES_INDEX      = os.getenv("ES_INDEX", "honeypot-logs-*")
 PG_DSN        = os.getenv("PG_DSN", "postgresql://forenhive:forenhive@localhost:5432/forenhive")
 
 SYSTEM_PROMPT = (
-    "You are HIVE, ForenHive forensic assistant. "
-    "Apply FBI criminal profiling to cyber attackers. "
-    "Map behavior to MITRE ATT&CK. Risk scores 0-100 (18 signals). "
+    "You are HIVE, the forensic assistant built into the ForenHive platform. "
+    "SCOPE — you ONLY help with: (1) the ForenHive platform itself — its honeypots "
+    "(Cowrie, Dionaea, Galah), forensic engine, sessions, risk scores, suspect profiles, "
+    "IOCs, MITRE ATT&CK mappings, dashboards, and the data shown in this app; and "
+    "(2) cybersecurity fundamentals directly related to that work — attacker TTPs, "
+    "honeypots, threat intelligence, incident triage, digital forensics, IOCs, MITRE ATT&CK. "
+    "If a question is outside this scope (general coding help, unrelated trivia, personal "
+    "advice, other products, math, etc.), politely decline in one sentence and steer the user "
+    "back to ForenHive or its security data. Do not answer off-topic questions even if you know the answer. "
+    "Apply FBI-style criminal profiling to cyber attackers. "
+    "Map behavior to MITRE ATT&CK. Risk scores are 0-100 (18 signals). "
     "Reply in user's language (FR/EN). "
-    "Be concise, analytical. Cite session_id/honeypot/timestamp when referencing data."
+    "Be concise, analytical. Cite session_id/honeypot/timestamp when referencing data. "
+    "Never invent data you were not given in the context."
 )
 
 MAX_HISTORY = 8  # conversation turns kept
@@ -69,21 +76,11 @@ def _groq_reachable() -> bool:
         return False
 
 
-def _ollama_reachable() -> bool:
-    try:
-        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=3)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
 def detect_backend() -> tuple[str, object]:
-    """Return (backend_name, client_or_None)."""
+    """Groq-only. Return ("groq", client) or ("none", None) if unavailable."""
     if _groq_reachable():
         return "groq", Groq(api_key=GROQ_API_KEY)
-    if _ollama_reachable():
-        return "ollama", None
-    return "ollama", None   # will fail at query time; handled gracefully
+    return "none", None
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -117,6 +114,8 @@ def _es_recent_sessions(es, n: int = 10) -> list[dict]:
             body={
                 "size": n,
                 "sort": [{"@timestamp": {"order": "desc"}}],
+                # Zeek is a network sensor, not a honeypot — exclude it.
+                "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                 "_source": [
                     "@timestamp", "honeypot.type", "source.ip",
                     "event.action", "geoip.country_name",
@@ -136,6 +135,7 @@ def _es_stats(es) -> dict:
             index=ES_INDEX,
             body={
                 "size": 0,
+                "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                 "aggs": {
                     "total": {"value_count": {"field": "@timestamp"}},
                     "by_honeypot": {"terms": {"field": "honeypot.type", "size": 10}},
@@ -317,42 +317,6 @@ def _stream_groq(client, messages: list[dict]) -> str:
     return full
 
 
-def _stream_ollama(messages: list[dict]) -> str:
-    payload = {
-        "model": OLLAMA_MODEL,
-        "messages": messages,
-        "stream": True,
-    }
-    try:
-        r = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json=payload,
-            stream=True,
-            timeout=120,
-        )
-        r.raise_for_status()
-    except requests.exceptions.ConnectionError:
-        console.print("[red]Ollama unreachable. Is it running?[/red]")
-        return ""
-
-    full = ""
-    with Live(Text(""), console=console, refresh_per_second=20) as live:
-        for line in r.iter_lines():
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            token = data.get("message", {}).get("content", "")
-            full += token
-            live.update(Text(full))
-            if data.get("done"):
-                break
-    console.print()
-    return full
-
-
 def chat(
     backend: str,
     client,
@@ -375,7 +339,8 @@ def chat(
 
     if backend == "groq":
         return _stream_groq(client, messages)
-    return _stream_ollama(messages)
+    console.print("[red]Groq unavailable: set GROQ_API_KEY and check connectivity.[/red]")
+    return ""
 
 
 # ── commands ───────────────────────────────────────────────────────────────────
@@ -437,8 +402,8 @@ def cmd_help() -> None:
 # ── startup banner ─────────────────────────────────────────────────────────────
 
 def print_banner(backend: str, es_ok: bool, pg_ok: bool) -> None:
-    backend_color = "green" if backend == "groq" else "yellow"
-    backend_label = f"[{backend_color}]{'Groq · ' + GROQ_MODEL if backend == 'groq' else 'Ollama · ' + OLLAMA_MODEL}[/{backend_color}]"
+    backend_color = "green" if backend == "groq" else "red"
+    backend_label = f"[{backend_color}]{'Groq · ' + GROQ_MODEL if backend == 'groq' else 'Groq unavailable (set GROQ_API_KEY)'}[/{backend_color}]"
 
     es_label  = "[green]✓ Elasticsearch[/green]" if es_ok  else "[red]✗ Elasticsearch[/red]"
     pg_label  = "[green]✓ PostgreSQL[/green]"    if pg_ok  else "[red]✗ PostgreSQL[/red]"

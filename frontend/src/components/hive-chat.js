@@ -10,7 +10,7 @@ const _lang = (() => {
 const T = {
   en: {
     title:       'HIVE — forensic terminal',
-    welcome:     'HIVE forensic assistant v1.0 — ForenHive\nType /help for available commands.\n',
+    welcome:     'Hi, I\x27m HIVE — your friendly ForenHive assistant.\nAsk me anything about the ForenHive platform or cybersecurity in general.\nNew here? Type /help to see what I can do.\n',
     help:
       'Available commands:\n' +
       '  /sessions [n]   last n honeypot sessions (default 20)\n' +
@@ -21,12 +21,12 @@ const T = {
       'Or ask anything in English or French.',
     cleared: 'Terminal cleared.', offline: 'HIVE offline — check connection',
     placeholder: 'Enter command or question…', you: 'you',
-    groq: 'groq online', ollama: 'ollama fallback', off: 'offline',
+    groq: 'groq online', off: 'offline',
     newTab: 'new session', session: 'session',
   },
   fr: {
     title:       'HIVE — terminal forensique',
-    welcome:     'Assistant forensique HIVE v1.0 — ForenHive\nTapez /help pour les commandes disponibles.\n',
+    welcome:     'Bonjour, je suis HIVE — votre assistant ForenHive convivial.\nPosez-moi vos questions sur la plateforme ForenHive ou la cybersécurité en général.\nPremière visite ? Tapez /help pour découvrir mes commandes.\n',
     help:
       'Commandes disponibles :\n' +
       '  /sessions [n]   n dernières sessions honeypot (défaut 20)\n' +
@@ -37,7 +37,7 @@ const T = {
       'Ou posez une question en français ou anglais.',
     cleared: 'Terminal effacé.', offline: 'HIVE hors ligne — vérifiez la connexion',
     placeholder: 'Entrez une commande ou question…', you: 'you',
-    groq: 'groq online', ollama: 'ollama fallback', off: 'offline',
+    groq: 'groq online', off: 'offline',
     newTab: 'nouvelle session', session: 'session',
   },
 };
@@ -127,7 +127,6 @@ if (!document.getElementById('hive-chat-styles')) {
     font-family:'JetBrains Mono',ui-monospace,monospace; transition:color .3s;
   }
   #hive-backend-pill.groq   { color:var(--teal); }
-  #hive-backend-pill.ollama { color:var(--yellow); }
   #hive-backend-pill.unknown{ color:var(--text3); }
 
   /* ── session tabs ── */
@@ -303,7 +302,7 @@ _root.innerHTML = `
     </div>
     <div id="hive-terminal"></div>
     <div id="hive-chips">
-      <button class="hive-chip" data-cmd="/sessions 20">/sessions 20</button>
+      <button class="hive-chip" data-cmd="/sessions">/sessions</button>
       <button class="hive-chip" data-cmd="/iocs">/iocs</button>
       <button class="hive-chip" data-cmd="/profil">/profil</button>
       <button class="hive-chip" data-cmd="/mitre">/mitre</button>
@@ -539,10 +538,11 @@ async function _refreshStatus() {
     const r = await fetch('/api/chat/status', { headers: _authHeaders() });
     if (!r.ok) throw new Error();
     const d = await r.json();
+    const online = d.backend === 'groq' && d.reachable !== false;
     const pill = _hid('hive-backend-pill');
-    pill.className = d.backend;
-    pill.textContent = '● ' + (d.backend === 'groq' ? t.groq : t.ollama);
-    _hid('hive-dot-llm').className = 'hive-sdot ok';
+    pill.className = online ? 'groq' : 'unknown';
+    pill.textContent = '● ' + (online ? t.groq : t.off);
+    _hid('hive-dot-llm').className = 'hive-sdot ' + (online ? 'ok' : 'err');
   } catch (_) {
     _hid('hive-backend-pill').className = 'unknown';
     _hid('hive-backend-pill').textContent = '● ' + t.off;

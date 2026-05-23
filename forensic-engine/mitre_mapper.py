@@ -412,6 +412,62 @@ class MitreMapper:
             "confidence":         1.0,
         }
 
+    def narrative_for(self, session: dict, technique_ids: list) -> dict:
+        """Like map_session but skips technique re-derivation.
+
+        Used when techniques are already computed upstream (e.g. risk_score
+        v2.0 derives them before scoring). Produces the same return shape as
+        map_session, including the graceful LLM-disabled fallback narrative.
+        """
+        if not technique_ids:
+            technique_ids = ["T1190"]  # fallback: generic exploitation
+
+        kill_chain_phase = get_kill_chain_phase(technique_ids)
+        kill_chain_stage = get_kill_chain_stage_number(kill_chain_phase)
+
+        techniques_detail = []
+        for tid in technique_ids:
+            tech = MITRE_TECHNIQUES.get(tid)
+            if tech:
+                url_path = tid.replace(".", "/")
+                techniques_detail.append({
+                    "id":     tid,
+                    "name":   tech["name"],
+                    "tactic": tech["tactic"],
+                    "url":    f"https://attack.mitre.org/techniques/{url_path}/",
+                })
+
+        narrative = None
+        llm_used  = False
+        if self.use_llm and self.ollama_available:
+            narrative = get_forensic_narrative(session, technique_ids)
+            llm_used  = narrative is not None
+
+        if not narrative:
+            tactic    = MITRE_TECHNIQUES[technique_ids[0]]["tactic"] if technique_ids[0] in MITRE_TECHNIQUES else "Unknown"
+            src_ip    = session.get("source_ip", "unknown")
+            honeypot  = session.get("honeypot_type", "unknown")
+            port      = session.get("destination_port", 0)
+            narrative = (
+                f"Automated {honeypot} attack from {src_ip} "
+                f"targeting port {port} ({tactic.lower()} phase)."
+            )
+
+        return {
+            "session_id":         session.get("session_id", ""),
+            "technique_ids":      technique_ids,
+            "techniques":         techniques_detail,
+            "primary_technique":  technique_ids[0] if technique_ids else "T1190",
+            "kill_chain_phase":   kill_chain_phase,
+            "kill_chain_label":   KILL_CHAIN_LABELS.get(kill_chain_phase, kill_chain_phase),
+            "kill_chain_stage":   kill_chain_stage,
+            "kill_chain_completed": kill_chain_stage >= 5,
+            "forensic_narrative": narrative,
+            "llm_used":           llm_used,
+            "mapping_source":     "deterministic + llm_narrative" if llm_used else "deterministic",
+            "confidence":         1.0,
+        }
+
     def map_batch(self, sessions: list) -> list:
         """Map multiple sessions, log progress."""
         results = []

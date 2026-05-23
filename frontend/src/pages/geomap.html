@@ -153,7 +153,7 @@
       bounds.push([d.geo.lat, d.geo.lon]);
       const circle = L.circleMarker([d.geo.lat, d.geo.lon], { radius:r, fillColor:clr.fill, color:clr.stroke, weight:1.5, fillOpacity:0.85 });
       const meta = SOURCE_META[d.honeypot] || { label: d.honeypot || '?', icon: '' };
-      const riskColor = d.risk_score >= 80 ? '#C62828' : d.risk_score >= 60 ? '#b36000' : d.risk_score >= 40 ? '#1565C0' : '#388E3C';
+      const riskColor = d.risk_score >= 70 ? '#C62828' : d.risk_score >= 45 ? '#b36000' : d.risk_score >= 25 ? '#1565C0' : '#388E3C';
       circle.bindPopup(`<div style="font-family:'JetBrains Mono',monospace;font-size:12px;min-width:180px">
         <div style="font-size:14px;font-weight:700;margin-bottom:6px">${flag(d.geo.country_code)} ${esc(d.ip)}</div>
         <div style="color:#aaa;margin-bottom:4px">${esc(d.geo.country_name)}${d.geo.city?' · '+esc(d.geo.city):''}</div>

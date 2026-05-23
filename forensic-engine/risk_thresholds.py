@@ -1,27 +1,23 @@
 """
 Single source of truth for risk-score thresholds.
 
-Imported by:
-  - forensic-engine/risk_score_optimized.py  (level mapping)
-  - forensic-engine/engine.py                (alert-index gate)
-  - forensic-engine/config.py                (PROFILE_RISK_THRESHOLD default)
-  - backend/config.py                        (risk_alert_threshold default)
-  - chatbot/hive_chat.py                     (high-risk session query)
-  - frontend/src/constants.js                (mirrored as RISK_* + riskLevel)
-
-Any change here MUST be mirrored in frontend/src/constants.js.
+v2.0.0 (May 2026):
+  - Label cutoffs recalibrated for 9-signal scorer (was 80/60/40/20).
+  - Operational thresholds DECOUPLED from labels — they're now standalone
+    numbers, NOT derived from HIGH. Protects profiler / alerter from cost
+    spikes when label scale shifts.
 """
 
-# Level cutoffs (numeric score >= cutoff → label)
-CRITICAL = 80
-HIGH     = 60
-MEDIUM   = 40
-LOW      = 20
+# Label cutoffs (v2.0 calibration for 9-signal scorer)
+CRITICAL = 70    # was 80
+HIGH     = 45    # was 60
+MEDIUM   = 25    # was 40
+LOW      = 10    # was 20
 
-# Operational thresholds derived from level cutoffs
-ALERT_INDEX_MIN  = HIGH    # 60 — index forensic-alerts at HIGH and above
-ALERT_NOTIFY_MIN = 75      # email/webhook notify cutoff (between HIGH and CRITICAL)
-PROFILE_RISK_MIN = HIGH    # 60 — generate suspect profile at HIGH and above
+# Operational thresholds — INDEPENDENT of label cutoffs
+ALERT_INDEX_MIN  = 40
+ALERT_NOTIFY_MIN = 60
+PROFILE_RISK_MIN = 50
 
 
 def risk_level(score) -> str:

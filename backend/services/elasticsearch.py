@@ -446,10 +446,11 @@ class ESClient:
             avg = float(b["avg_risk"]["value"] or 0)
             mx = float(b["max_risk"]["value"] or 0)
             score = round(max(avg, mx), 1)
+            # Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0.
             severity = (
-                "CRITICAL" if score >= 80
-                else "HIGH" if score >= 60
-                else "MEDIUM" if score >= 40
+                "CRITICAL" if score >= 70
+                else "HIGH" if score >= 45
+                else "MEDIUM" if score >= 25
                 else "LOW"
             )
             country_buckets = b["country"]["buckets"]

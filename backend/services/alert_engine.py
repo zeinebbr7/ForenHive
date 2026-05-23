@@ -201,10 +201,11 @@ class AlertEngine:
                 return None
 
             risk_score, _ = RiskScorer.score(ctx)
+            # Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0 (70/45/25).
             severity = ctx.get("severity") or (
-                "critical" if risk_score >= 90 else
-                "high" if risk_score >= 75 else
-                "medium" if risk_score >= 40 else
+                "critical" if risk_score >= 70 else
+                "high" if risk_score >= 45 else
+                "medium" if risk_score >= 25 else
                 "low"
             )
 

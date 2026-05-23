@@ -5,293 +5,766 @@
 <title>ForenHive SOC Report &#8212; {{ report_id }}</title>
 <style>
   /* ═══════════════════════════════════════════════════════
-     ForenHive &#8212; Honeypot Forensic Report
-     Theme: paper light &#183; wine-red + yellow lightning
+     ForenHive — SOC Forensic Dossier
+     Mirrors the platform dashboard: Rajdhani + Share Tech Mono,
+     gold dots, surface cards, wine-red accents.
      ═══════════════════════════════════════════════════════ */
+  @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;600;700&family=Sora:wght@400;500;600&display=swap');
 
-  /* ── PAGE & PRINT ── */
+  /* ── PAGE & PRINT — running header + footer like the mockup ── */
   @page {
     size: A4;
-    margin: 16mm 14mm 18mm 14mm;
-    @bottom-left  { content: "FORENHIVE // {{ report_id }}"; font-family: 'Courier New', monospace; font-size: 7pt; color: #7A6E5A; letter-spacing: 1.5px; }
-    @bottom-right { content: counter(page) " / " counter(pages); font-family: 'Courier New', monospace; font-size: 7pt; color: #7A6E5A; letter-spacing: 1.5px; }
+    margin: 24mm 14mm 22mm 14mm;
+    @top-left {
+      content: "⬡ FORENHIVE  ·  {{ report_id }}";
+      font-family: 'Share Tech Mono','JetBrains Mono','Courier New',monospace;
+      font-size: 8pt; color: #8C1A2B; letter-spacing: 1.6px;
+      font-weight: 700; padding-bottom: 3mm;
+      border-bottom: 1px solid rgba(140,26,43,0.25);
+      width: 100%;
+    }
+    @top-right {
+      content: "Session " "{{ session_id }}  ·  " "{{ risk_level | default('INFO') }}  " counter(page) "/" counter(pages);
+      font-family: 'Share Tech Mono','JetBrains Mono','Courier New',monospace;
+      font-size: 7.5pt; color: #7A6E5A; letter-spacing: 1.4px;
+      padding-bottom: 3mm;
+      border-bottom: 1px solid rgba(140,26,43,0.10);
+    }
+    @bottom-left {
+      content: "ForenHive Platform · {{ generated_at | default('') }}";
+      font-family: 'Share Tech Mono','JetBrains Mono',monospace;
+      font-size: 7pt; color: #7A6E5A; letter-spacing: 1.3px;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " / " counter(pages) "  ·  " "{{ classification | default('TLP:AMBER') }}";
+      font-family: 'Share Tech Mono','JetBrains Mono',monospace;
+      font-size: 7pt; color: #7A6E5A; letter-spacing: 1.3px;
+    }
   }
-  @page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
+  @page :first {
+    margin: 18mm 14mm 20mm 14mm;
+    @top-left { content: none; } @top-right { content: none; }
+    @bottom-left { content: none; } @bottom-right { content: none; }
+  }
 
-  /* ── TOKENS ── */
+  /* ── TOKENS — clean white surface, platform gold accents ── */
   :root {
-    --bg:        #F5F3EE;
-    --bg2:       #EDE9E0;
-    --bg3:       #E5E0D5;
-    --surface:   #FBF9F5;
-    --surface2:  #F2EFE6;
+    --bg:        #FFFFFF;
+    --bg2:       #F6F7F9;
+    --bg3:       #EDEEF2;
+    --surface:   #FFFFFF;
+    --surface2:  #F8F9FB;
 
     --gold:      #8C1A2B;
     --gold2:     #A62240;
-    --gold-glow: rgba(140,26,43,0.07);
+    --gold-soft: rgba(140,26,43,0.05);
+    --gold-glow: rgba(140,26,43,0.10);
 
     --red:       #9B1B1B;
-    --red2:      #C62828;
-    --blue:      #0D47A1;
-    --blue2:     #1565C0;
-    --teal:      #00897B;
+    --red2:      #C93D55;
+    --blue:      #1A4FBB;
+    --blue2:     #3768D3;
+    --teal:      #00A892;
 
     --yellow:    #C9962E;
-    --yellow2:   #E8B84B;
     --accent:    #A6802A;
-    --purple:    #7B2FBE;
 
-    --text:      #1A1208;
-    --text2:     #3D3220;
-    --text3:     #7A6E5A;
+    --text:      #0F1419;
+    --text2:     #3A4150;
+    --text3:     #6B7380;
 
-    --border:    rgba(140,26,43,0.10);
-    --border2:   rgba(140,26,43,0.22);
-    --rule:      rgba(140,26,43,0.10);
-    --rule-soft: rgba(140,26,43,0.06);
+    --border:    rgba(15,20,25,0.08);
+    --border2:   rgba(15,20,25,0.16);
+    --rule:      rgba(15,20,25,0.06);
 
-    --mono: 'Courier New', Consolas, monospace;
-    --sans: 'Helvetica Neue', Arial, sans-serif;
+    /* Platform fonts: Rajdhani is THE everything-font, Share Tech Mono / JetBrains Mono for labels */
+    --display: 'Rajdhani','Helvetica Neue','Segoe UI',Arial,sans-serif;
+    --mono:    'Share Tech Mono','JetBrains Mono','SFMono-Regular','Courier New',monospace;
+    --jbm:     'JetBrains Mono','SFMono-Regular','Courier New',monospace;
+
+    --radius: 6px;
+    --radius-lg: 10px;
   }
 
-  /* ── RESET ── */
-  *, *::before, *::after { box-sizing: border-box; }
+  /* ── RESET — Rajdhani everywhere, like the platform (* { font-family:'Rajdhani' }) ── */
+  *, *::before, *::after { box-sizing: border-box; font-family: 'Rajdhani','Helvetica Neue',sans-serif; }
   html, body { margin: 0; padding: 0; }
   body {
-    font-family: var(--sans); font-size: 9.5pt;
-    line-height: 1.55; color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 8.5pt; font-weight: 500;
+    line-height: 1.5; color: var(--text);
     background: var(--bg);
   }
+  /* Keep mono families inside mono elements */
+  code, pre, .mono, .signal-pts, .gauge-readout .num, .kpi-value.mono,
+  .section-num, .kpi-label, .vbox-label, .cover-meta-label, .cover-meta-value.mono,
+  .tag, .score-badge, .toc-num, .toc-heading, .cover-eyebrow, .cover-topbar,
+  .section-tag, .tl-ts, .tl-type, .pill, .ref-list li::before, .log-row .ts,
+  .log-row .ty, .log-row .dt, .tlp-stamp, .gauge-readout .denom, .gauge-readout .lvl,
+  .risk-meta dt, .signal-name .sub, .kc-label, .kc-dot, .kpi-sub
+  { font-family: var(--mono) !important; }
+  h2 { font-family: var(--mono) !important; }
 
-  /* ═══════ COVER ═══════ */
+  /* ═══════ COVER — centered with framed structure ═══════ */
   .cover {
     page-break-after: always;
     background: var(--bg);
-    margin: -16mm -14mm 0 -14mm;
-    padding: 26mm 18mm 22mm 18mm;
-    min-height: 260mm;
+    margin: -18mm -14mm 0 -14mm;
+    padding: 14mm 14mm 14mm 14mm;
+    min-height: 268mm;
     position: relative; overflow: hidden;
   }
-  .cover-grid {
-    position: absolute; inset: 0;
-    background-image:
-      linear-gradient(rgba(140,26,43,0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(140,26,43,0.05) 1px, transparent 1px);
-    background-size: 16mm 16mm;
-    pointer-events: none;
+  .cover-grid, .cover-glow, .cover-watermark { display: none; }
+  /* Framed inner border for a designed-cover feel */
+  .cover-inner {
+    position: relative; z-index: 1;
+    height: 248mm;
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--gold);
+    border-radius: var(--radius-lg);
+    padding: 12mm 14mm 10mm 14mm;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
   }
-  .cover-glow {
-    position: absolute; top: -40mm; right: -40mm;
-    width: 120mm; height: 120mm;
-    background: radial-gradient(circle, rgba(201,150,46,0.20) 0%, rgba(201,150,46,0.06) 50%, transparent 70%);
-    pointer-events: none;
-  }
-  .cover-inner { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
 
-  .cover-topbar {
-    display: flex; justify-content: space-between; align-items: center;
-    font-family: var(--mono); font-size: 7.5pt; color: var(--text3);
+  /* Logo at top, centered */
+  .cv-logo { display: flex; flex-direction: column; align-items: center; gap: 2mm; padding-bottom: 7mm; border-bottom: 1px solid var(--border); width: 100%; }
+  .cv-bolt { font-size: 22pt; color: var(--gold); line-height: 1; }
+  .cv-brand-name {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 15pt; font-weight: 700;
+    color: var(--gold); letter-spacing: 3px;
+    text-transform: uppercase; line-height: 1;
+  }
+  .cv-brand-tag {
+    font-family: var(--mono) !important;
+    font-size: 6.5pt; color: var(--text3);
     letter-spacing: 2px; text-transform: uppercase;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 4mm; margin-bottom: 12mm;
   }
-  .cover-topbar .brand { color: var(--gold); font-weight: 700; }
-  .cover-topbar .right span + span { margin-left: 5mm; }
-  .cover-topbar .live-dot { display: inline-block; width: 5px; height: 5px; background: var(--yellow); border-radius: 50%; vertical-align: middle; margin-right: 4px; }
 
-  .bolt { display: inline-block; width: 9mm; height: 9mm; background: var(--yellow); color: var(--bg); text-align: center; line-height: 9mm; font-size: 16pt; font-weight: 900; border-radius: 1.5mm; vertical-align: middle; margin-right: 3mm; }
-  .cover-brand-line { display: flex; align-items: center; margin-bottom: 14mm; }
-  .cover-brand-line .name { font-family: var(--sans); font-size: 18pt; font-weight: 700; letter-spacing: 5px; color: var(--gold); text-transform: uppercase; }
-  .cover-brand-line .name em { font-style: normal; color: var(--text); }
-  .cover-brand-line .sub { margin-left: auto; font-family: var(--mono); font-size: 8pt; color: var(--text3); letter-spacing: 2px; text-transform: uppercase; }
+  /* Centered title block (vertically pushed to middle) */
+  .cv-titleblock { margin-top: auto; margin-bottom: auto; }
+  .cv-eyebrow {
+    font-family: var(--mono) !important;
+    font-size: 8pt; color: var(--gold);
+    letter-spacing: 3.5px; text-transform: uppercase;
+    margin-bottom: 7mm;
+    display: inline-flex; align-items: center; gap: 3mm;
+  }
+  .cv-eyebrow::before, .cv-eyebrow::after { content: ""; width: 8mm; height: 1px; background: var(--border2); display: inline-block; }
+  .cv-title {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 40pt; font-weight: 800;
+    line-height: 1.02; letter-spacing: 0.5px;
+    color: var(--text); margin: 0 0 7mm 0;
+    text-transform: uppercase;
+  }
+  .cv-title em { font-style: normal; color: var(--gold); }
+  .cv-sub {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 10.5pt; font-weight: 500;
+    font-style: italic; color: var(--text3);
+    max-width: 125mm; margin: 0 auto 10mm auto;
+    line-height: 1.55;
+  }
+  /* Discrete score line under title */
+  .cv-scoreline {
+    display: inline-flex; align-items: center; gap: 5mm;
+    padding: 6mm 9mm; margin-bottom: 11mm;
+    border: 1px solid var(--border2); border-radius: var(--radius-lg);
+    font-family: 'Rajdhani',sans-serif !important;
+  }
+  .cv-scoreline .num { font-size: 26pt; font-weight: 800; color: var(--text); letter-spacing: -0.5px; line-height: 1; }
+  .cv-scoreline .num span { font-family: var(--mono) !important; font-size: 9pt; font-weight: 500; color: var(--text3); }
+  .cv-scoreline .sep { width: 1px; height: 11mm; background: var(--border2); }
+  .cv-scoreline .lvl-block { text-align: left; }
+  .cv-scoreline .lvl { display: block; font-size: 16pt; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gold); line-height: 1; }
+  .cv-scoreline .lvl-cap { display: block; font-family: var(--mono) !important; font-size: 6.5pt; color: var(--text3); letter-spacing: 1.4px; text-transform: uppercase; margin-top: 2mm; }
+  .cv-scoreline.lvl-crit { border-color: rgba(201,61,85,0.40); }
+  .cv-scoreline.lvl-crit .lvl { color: var(--red2); }
+  .cv-scoreline.lvl-high .lvl { color: var(--gold); }
+  .cv-scoreline.lvl-med  .lvl { color: var(--accent); }
+  .cv-scoreline.lvl-low  .lvl { color: var(--blue); }
 
-  .cover-eyebrow { font-family: var(--mono); font-size: 9pt; color: var(--gold); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 5mm; }
-  .cover-eyebrow::before { content: "// "; color: var(--text3); }
+  /* At-a-glance stats strip */
+  .cv-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    width: 100%; gap: 0;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    margin-bottom: 8mm;
+  }
+  .cv-stat { padding: 4mm 3mm; border-right: 1px solid var(--rule); }
+  .cv-stat:last-child { border-right: none; }
+  .cv-stat-val { font-family: 'Rajdhani',sans-serif !important; font-size: 18pt; font-weight: 800; color: var(--text); line-height: 1; }
+  .cv-stat-lbl { font-family: var(--mono) !important; font-size: 6.2pt; color: var(--text3); letter-spacing: 1.2px; text-transform: uppercase; font-weight: 600; margin-top: 2.5mm; }
 
-  .cover-title { font-family: var(--sans); font-size: 52pt; font-weight: 700; line-height: 0.95; letter-spacing: -1px; color: var(--text); margin: 0 0 5mm 0; }
-  .cover-title em { font-style: normal; color: var(--gold); }
+  /* Meta footer — single thin strip */
+  .cv-meta {
+    width: 100%; margin-top: auto;
+    padding-top: 5mm; border-top: 1px solid var(--border);
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 5mm 8mm;
+  }
+  .cv-meta-cell { text-align: left; }
+  .cv-meta-lbl {
+    font-family: var(--mono) !important;
+    font-size: 6.2pt; color: var(--text3);
+    letter-spacing: 1.4px; text-transform: uppercase;
+    font-weight: 600; margin-bottom: 1.5mm;
+  }
+  .cv-meta-val {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 9.5pt; color: var(--text);
+    font-weight: 700; letter-spacing: 0.2px; line-height: 1.1;
+  }
+  .cv-meta-val.mono { font-family: var(--jbm) !important; font-size: 8pt; font-weight: 500; letter-spacing: 0; }
+  .cv-meta-val .small { font-size: 7pt; color: var(--text3); font-family: var(--mono) !important; font-weight: 400; margin-left: 1.5mm; }
 
-  .cover-subtitle { font-size: 12pt; font-weight: 400; color: var(--text2); max-width: 140mm; line-height: 1.55; margin-bottom: 14mm; }
-
-  .cover-meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 12mm; }
-  .cover-meta-cell { padding: 6mm 5mm 6mm 0; border-right: 1px solid var(--border); }
-  .cover-meta-cell:last-child { border-right: none; padding-right: 0; }
-  .cover-meta-label { font-family: var(--mono); font-size: 7pt; letter-spacing: 1.8px; color: var(--text3); text-transform: uppercase; margin-bottom: 3mm; }
-  .cover-meta-value { font-size: 13pt; color: var(--text); font-weight: 600; }
-  .cover-meta-value.mono { font-family: var(--mono); font-size: 10pt; font-weight: 500; }
-  .cover-meta-value .small { font-size: 9pt; color: var(--text3); font-family: var(--mono); }
-
-  .cover-verdict { margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
-  .vbox { background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; padding: 5mm 5mm 4mm 5mm; position: relative; overflow: hidden; }
-  .vbox::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
-  .vbox.crit::before { background: linear-gradient(90deg, var(--red), var(--red2)); }
-  .vbox-label { font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 1.6px; text-transform: uppercase; margin-bottom: 3mm; }
-  .vbox-value { font-size: 14pt; font-weight: 700; color: var(--text); line-height: 1.1; }
-  .vbox-value.score { font-family: var(--mono); color: var(--red); font-size: 17pt; }
-  .vbox-value.score .max { color: var(--text3); font-size: 10pt; font-weight: 400; }
-  .vbox-value.lvl { color: var(--red); }
-
-  .cover-footer { margin-top: 12mm; display: flex; justify-content: space-between; align-items: flex-end; font-family: var(--mono); font-size: 7.5pt; color: var(--text3); letter-spacing: 1.2px; }
-  .tlp-stamp { display: inline-block; background: var(--yellow); color: var(--text); padding: 2mm 5mm; font-family: var(--mono); font-size: 9pt; font-weight: 700; letter-spacing: 3px; border-radius: 1.5mm; }
-
-  /* ═══════ SECTION CHROME ═══════ */
-  .section { padding-top: 8mm; }
+  /* ═══════ SECTION CHROME — dashboard .tb-title style ═══════ */
+  .section { padding-top: 4mm; }
   .section-bar {
-    display: flex; align-items: baseline; gap: 4mm;
-    margin: 0 0 6mm 0; padding-bottom: 3mm;
+    display: flex; align-items: center; gap: 4mm;
+    margin: 0 0 7mm 0; padding: 0 0 4mm 0;
     border-bottom: 1px solid var(--border);
     page-break-after: avoid; position: relative;
   }
-  .section-bar::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 30mm; height: 2px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
-  .section-num { font-family: var(--mono); font-size: 8.5pt; font-weight: 700; color: var(--gold); letter-spacing: 1.5px; background: var(--gold-glow); padding: 1.5mm 3mm; border: 1px solid var(--border2); border-radius: 20pt; }
-  .section-title { font-size: 22pt; font-weight: 700; line-height: 1.1; color: var(--text); margin: 0; flex: 1; letter-spacing: -0.01em; }
-  .section-tag { font-family: var(--mono); font-size: 7.5pt; color: var(--text3); letter-spacing: 1.2px; text-transform: uppercase; }
+  .section-num {
+    font-family: var(--mono) !important; font-size: 9pt; font-weight: 700;
+    color: var(--gold); letter-spacing: 1.5px;
+    background: var(--gold-soft); padding: 1.5mm 3.5mm;
+    border: 1px solid var(--border2); border-radius: 3px;
+  }
+  .section-title {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 17pt; font-weight: 800;
+    line-height: 1; color: var(--gold); margin: 0; flex: 1;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 3mm;
+  }
+  .section-title::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--gold); flex-shrink: 0;
+  }
+  .section-tag {
+    font-family: var(--mono) !important; font-size: 7.5pt;
+    color: var(--text3); letter-spacing: 2px; text-transform: uppercase;
+    background: var(--surface); padding: 1.5mm 3mm;
+    border: 1px solid var(--border); border-radius: 3px;
+  }
 
-  h2 { font-family: var(--mono); font-size: 9.5pt; font-weight: 700; color: var(--text); margin: 7mm 0 3mm 0; text-transform: uppercase; letter-spacing: 1.6px; page-break-after: avoid; }
-  h2::before { content: "\25B8 "; color: var(--gold); }
-  h3 { font-size: 11pt; font-weight: 700; color: var(--text); margin: 5mm 0 2mm 0; page-break-after: avoid; }
+  /* h2 = subsection eyebrow with dot, like .section-tag (UPPERCASE gold mono) */
+  h2 {
+    font-family: var(--mono) !important; font-size: 8.5pt; font-weight: 700;
+    color: var(--gold); margin: 7mm 0 3mm 0;
+    text-transform: uppercase; letter-spacing: 1.8px;
+    page-break-after: avoid;
+    display: flex; align-items: center; gap: 2.5mm;
+  }
+  h2::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); display: inline-block; flex-shrink: 0; }
+  h3 {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 11pt; font-weight: 700; color: var(--text);
+    margin: 5mm 0 2mm 0; page-break-after: avoid;
+    letter-spacing: 0.3px; text-transform: uppercase;
+  }
   p { margin: 0 0 3mm 0; }
+  strong { color: var(--gold); font-weight: 700; }
 
-  /* ═══════ TOC ═══════ */
+  /* ═══════ TOC — editorial contents page ═══════ */
   .toc { page-break-after: always; padding-top: 4mm; }
-  .toc-heading { font-family: var(--mono); font-size: 8pt; font-weight: 600; color: var(--gold); letter-spacing: 3px; text-transform: uppercase; margin-bottom: 3mm; }
-  .toc-title { font-size: 36pt; font-weight: 700; line-height: 1; margin: 0 0 10mm 0; letter-spacing: -1px; color: var(--text); }
-  .toc-title em { font-style: normal; color: var(--gold); }
-  .toc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10mm; }
-  .toc-entry { display: flex; align-items: baseline; gap: 3mm; padding: 2.5mm 0; border-bottom: 1px dotted var(--border2); font-size: 10pt; color: var(--text); }
-  .toc-num { font-family: var(--mono); font-size: 8pt; font-weight: 700; color: var(--gold); flex: 0 0 14mm; letter-spacing: 1px; }
-  .toc-label { flex: 1; }
-  .toc-entry.sub { padding-left: 14mm; font-size: 9pt; color: var(--text2); border-bottom-style: dashed; }
-  .toc-entry.sub .toc-num { color: var(--accent); font-size: 7.5pt; }
+  .toc-heading {
+    font-family: var(--mono) !important; font-size: 7.5pt; font-weight: 700;
+    color: var(--text3); letter-spacing: 3px;
+    text-transform: uppercase; margin: 0 0 3mm 0;
+    padding-bottom: 3mm; border-bottom: 1px solid var(--border);
+  }
+  .toc-heading::before { content: none; }
+  .toc-title {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 22pt; font-weight: 700; line-height: 1.1;
+    margin: 0 0 10mm 0; letter-spacing: 0.2px;
+    color: var(--text); text-transform: none;
+  }
+  .toc-title em { font-style: normal; color: var(--gold); font-weight: 800; }
 
-  /* ═══════ TABLES ═══════ */
-  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm 0; font-size: 9pt; background: var(--surface); }
-  th, td { padding: 2.5mm 3mm; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-soft); }
-  th { background: var(--surface2); color: var(--text3); font-family: var(--mono); font-weight: 600; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1.4px; border-bottom: 1px solid var(--border); }
-  td code { font-family: var(--mono); font-size: 8.5pt; color: var(--text); }
+  /* 2-col grid, each entry = flat row, accent only on top-level entries */
+  .toc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 12mm; }
+  .toc-entry {
+    display: grid; grid-template-columns: 10mm 1fr;
+    align-items: baseline; gap: 4mm;
+    padding: 3mm 0 2.5mm 0;
+    border-bottom: 1px solid var(--rule);
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 11pt; font-weight: 700; color: var(--text);
+    text-transform: none;
+    position: relative;
+  }
+  .toc-entry::after {
+    content: ""; position: absolute; left: 0; bottom: -1px;
+    width: 10mm; height: 1px; background: var(--gold);
+  }
+  .toc-num {
+    font-family: var(--mono) !important;
+    font-size: 7pt; font-weight: 700; color: var(--gold);
+    letter-spacing: 1.4px;
+  }
+  .toc-label { font-family: 'Rajdhani',sans-serif !important; letter-spacing: 0.2px; }
+  .toc-entry.sub {
+    padding: 1.8mm 0 1.8mm 10mm;
+    grid-template-columns: 9mm 1fr;
+    border-bottom: none;
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 9pt; font-weight: 500; color: var(--text3);
+  }
+  .toc-entry.sub::after { content: none; }
+  .toc-entry.sub .toc-num { color: var(--text3); font-size: 6.5pt; letter-spacing: 1px; font-weight: 600; }
+
+  /* ═══════ TABLES — dashboard .card panel style ═══════ */
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 5mm 0; font-size: 8.5pt; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  th, td { padding: 3mm 4mm; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+  tr:last-child td { border-bottom: none; }
+  th {
+    background: var(--bg2); color: var(--gold);
+    font-family: var(--mono) !important; font-weight: 700;
+    font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1.6px;
+    border-bottom: 1px solid var(--border);
+  }
+  td { color: var(--text); font-weight: 500; }
+  td code { font-family: var(--jbm) !important; font-size: 8.5pt; color: var(--text); background: transparent; padding: 0; border: 0; }
   .tbl-zebra tr:nth-child(even) td { background: var(--surface2); }
-  .kv th, .kv td { padding: 2.5mm 3mm; border-bottom: 1px solid var(--rule-soft); }
-  .kv th { background: var(--surface2); color: var(--text2); font-family: var(--sans); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 8.5pt; width: 40%; }
-  .kv tr td { background: var(--surface); }
+  .kv { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
+  .kv th, .kv td { padding: 3mm 4mm; border-bottom: 1px solid var(--rule); }
+  .kv tr:last-child th, .kv tr:last-child td { border-bottom: none; }
+  .kv th {
+    background: var(--bg2); color: var(--text3);
+    font-family: var(--mono) !important;
+    text-transform: uppercase; letter-spacing: 1.4px;
+    font-weight: 700; font-size: 7.5pt; width: 38%;
+    border-right: 1px solid var(--rule);
+  }
+  .kv tr td { background: var(--surface); color: var(--text); font-weight: 600; }
 
   /* ═══════ CALLOUTS ═══════ */
-  .callout { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--gold); padding: 4mm 5mm; margin: 3mm 0; font-size: 9pt; border-radius: 0 2mm 2mm 0; }
-  .callout.yellow { background: #F5EED8; border-color: rgba(201,150,46,0.30); border-left-color: var(--yellow); }
-  .callout.red { background: rgba(198,40,40,0.05); border-color: rgba(198,40,40,0.20); border-left-color: var(--red2); }
-  .callout.blue { background: rgba(13,71,161,0.05); border-color: rgba(13,71,161,0.20); border-left-color: var(--blue); }
+  .callout { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--gold); padding: 4mm 5mm; margin: 3mm 0 4mm 0; font-size: 9pt; border-radius: 0 var(--radius) var(--radius) 0; color: var(--text2); }
+  .callout strong { color: var(--text); }
+  .callout.yellow { background: rgba(217,165,53,0.05); border-color: rgba(217,165,53,0.22); border-left-color: var(--yellow); }
+  .callout.red    { background: rgba(184,31,49,0.04); border-color: rgba(184,31,49,0.18); border-left-color: var(--red); }
+  .callout.blue   { background: rgba(26,79,187,0.04); border-color: rgba(26,79,187,0.18); border-left-color: var(--blue); }
 
-  .disclaimer { border: 1px dashed var(--yellow); background: #F5EED8; padding: 4mm 5mm; margin: 3mm 0 5mm 0; font-size: 8.5pt; color: var(--text2); border-radius: 2mm; }
-  .disclaimer strong { color: var(--accent); font-family: var(--mono); letter-spacing: 1px; }
+  .disclaimer { border: 1px solid rgba(217,165,53,0.28); background: rgba(217,165,53,0.06); padding: 4mm 5mm; margin: 3mm 0 5mm 0; font-size: 8.5pt; color: var(--text2); border-radius: var(--radius); border-left: 3px solid var(--yellow); }
+  .disclaimer strong { color: var(--accent); font-family: var(--mono); letter-spacing: 1px; font-size: 8pt; }
 
-  pre { font-family: var(--mono); font-size: 7.5pt; background: #F5EED8; color: var(--text); padding: 4mm 5mm; margin: 3mm 0; border: 1px solid rgba(201,150,46,0.25); border-left: 3px solid var(--yellow); border-radius: 2mm; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
-  code { font-family: var(--mono); font-size: 8.5pt; background: var(--bg3); color: var(--text); padding: 0.3mm 1.5mm; border-radius: 1.5mm; }
+  pre { font-family: var(--mono); font-size: 7.5pt; background: var(--surface2); color: var(--text); padding: 4mm 5mm; margin: 3mm 0; border: 1px solid var(--border); border-left: 3px solid var(--gold); border-radius: var(--radius); white-space: pre-wrap; word-break: break-word; line-height: 1.65; }
+  code { font-family: var(--mono); font-size: 8.5pt; background: var(--bg2); color: var(--text); padding: 0.4mm 1.6mm; border-radius: 3px; border: 1px solid var(--border); }
 
-  /* ═══════ TAGS / BADGES ═══════ */
-  .tag { display: inline-block; font-family: var(--mono); font-size: 7pt; font-weight: 700; padding: .8mm 3mm; margin: 0 1mm 1mm 0; letter-spacing: 0.5px; border: 1px solid; border-radius: 20pt; }
-  .tag-mitre { color: var(--blue); background: rgba(13,71,161,0.08); border-color: rgba(13,71,161,0.28); }
-  .tag-yara  { color: #14532d; background: #dcfce7; border-color: #16a34a; }
-  .tag-ioc   { color: var(--gold); background: var(--gold-glow); border-color: var(--border2); }
+  /* ═══════ TAGS / BADGES — dashboard pill style ═══════ */
+  .tag { display: inline-block; font-family: var(--mono) !important; font-size: 7pt; font-weight: 700; padding: 1mm 3mm; margin: 0 1mm 1mm 0; letter-spacing: 1px; border: 1px solid; border-radius: 3px; text-transform: uppercase; }
+  .tag-mitre { color: var(--blue); background: rgba(26,79,187,0.08); border-color: rgba(26,79,187,0.28); }
+  .tag-yara  { color: #14532d; background: #dcfce7; border-color: rgba(22,163,74,0.40); }
+  .tag-ioc   { color: var(--gold); background: var(--gold-soft); border-color: var(--border2); }
 
-  .score-badge { display: inline-block; font-family: var(--mono); font-size: 9pt; font-weight: 700; padding: 1mm 3.5mm; color: var(--surface); letter-spacing: 1px; border-radius: 1.5mm; }
-  .score-critical { background: var(--red); }
-  .score-high     { background: var(--gold); }
-  .score-medium   { background: var(--accent); }
-  .score-low      { background: var(--blue); }
+  /* Priority chips — flat, no heavy fill, mono lettering */
+  .score-badge {
+    display: inline-block;
+    font-family: var(--mono) !important;
+    font-size: 7pt; font-weight: 700;
+    padding: 1mm 3mm;
+    letter-spacing: 1.4px; text-transform: uppercase;
+    border-radius: 12pt;
+    border: 1px solid;
+    background: var(--surface);
+  }
+  .score-critical { color: var(--red2);  border-color: rgba(201,61,85,0.45);  background: rgba(201,61,85,0.06); }
+  .score-high     { color: var(--gold);  border-color: rgba(140,26,43,0.45);  background: rgba(140,26,43,0.06); }
+  .score-medium   { color: var(--accent); border-color: rgba(166,128,42,0.45); background: rgba(166,128,42,0.06); }
+  .score-low      { color: var(--blue);  border-color: rgba(26,79,187,0.40);  background: rgba(26,79,187,0.05); }
 
-  sup.ref { font-family: var(--mono); font-size: 6.5pt; color: var(--gold); font-weight: 700; }
+  sup.ref { font-family: var(--mono) !important; font-size: 6.5pt; color: var(--gold); font-weight: 700; }
 
-  /* ═══════ KPI TILES ═══════ */
-  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 0 0 5mm 0; }
-  .kpi { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; padding: 5mm 5mm 4mm 5mm; overflow: hidden; }
-  .kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--gold), var(--yellow)); }
-  .kpi.r::before { background: linear-gradient(90deg, var(--red), var(--red2)); }
-  .kpi.b::before { background: linear-gradient(90deg, var(--blue), var(--blue2)); }
-  .kpi.y::before { background: var(--yellow); }
-  .kpi-label { font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 1.6px; text-transform: uppercase; margin-bottom: 3mm; }
-  .kpi-value { font-size: 22pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.01em; }
-  .kpi-value.mono { font-family: var(--mono); font-size: 18pt; }
-  .kpi-sub { font-size: 8.5pt; color: var(--text3); margin-top: 2mm; }
-  .kpi.r .kpi-value { color: var(--red); }
-  .kpi.b .kpi-value { color: var(--blue); }
-  .kpi.y .kpi-value { color: var(--accent); }
+  /* ═══════ KPI — editorial data cards (minimal, no colored bars) ═══════ */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 0 0 7mm 0;
+              border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .kpi {
+    position: relative; background: transparent;
+    border: none; border-right: 1px solid var(--rule); border-radius: 0;
+    padding: 5mm 6mm 5mm 6mm; overflow: hidden;
+    box-shadow: none;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi::before { display: none; }
 
-  /* ═══════ RISK GAUGE (circular) ═══════ */
-  .risk-panel { display: grid; grid-template-columns: 60mm 1fr; gap: 8mm; align-items: center; padding: 6mm; background: var(--surface); border: 1px solid var(--border); border-radius: 3mm; margin: 3mm 0 5mm 0; page-break-inside: avoid; }
-  .gauge { position: relative; width: 50mm; height: 50mm; margin: 0 auto; }
-  .gauge svg { position: absolute; top: 0; left: 0; width: 50mm; height: 50mm; transform: rotate(-90deg); }
-  .gauge-readout { position: absolute; top: 0; left: 0; width: 50mm; height: 50mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-  .gauge-readout .num { display: block; font-size: 22pt; font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -0.02em; }
-  .gauge-readout .denom { display: block; font-family: var(--mono); font-size: 8pt; color: var(--text3); margin-top: 1mm; }
-  .gauge-readout .lvl { display: block; font-family: var(--mono); font-size: 7pt; letter-spacing: 1.5px; margin-top: 2mm; color: var(--red); font-weight: 700; }
-  .risk-meta { font-size: 9pt; }
-  .risk-meta dt { font-family: var(--mono); font-size: 7pt; color: var(--text3); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2mm; }
-  .risk-meta dd { margin: 0 0 1mm 0; font-weight: 500; color: var(--text); }
+  .kpi-label {
+    font-family: var(--mono) !important;
+    font-size: 6.8pt; color: var(--text3);
+    letter-spacing: 1.5px; text-transform: uppercase;
+    margin-bottom: 4mm; font-weight: 600;
+    padding-left: 4mm; position: relative;
+  }
+  .kpi-label::before {
+    content: ""; position: absolute; left: 0; top: 2.5pt;
+    width: 2.5mm; height: 2px; background: var(--gold);
+  }
+  .kpi.r .kpi-label::before { background: var(--red2); }
+  .kpi.b .kpi-label::before { background: var(--blue2); }
+  .kpi.y .kpi-label::before { background: var(--accent); }
 
-  /* ── SIGNAL BARS ── */
-  .signal-row { display: grid; grid-template-columns: 56mm 1fr 18mm; align-items: center; gap: 3mm; padding: 1.8mm 0; border-bottom: 1px solid var(--rule-soft); }
+  .kpi-value {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 26pt; font-weight: 700; line-height: 1;
+    color: var(--text); letter-spacing: -0.4px;
+  }
+  .kpi-value.mono { font-family: 'Rajdhani',sans-serif !important; font-size: 20pt; letter-spacing: -0.3px; }
+  .kpi-sub {
+    font-size: 7.5pt; color: var(--text3);
+    margin-top: 3mm; font-family: var(--mono) !important;
+    letter-spacing: 0.4px;
+  }
+  .kpi .kpi-value, .kpi.r .kpi-value, .kpi.b .kpi-value, .kpi.y .kpi-value { color: var(--text); }
+
+  /* ── rc-metrics tiles (smaller metric chips, same surface) ── */
+  .rc-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 3mm 0 5mm 0; }
+  .rc-metric {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 3mm 4mm;
+  }
+  .rc-metric .lbl { font-family: var(--mono) !important; font-size: 6.8pt; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  .rc-metric .val { font-family: 'Rajdhani',sans-serif !important; font-size: 15pt; font-weight: 700; color: var(--text); margin-top: 1.5mm; line-height: 1; }
+  .rc-metric.crit .val { color: var(--red2); }
+  .rc-metric.warn .val { color: var(--gold); }
+  .rc-metric.ok .val   { color: var(--teal); }
+
+  /* ── rc-chips (small mono pills) ── */
+  .rc-chips { display: flex; flex-wrap: wrap; gap: 2mm; margin: 2mm 0 3mm 0; }
+  .rc-chip {
+    padding: 1mm 3mm;
+    border: 1px solid var(--border);
+    border-radius: 12pt;
+    background: var(--bg2);
+    font-family: var(--mono) !important;
+    font-size: 7.5pt; color: var(--text2);
+    letter-spacing: 0.6px; text-transform: uppercase; font-weight: 600;
+  }
+  .rc-chip.hl { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
+  .rc-chip.crit { border-color: rgba(184,31,49,0.35); color: var(--red2); background: rgba(184,31,49,0.06); }
+  .rc-chip.ok   { border-color: rgba(0,168,146,0.35); color: var(--teal);  background: rgba(0,168,146,0.06); }
+
+  /* ── .card widget container (mirrors dashboard .card) ── */
+  .widget-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 5mm 6mm; margin: 3mm 0 5mm 0;
+    box-shadow: 0 1px 2px rgba(140,26,43,0.04);
+    page-break-inside: avoid;
+  }
+  .widget-card-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4mm; padding-bottom: 3mm; border-bottom: 1px solid var(--rule); }
+  .widget-card-t { font-family: 'Rajdhani',sans-serif !important; font-size: 11pt; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text); }
+  .widget-card-sub { font-family: var(--mono) !important; font-size: 7.5pt; color: var(--text3); text-transform: uppercase; letter-spacing: 1.4px; font-weight: 600; }
+
+  /* ═══════ COMPOSITE RISK SCORE — simple inline stat ═══════ */
+  .score-card { margin: 3mm 0 6mm 0; page-break-inside: avoid; }
+
+  /* Top line: big score + level, no frame */
+  .score-headline {
+    display: flex; align-items: baseline; gap: 6mm;
+    padding-bottom: 4mm;
+    border-bottom: 1px solid var(--border);
+  }
+  .score-num {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 40pt; font-weight: 800;
+    line-height: 0.9; color: var(--text);
+    letter-spacing: -1.5px;
+  }
+  .score-num-max {
+    font-family: var(--mono) !important;
+    font-size: 11pt; font-weight: 500;
+    color: var(--text3); letter-spacing: 0.5px;
+    margin-left: 1mm;
+  }
+  .score-num-level {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 18pt; font-weight: 800;
+    color: var(--gold); letter-spacing: 1.5px;
+    text-transform: uppercase; line-height: 1;
+    padding-left: 6mm; border-left: 1px solid var(--border2);
+  }
+  .score-card.lvl-crit .score-num-level { color: var(--red2); }
+  .score-card.lvl-high .score-num-level { color: var(--gold); }
+  .score-card.lvl-med  .score-num-level { color: var(--accent); }
+  .score-card.lvl-low  .score-num-level { color: var(--blue); }
+
+  /* Meta rows below the headline */
+  .score-card-meta { padding: 3mm 0 0 0; display: flex; flex-direction: column; gap: 0; }
+  .score-meta-row { display: grid; grid-template-columns: 30mm 1fr; gap: 4mm; align-items: baseline; padding: 2mm 0; border-bottom: 1px solid var(--rule); }
+  .score-meta-row:last-child { border-bottom: none; }
+  .score-meta-key {
+    font-family: var(--mono) !important;
+    font-size: 7pt; color: var(--text3);
+    letter-spacing: 1.5px; text-transform: uppercase;
+    font-weight: 600;
+  }
+  .score-meta-val {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 9.5pt; color: var(--text);
+    font-weight: 600; line-height: 1.4;
+  }
+
+  /* ═══════ BEHAVIORAL PROFILE — 2-col editorial cards ═══════ */
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 4mm 0 5mm 0; }
+  .profile-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .profile-card-h {
+    font-family: var(--mono) !important;
+    font-size: 7.5pt; font-weight: 700;
+    color: var(--gold); letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 3mm 5mm;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    padding-left: 8mm;
+  }
+  .profile-card-h::before {
+    content: ""; position: absolute; left: 4mm; top: 50%;
+    transform: translateY(-50%);
+    width: 2mm; height: 2mm; border-radius: 50%; background: var(--gold);
+  }
+  .profile-rows { padding: 2mm 5mm 3mm 5mm; }
+  .profile-row {
+    display: grid; grid-template-columns: 38% 1fr;
+    padding: 2.5mm 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .profile-row:last-child { border-bottom: none; }
+  .profile-key {
+    font-family: var(--mono) !important;
+    font-size: 7pt; color: var(--text3);
+    letter-spacing: 1.3px; text-transform: uppercase;
+    font-weight: 600;
+  }
+  .profile-val {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 10pt; color: var(--text);
+    font-weight: 600;
+  }
+  .profile-val-max { color: var(--text3); font-weight: 400; font-size: 8.5pt; }
+
+  .profile-traits {
+    list-style: none; padding: 3mm 5mm; margin: 0;
+  }
+  .profile-traits li {
+    padding: 2.5mm 0 2.5mm 6mm;
+    border-bottom: 1px solid var(--rule);
+    position: relative;
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 9.5pt; color: var(--text2);
+    font-weight: 500; line-height: 1.4;
+  }
+  .profile-traits li:last-child { border-bottom: none; }
+  .profile-traits li::before {
+    content: ""; position: absolute;
+    left: 0; top: 4mm;
+    width: 3mm; height: 1.5px; background: var(--gold);
+  }
+
+  /* ── SIGNAL LIST — numeric, no bars ── */
+  .signal-list {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--surface);
+    margin: 3mm 0 5mm 0;
+  }
+  .signal-row {
+    display: grid; grid-template-columns: 4mm 1fr 24mm 18mm;
+    align-items: center; gap: 4mm;
+    padding: 3mm 6mm;
+    border-bottom: 1px solid var(--rule);
+  }
   .signal-row:last-child { border-bottom: none; }
-  .signal-name { font-size: 9pt; color: var(--text); }
-  .signal-name .sub { display: block; font-family: var(--mono); font-size: 7pt; color: var(--text3); letter-spacing: 0.5px; margin-top: .5mm; }
-  .signal-track { height: 4.5mm; background: var(--bg3); border-radius: 2mm; overflow: hidden; border: 1px solid var(--border); }
-  .signal-fill { height: 100%; border-radius: 2mm; }
-  .signal-fill.c-zero { background: transparent; }
-  .signal-fill.c-low  { background: var(--blue); }
-  .signal-fill.c-med  { background: var(--accent); }
-  .signal-fill.c-high { background: var(--red); }
-  .signal-pts { font-family: var(--mono); font-size: 9pt; font-weight: 700; text-align: right; color: var(--text); }
-  .signal-pts .max { color: var(--text3); font-weight: 400; }
+  /* Status dot (column 1) */
+  .signal-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--bg3); border: 1px solid var(--border2);
+  }
+  .signal-row.lvl-low  .signal-dot { background: var(--blue);   border-color: var(--blue); }
+  .signal-row.lvl-med  .signal-dot { background: var(--accent); border-color: var(--accent); }
+  .signal-row.lvl-high .signal-dot { background: var(--red2);   border-color: var(--red2); }
+  .signal-row.lvl-zero .signal-dot { background: transparent; }
+  /* Name + sub */
+  .signal-name { font-family: 'Rajdhani',sans-serif !important; font-size: 9.5pt; color: var(--text); font-weight: 600; line-height: 1.2; }
+  .signal-name .sub { display: block; font-family: var(--mono) !important; font-size: 6.5pt; color: var(--text3); letter-spacing: 0.4px; margin-top: 1mm; font-weight: 400; text-transform: uppercase; }
+  /* Percent / utilization */
+  .signal-pct {
+    font-family: var(--mono) !important; font-size: 8pt; font-weight: 600;
+    color: var(--text3); letter-spacing: 0.6px; text-align: right;
+    text-transform: uppercase;
+  }
+  .signal-row.lvl-low  .signal-pct { color: var(--blue); }
+  .signal-row.lvl-med  .signal-pct { color: var(--accent); }
+  .signal-row.lvl-high .signal-pct { color: var(--red2); }
+  /* Points X / max */
+  .signal-pts {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 13pt; font-weight: 700; text-align: right;
+    color: var(--text); line-height: 1; letter-spacing: -0.3px;
+  }
+  .signal-pts .max { color: var(--text3); font-weight: 400; font-size: 8pt; font-family: var(--mono) !important; letter-spacing: 0.3px; }
+  /* Skipped state */
+  .signal-row.skipped .signal-name { color: var(--text3); font-style: italic; }
+  .signal-row.skipped .signal-pts  { color: var(--text3); font-size: 9pt; font-style: italic; font-weight: 400; }
 
   /* ═══════ TIMELINE (card style) ═══════ */
-  .timeline { position: relative; padding-left: 14mm; margin: 3mm 0 5mm 0; }
-  .timeline::before { content: ""; position: absolute; left: 6mm; top: 0; bottom: 0; width: 2px; background: var(--border2); }
-  .tl-item { position: relative; padding: 3mm 4mm; margin-bottom: 3mm; background: var(--surface); border: 1px solid var(--border); border-radius: 2mm; page-break-inside: avoid; }
-  .tl-item::before { content: ""; position: absolute; left: -8.5mm; top: 4mm; width: 3.5mm; height: 3.5mm; background: var(--gold); border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--gold); }
-  .tl-item.crit::before { background: var(--red2); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--red2); }
-  .tl-item.warn::before { background: var(--yellow); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--yellow); }
-  .tl-item.info::before { background: var(--blue); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--blue); }
-  .tl-head { display: flex; align-items: center; gap: 3mm; margin-bottom: 1.5mm; flex-wrap: wrap; }
-  .tl-ts { font-family: var(--mono); font-size: 8pt; color: var(--text3); letter-spacing: 0.5px; }
-  .tl-type { font-family: var(--mono); font-size: 7.5pt; font-weight: 700; color: var(--gold); text-transform: uppercase; letter-spacing: 1.2px; }
-  .tl-body { font-size: 9pt; color: var(--text2); }
+  .timeline { position: relative; padding-left: 16mm; margin: 4mm 0 6mm 0; }
+  .timeline::before { content: ""; position: absolute; left: 6mm; top: 2mm; bottom: 2mm; width: 1.5px; background: linear-gradient(180deg, var(--gold), var(--border2)); }
+  .tl-item { position: relative; padding: 4mm 5mm; margin-bottom: 4mm; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); page-break-inside: avoid; }
+  .tl-item::before { content: ""; position: absolute; left: -10.5mm; top: 5mm; width: 3.5mm; height: 3.5mm; background: var(--gold); border-radius: 50%; box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 3.5px var(--gold); }
+  .tl-item.crit::before { background: var(--red); box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 3.5px var(--red); }
+  .tl-item.warn::before { background: var(--yellow); box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 3.5px var(--yellow); }
+  .tl-item.info::before { background: var(--blue); box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 3.5px var(--blue); }
+  .tl-head { display: flex; align-items: center; gap: 3mm; margin-bottom: 2mm; flex-wrap: wrap; padding-bottom: 2mm; border-bottom: 1px dashed var(--rule); }
+  .tl-ts { font-family: var(--mono); font-size: 8pt; color: var(--text3); letter-spacing: 0.4px; }
+  .tl-type { font-family: var(--mono); font-size: 7.2pt; font-weight: 700; color: var(--gold); text-transform: uppercase; letter-spacing: 1.4px; padding: 0.8mm 2.5mm; background: var(--gold-soft); border-radius: 20pt; border: 1px solid var(--border2); }
+  .tl-body { font-size: 9pt; color: var(--text2); line-height: 1.65; }
   .tl-body code { font-size: 8pt; }
 
   /* ── PILLS (IPLocate) ── */
-  .pill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin: 2mm 0 4mm 0; }
+  .pill-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 3mm 0 5mm 0; }
 
-  /* ── KILL CHAIN PROGRESSION ── */
-  .kc-track { display: flex; align-items: center; justify-content: space-between; margin: 3mm 0 5mm 0; gap: 0; }
-  .kc-step { display: flex; flex-direction: column; align-items: center; gap: 1.5mm; min-width: 14mm; flex-shrink: 0; }
-  .kc-dot { width: 7mm; height: 7mm; border-radius: 50%; background: var(--bg3, #E5E0D5); border: 1.5px solid var(--border); color: var(--text3); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8pt; font-weight: 700; }
-  .kc-step.done .kc-dot { background: linear-gradient(135deg, var(--red), var(--accent)); border-color: var(--red); color: #fff; }
-  .kc-label { font-family: var(--mono); font-size: 6.5pt; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; text-align: center; }
-  .kc-step.done .kc-label { color: var(--text); font-weight: 700; }
-  .kc-link { flex: 1; height: 2px; background: var(--border); margin: 0 -1mm; align-self: flex-start; margin-top: 3.5mm; }
-  .kc-link.done { background: var(--red); }
-  .pill { display: flex; align-items: center; gap: 2mm; font-family: var(--mono); font-size: 8pt; padding: 2mm 3mm; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 2mm; letter-spacing: 1px; text-transform: uppercase; }
-  .pill .ind { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
-  .pill.ok  { background: rgba(13,71,161,0.05); border-color: rgba(13,71,161,0.25); color: var(--blue); }
-  .pill.ok .ind  { background: var(--blue); }
-  .pill.danger { color: var(--red); border-color: rgba(198,40,40,0.30); background: rgba(198,40,40,0.05); }
-  .pill.danger .ind { background: var(--red2); }
+  /* ── KILL CHAIN — 8-cell dashboard widget (.kc-grid) ── */
+  .kc-track {
+    display: grid; grid-template-columns: repeat(8, 1fr);
+    gap: 2.5mm; margin: 4mm 0 5mm 0; padding: 0;
+    background: transparent; border: none;
+  }
+  .kc-step {
+    position: relative;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4mm 2mm 3mm 2mm;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 2mm;
+    min-width: 0;
+    opacity: 0.5;
+  }
+  .kc-step.done {
+    opacity: 1;
+    border-color: var(--gold);
+    background: var(--gold-soft);
+  }
+  .kc-step.done::after {
+    content: "✓"; position: absolute;
+    top: 1mm; right: 2mm;
+    color: var(--gold); font-size: 8pt; font-weight: 700;
+  }
+  .kc-dot {
+    font-family: var(--mono) !important;
+    font-size: 8pt; font-weight: 700;
+    color: var(--text3);
+    background: transparent; border: none;
+    width: auto; height: auto;
+    display: block; padding: 0;
+  }
+  .kc-step.done .kc-dot { color: var(--gold); }
+  .kc-label {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 7pt; font-weight: 700;
+    color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.4px; line-height: 1.1;
+    text-align: center;
+  }
+  .kc-step.done .kc-label { color: var(--gold); }
+  .kc-link { display: none; }
+  .pill { display: flex; align-items: center; gap: 2.5mm; font-family: var(--mono); font-size: 7.5pt; padding: 2.5mm 3.5mm; background: var(--surface); color: var(--text2); border: 1px solid var(--border); border-radius: var(--radius); letter-spacing: 0.8px; text-transform: uppercase; font-weight: 600; }
+  .pill .ind { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .pill.ok  { background: rgba(0,168,146,0.06); border-color: rgba(0,168,146,0.25); color: var(--teal); }
+  .pill.ok .ind  { background: var(--teal); }
+  .pill.danger { color: var(--red); border-color: rgba(184,31,49,0.30); background: rgba(184,31,49,0.05); }
+  .pill.danger .ind { background: var(--red); }
 
   /* ── LOG ROWS (appendix) ── */
-  .log-row { display: grid; grid-template-columns: 28mm 28mm 1fr; gap: 3mm; padding: 1.5mm 0; border-bottom: 1px solid var(--rule-soft); font-size: 7.5pt; }
+  .log-row { display: grid; grid-template-columns: 28mm 28mm 1fr; gap: 3mm; padding: 2mm 0; border-bottom: 1px solid var(--rule); font-size: 7.5pt; }
   .log-row .ts { font-family: var(--mono); color: var(--text3); }
-  .log-row .ty { font-family: var(--mono); color: var(--gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .log-row .ty { font-family: var(--mono); color: var(--gold); font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
   .log-row .dt { font-family: var(--mono); color: var(--text2); word-break: break-all; }
 
   /* ── REFERENCES ── */
   .ref-list { list-style: none; padding: 0; counter-reset: ref; }
-  .ref-list li { counter-increment: ref; padding: 2mm 0 2mm 10mm; text-indent: -10mm; font-size: 9pt; color: var(--text2); border-bottom: 1px dotted var(--rule-soft); }
+  .ref-list li { counter-increment: ref; padding: 3mm 0 3mm 10mm; text-indent: -10mm; font-size: 9pt; color: var(--text2); border-bottom: 1px dotted var(--rule); line-height: 1.6; }
+  .ref-list li:last-child { border-bottom: none; }
   .ref-list li::before { content: "[" counter(ref) "]"; display: inline-block; width: 8mm; font-family: var(--mono); font-weight: 700; color: var(--gold); margin-right: 2mm; }
+
+  /* ═══════ INTEGRITY CERTIFICATION CARDS (RFC 3161, green check) ═══════ */
+  .integrity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 4mm 0 5mm 0; }
+  .integrity-card {
+    background: var(--surface);
+    border: 1px solid rgba(0,168,146,0.35);
+    border-radius: var(--radius);
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .integrity-card::before {
+    content: ""; position: absolute; top: 0; left: 0; bottom: 0;
+    width: 2.5px; background: var(--teal);
+  }
+  .integrity-card-h {
+    font-family: var(--mono) !important;
+    font-size: 7.5pt; font-weight: 700;
+    color: var(--teal); letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 3mm 5mm 3mm 8mm;
+    background: rgba(0,168,146,0.04);
+    border-bottom: 1px solid rgba(0,168,146,0.18);
+  }
+  .integrity-rows { padding: 3mm 5mm 2mm 8mm; }
+  .integrity-row {
+    display: grid; grid-template-columns: 28mm 1fr;
+    padding: 1.8mm 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+    gap: 3mm;
+  }
+  .integrity-row:last-child { border-bottom: none; }
+  .integrity-key {
+    font-family: var(--mono) !important;
+    font-size: 6.8pt; color: var(--text3);
+    letter-spacing: 1.4px; text-transform: uppercase;
+    font-weight: 600;
+  }
+  .integrity-val {
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 9pt; color: var(--text);
+    font-weight: 600; line-height: 1.4;
+    word-break: break-all;
+  }
+  .integrity-val.mono {
+    font-family: var(--jbm) !important;
+    font-size: 8pt; font-weight: 500;
+    letter-spacing: 0;
+  }
+  .integrity-foot {
+    padding: 2.5mm 5mm 3mm 8mm;
+    font-family: 'Rajdhani',sans-serif !important;
+    font-size: 8.5pt; font-weight: 700;
+    color: var(--teal);
+    border-top: 1px solid rgba(0,168,146,0.18);
+    background: rgba(0,168,146,0.04);
+    letter-spacing: 0.2px;
+  }
 
   /* ── UTILITIES ── */
   .page-break { page-break-before: always; }
   .no-break { page-break-inside: avoid; }
   .mono { font-family: var(--mono); }
-  .muted { color: var(--text3); }
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
-  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; }
+  .muted { color: var(--text3); font-style: italic; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5mm; }
   .text-red { color: var(--red); }
   .text-gold { color: var(--gold); }
 </style>
@@ -300,86 +773,89 @@
 
 {# ═══ COVER ═══ #}
 <section class="cover">
-  <div class="cover-grid"></div>
-  <div class="cover-glow"></div>
   <div class="cover-inner">
-    <div class="cover-topbar">
-      <div><span class="brand">FORENHIVE</span><span style="margin-left:6mm;">// FORENSIC ENGINE v{{ engine_version | default("1.0") }}</span></div>
-      <div class="right">
-        <span><span class="live-dot"></span>SESSION CAPTURED</span>
-        <span>{{ session_start }}</span>
-      </div>
+
+    {# Logo top, centered #}
+    <div class="cv-logo">
+      <span class="cv-bolt">&#11041;</span>
+      <span class="cv-brand-name">ForenHive</span>
+      <span class="cv-brand-tag">SOC Forensic Platform v{{ engine_version | default("1.0") }}</span>
     </div>
 
-    <div class="cover-brand-line">
-      <span class="bolt">&#9889;</span>
-      <span class="name">FOREN<em>HIVE</em></span>
-      <span class="sub">Honeypot IDS</span>
-    </div>
+    {# Centered title in the middle #}
+    {% set _lvl = 'lvl-crit' if risk_score|default(0) >= 80 else ('lvl-high' if risk_score|default(0) >= 60 else ('lvl-med' if risk_score|default(0) >= 40 else 'lvl-low')) %}
+    <div class="cv-titleblock">
+      <div class="cv-eyebrow">Automated Forensic Dossier · Incident Report</div>
+      <h1 class="cv-title">SOC Incident<br><em>Forensic Report</em></h1>
+      <p class="cv-sub">
+        Single-session forensic analysis of an inbound connection captured by the
+        ForenHive honeypot cluster.
+      </p>
+      <div class="cv-scoreline {{ _lvl }}">
+        <span class="num">{{ risk_score }}<span> / 100</span></span>
+        <span class="sep"></span>
+        <span class="lvl-block">
+          <span class="lvl">{{ risk_level | default("INFO") }}</span>
+          <span class="lvl-cap">Composite risk level</span>
+        </span>
+      </div>
 
-    <div class="cover-eyebrow">Honeypot Forensic Analysis</div>
-    <h1 class="cover-title">SOC <em>Incident</em><br>Report</h1>
-    <p class="cover-subtitle">
-      Automated forensic dossier for a single inbound session captured by the
-      ForenHive honeypot cluster. Synthesizes session telemetry, threat-intel
-      enrichment, MITRE&nbsp;ATT&amp;CK mapping, malware triage and behavioral
-      profiling into a single chain-of-custody document.
-    </p>
-
-    <div class="cover-meta-grid">
-      <div class="cover-meta-cell">
-        <div class="cover-meta-label">Report ID</div>
-        <div class="cover-meta-value">{{ report_id }}</div>
-      </div>
-      <div class="cover-meta-cell">
-        <div class="cover-meta-label">Session</div>
-        <div class="cover-meta-value mono">{{ session_id }}</div>
-      </div>
-      <div class="cover-meta-cell">
-        <div class="cover-meta-label">Source IP</div>
-        <div class="cover-meta-value mono">{{ source_ip }}</div>
-      </div>
-      <div class="cover-meta-cell">
-        <div class="cover-meta-label">Honeypot</div>
-        <div class="cover-meta-value">{{ honeypot_type | default("Cowrie SSH") }}<br>
-          <span class="small">{{ protocol | default("SSH") | lower }}/{{ honeypot_port | default("22") }}</span>
+      {# At-a-glance key stats #}
+      <div class="cv-stats">
+        <div class="cv-stat">
+          <div class="cv-stat-val">{{ event_count | default(0) }}</div>
+          <div class="cv-stat-lbl">Events logged</div>
+        </div>
+        <div class="cv-stat">
+          <div class="cv-stat-val">{{ auth_attempts | default([]) | length }}</div>
+          <div class="cv-stat-lbl">Auth attempts</div>
+        </div>
+        <div class="cv-stat">
+          <div class="cv-stat-val">{{ mitre_techniques | default([]) | length }}</div>
+          <div class="cv-stat-lbl">MITRE techniques</div>
+        </div>
+        <div class="cv-stat">
+          <div class="cv-stat-val">{{ session_duration | default("N/A") }}</div>
+          <div class="cv-stat-lbl">Session duration</div>
         </div>
       </div>
     </div>
 
-    <div class="cover-verdict">
-      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
-        <div class="vbox-label">Verdict</div>
-        <div class="vbox-value">{{ verdict | default("Pending analysis") }}</div>
+    {# Meta footer — single thin strip 3×2 #}
+    <div class="cv-meta">
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Report ID</div>
+        <div class="cv-meta-val mono">{{ report_id }}</div>
       </div>
-      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
-        <div class="vbox-label">Risk Score</div>
-        <div class="vbox-value score">{{ risk_score }}<span class="max"> / 100</span></div>
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Session ID</div>
+        <div class="cv-meta-val mono">{{ session_id }}</div>
       </div>
-      <div class="vbox {% if risk_score >= 60 %}crit{% endif %}">
-        <div class="vbox-label">Classification</div>
-        <div class="vbox-value lvl">{{ risk_level | default("INFO") }}</div>
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Source IP</div>
+        <div class="cv-meta-val mono">{{ source_ip }}</div>
       </div>
-      <div class="vbox">
-        <div class="vbox-label">Confidence</div>
-        <div class="vbox-value">{{ risk_confidence | default("N/A") }}</div>
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Honeypot</div>
+        <div class="cv-meta-val">{{ honeypot_type | default("Cowrie") }} <span class="small">{{ protocol | default("SSH") | lower }}/{{ honeypot_port | default("22") }}</span></div>
+      </div>
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Generated</div>
+        <div class="cv-meta-val mono">{{ generated_at }}</div>
+      </div>
+      <div class="cv-meta-cell">
+        <div class="cv-meta-lbl">Classification</div>
+        <div class="cv-meta-val">{{ classification | default("TLP:AMBER") }}</div>
       </div>
     </div>
 
-    <div class="cover-footer">
-      <div>
-        Analyst: ForenHive Automated Engine v{{ engine_version | default("1.0") }}<br>
-        Generated: {{ generated_at }}
-      </div>
-      <div class="tlp-stamp">&#9889; {{ classification | default("TLP:AMBER") }}</div>
-    </div>
   </div>
 </section>
 
 {# ═══ TOC ═══ #}
 <section class="toc">
-  <div class="toc-heading">// Contents</div>
-  <h1 class="toc-title">Inside this <em>dossier</em></h1>
+  <div class="toc-heading">Report · Contents</div>
+  <h1 class="toc-title">Table of <em>Contents</em></h1>
   <div class="toc-cols">
     <div>
       <div class="toc-entry"><span class="toc-num">01</span><span class="toc-label">Executive Brief</span></div>
@@ -404,7 +880,9 @@
       <div class="toc-entry"><span class="toc-num">09</span><span class="toc-label">Recommendations</span></div>
       <div class="toc-entry sub"><span class="toc-num">9.1</span><span class="toc-label">AI-Generated (Mistral 7B)</span></div>
       <div class="toc-entry sub"><span class="toc-num">9.2</span><span class="toc-label">Deterministic Rules</span></div>
-      <div class="toc-entry"><span class="toc-num">10</span><span class="toc-label">References</span></div>
+      <div class="toc-entry"><span class="toc-num">10</span><span class="toc-label">Conclusion</span></div>
+      <div class="toc-entry sub"><span class="toc-num">10.1</span><span class="toc-label">Evidence Hash Chain</span></div>
+      <div class="toc-entry"><span class="toc-num">11</span><span class="toc-label">References</span></div>
     </div>
   </div>
 </section>
@@ -499,21 +977,29 @@
 
   <p>
     The MITRE ATT&amp;CK mapping uses a <strong>hybrid</strong> approach:
-    <strong>15 deterministic rules</strong> map observed commands and protocol behaviour to
-    technique IDs, supplemented by an LLM-generated narrative (Mistral 7B, temperature 0.3,
-    max 80 tokens) that contextualizes the attack chain without introducing unverified
-    technique IDs.<sup class="ref">3</sup>
+    <strong>deterministic rules</strong> map observed commands and protocol behaviour to
+    technique IDs (always correct, no hallucination), supplemented by an LLM-generated
+    narrative (Mistral 7B, temperature 0.1, max 80 tokens) that contextualizes the attack
+    chain without introducing unverified technique IDs.<sup class="ref">3</sup>
   </p>
 
-  <h2>Risk scoring model &#8212; 6 signals</h2>
+  <h2>Risk scoring model &#8212; 9 signals (max 100)</h2>
+  <p>
+    Signals are grouped under an FBI BAU criminological taxonomy &#8212;
+    <strong>WHO</strong> (attacker identity), <strong>WHAT</strong> (intent &amp; impact)
+    and <strong>HOW</strong> (capability). Each signal is deterministic and evidence-backed.
+  </p>
   <table class="tbl-zebra">
-    <tr><th style="width:50mm">Signal</th><th style="width:22mm">Max pts</th><th>Description</th></tr>
-    <tr><td>IP Reputation</td><td class="mono">25</td><td>AbuseIPDB abuse confidence (thresholded). Skipped for private IPs.</td></tr>
-    <tr><td>Compromise Confirmed</td><td class="mono">25</td><td>Binary &#8212; successful auth or exploit activation on any honeypot.</td></tr>
-    <tr><td>Brute Force / Automation</td><td class="mono">20</td><td>Aggregate login volume and velocity. Bonus for targeted wordlists.</td></tr>
-    <tr><td>Malware Detected</td><td class="mono">15</td><td>YARA severity (CRITICAL / HIGH / match) + VT detection count.</td></tr>
-    <tr><td>Anonymization / Evasion</td><td class="mono">10</td><td>Tor / VPN / proxy usage + critical-port targeting (conditional).</td></tr>
-    <tr><td>Attack Sophistication</td><td class="mono">5</td><td>Kill-chain depth (0-8 stages) + multi-honeypot coordination bonus.</td></tr>
+    <tr><th style="width:48mm">Signal</th><th style="width:16mm">Max</th><th style="width:18mm">Class</th><th>Description</th></tr>
+    <tr><td>IP Reputation</td><td class="mono">15</td><td>WHO</td><td>AbuseIPDB abuse confidence (thresholded). Skipped for private IPs.</td></tr>
+    <tr><td>Anonymization / Evasion</td><td class="mono">10</td><td>WHO</td><td>Tor / VPN / proxy usage + datacenter/hosting origin.</td></tr>
+    <tr><td>Threat History</td><td class="mono">8</td><td>WHO</td><td>Prior sessions / recidivism for this source IP.</td></tr>
+    <tr><td>Intent &amp; Volume</td><td class="mono">10</td><td>WHAT</td><td>Login volume &amp; velocity; targeted wordlist signals.</td></tr>
+    <tr><td>Compromise Depth</td><td class="mono">15</td><td>WHAT</td><td>Successful auth, post-access commands, honeytoken access.</td></tr>
+    <tr><td>Exfiltration</td><td class="mono">8</td><td>WHAT</td><td>Credential / sensitive-file reads and outbound transfer.</td></tr>
+    <tr><td>Lateral Movement</td><td class="mono">10</td><td>WHAT</td><td>Pivot attempts, multi-honeypot / multi-service activity.</td></tr>
+    <tr><td>Malware</td><td class="mono">12</td><td>HOW</td><td>YARA severity + VirusTotal detection count on dropped binaries.</td></tr>
+    <tr><td>MITRE Sophistication</td><td class="mono">12</td><td>HOW</td><td>Kill-chain depth &amp; breadth of distinct ATT&amp;CK techniques.</td></tr>
   </table>
 </section>
 
@@ -675,7 +1161,7 @@
 
   {% if mitre_narrative is defined and mitre_narrative %}
   <div class="callout yellow">
-    <strong>&#9889; Attack-chain narrative</strong> <span class="muted mono" style="font-size:7.5pt">(Mistral 7B &middot; T=0.3)</span><br>
+    <strong>&#9889; Attack-chain narrative</strong> <span class="muted mono" style="font-size:7.5pt">(Mistral 7B &middot; T=0.1 &middot; local)</span><br>
     {{ mitre_narrative }}
   </div>
   {% endif %}
@@ -694,15 +1180,15 @@
   </table>
   {% else %}
   <div class="callout yellow">
-    <strong>YARA :</strong> Aucune signature ne correspond au ruleset actuel ({{ yara_rules_used | default("10") }} r&egrave;gles).
-    Cela n&rsquo;exclut pas un malware connu &#8212; le ruleset peut manquer de signatures sp&eacute;cifiques &agrave; cette famille.<sup class="ref">2</sup>
+    <strong>YARA:</strong> No signature matched the current ruleset{% if yara_rules_used is defined %} ({{ yara_rules_used }} rules){% endif %}.
+    This does not rule out known malware &#8212; the ruleset may lack signatures specific to this family.<sup class="ref">2</sup>
   </div>
   {% endif %}
 
   {% if dropped_files is defined and dropped_files | length > 0 %}
-  <h3>Fichiers captur&eacute;s</h3>
+  <h3>Captured files</h3>
   <table>
-    <tr><th>Fichier</th><th>SHA-256</th><th>YARA hits</th><th>VT D&eacute;tections</th></tr>
+    <tr><th>File</th><th>SHA-256</th><th>YARA hits</th><th>VT detections</th></tr>
     {% for f in dropped_files %}
     <tr>
       <td class="mono"><code>{{ f.filename }}</code></td>
@@ -717,23 +1203,23 @@
   <h3>VirusTotal</h3>
   {% if not vt_available %}
   <div class="callout yellow">
-    <strong>&#9888; Quota VirusTotal &eacute;puis&eacute;</strong> &#8212; Le r&eacute;sultat VT est indisponible pour cette session (4 req/jour &#8212; tier gratuit).
+    <strong>&#9888; VirusTotal quota exhausted</strong> &#8212; VT lookup unavailable for this session (free tier &middot; 4 requests/day).
   </div>
   {% elif dropped_files is defined and dropped_files | length > 0 %}
     {% if vt_malicious is defined and vt_malicious > 0 %}
     <div class="callout red">
-      <strong>Malware d&eacute;tect&eacute; :</strong> {{ vt_malicious }} moteur(s) AV ont signal&eacute; ce fichier.
-      {% if vt_family %} Famille : <strong>{{ vt_family }}</strong>.{% endif %}
-      {% if vt_top_engines %} Top engines : {{ vt_top_engines | join(', ') }}.{% endif %}
+      <strong>Malware detected:</strong> {{ vt_malicious }} AV engine{{ "s" if vt_malicious > 1 else "" }} flagged this file.
+      {% if vt_family %} Family: <strong>{{ vt_family }}</strong>.{% endif %}
+      {% if vt_top_engines %} Top engines: {{ vt_top_engines | join(', ') }}.{% endif %}
     </div>
     {% else %}
     <div class="callout">
-      <strong>VirusTotal :</strong> Aucun moteur AV n&rsquo;a signal&eacute; le fichier captur&eacute; ({{ dropped_files | length }} fichier(s) analys&eacute;(s)).
+      <strong>VirusTotal:</strong> No AV engine flagged the captured file ({{ dropped_files | length }} file{{ "s" if dropped_files | length > 1 else "" }} analysed).
     </div>
     {% endif %}
   {% else %}
   <div class="callout">
-    <strong>VirusTotal :</strong> Aucun fichier captur&eacute; durant cette session &#8212; l&rsquo;analyse VT par hash SHA-256 n&rsquo;est pas applicable.
+    <strong>VirusTotal:</strong> No file captured during this session &#8212; SHA-256 hash lookup not applicable.
   </div>
   {% endif %}
 
@@ -748,7 +1234,7 @@
     </td></tr>
     <tr><th>Sessions correlated</th><td class="mono">{{ sessions_count | default(1) }}</td></tr>
     <tr><th>Scoring method</th><td>
-      Unified 6-signal model (max 100). Each honeypot contributes evidence to one or
+      Unified 9-signal model (max 100). Each honeypot contributes evidence to one or
       more signals: <strong>Cowrie</strong> → compromise &amp; brute force (auth attempts),
       <strong>Dionaea</strong> → malware (YARA on captured binaries) &amp; automation (connections),
       <strong>Galah</strong> → exploitation patterns &amp; automation (HTTP volume).
@@ -758,52 +1244,45 @@
   <p class="muted">No honeypot session metadata available for breakdown.</p>
   {% endif %}
 
-  <h3>Composite gauge</h3>
-  <div class="risk-panel no-break">
-    <div class="gauge">
-      <svg viewBox="0 0 100 100" aria-hidden="true">
-        <circle cx="50" cy="50" r="42" fill="none" stroke="#E5E0D5" stroke-width="7"/>
-        <circle cx="50" cy="50" r="42" fill="none" stroke="url(#rg)" stroke-width="7"
-                stroke-linecap="round"
-                stroke-dasharray="{{ (risk_score / 100 * 263.9) | round(1) }} 263.9"/>
-        <defs>
-          <linearGradient id="rg" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stop-color="#9B1B1B"/>
-            <stop offset="100%" stop-color="#C9962E"/>
-          </linearGradient>
-        </defs>
-      </svg>
-      <div class="gauge-readout">
-        <span class="num">{{ risk_score }}</span>
-        <span class="denom">/ 100</span>
-        <span class="lvl">{{ risk_level }}</span>
-      </div>
+  <h3>Composite risk score</h3>
+  <div class="score-card no-break {% if risk_score|default(0) >= 80 %}lvl-crit{% elif risk_score|default(0) >= 60 %}lvl-high{% elif risk_score|default(0) >= 40 %}lvl-med{% else %}lvl-low{% endif %}">
+    <div class="score-headline">
+      <div class="score-num">{{ risk_score }}<span class="score-num-max">/ 100</span></div>
+      <div class="score-num-level">{{ risk_level | default("INFO") }}</div>
     </div>
-    <dl class="risk-meta">
-      <dt>Verdict</dt><dd>{{ verdict | default("Pending analysis") }}</dd>
-      <dt>Confidence</dt><dd>{{ risk_confidence | default("N/A") }}</dd>
-      <dt>Risk Level</dt><dd class="text-red" style="font-weight:700">{{ risk_level | default("INFO") }}</dd>
+    <div class="score-card-meta">
+      <div class="score-meta-row">
+        <span class="score-meta-key">Verdict</span>
+        <span class="score-meta-val">{{ verdict | default("Pending analysis") }}</span>
+      </div>
+      <div class="score-meta-row">
+        <span class="score-meta-key">Confidence</span>
+        <span class="score-meta-val">{{ risk_confidence | default("N/A") }}</span>
+      </div>
+      <div class="score-meta-row">
+        <span class="score-meta-key">Engine</span>
+        <span class="score-meta-val">ForenHive Risk Engine v{{ engine_version | default("1.0") }} · deterministic signal model</span>
+      </div>
       {% if risk_warnings is defined and risk_warnings | length > 0 %}
-      <dt>Warnings</dt><dd>{{ risk_warnings | join(' &middot; ') }}</dd>
+      <div class="score-meta-row">
+        <span class="score-meta-key">Warnings</span>
+        <span class="score-meta-val">{{ risk_warnings | join(' · ') }}</span>
+      </div>
       {% endif %}
-    </dl>
+    </div>
   </div>
 
   <h3>Signal breakdown</h3>
   {% if signal_breakdown is defined and signal_breakdown | length > 0 %}
-  <div class="no-break">
+  <div class="signal-list no-break">
     {% for sig in signal_breakdown %}
-    <div class="signal-row">
+    {% set _ratio = (sig.points / sig.max_points) if sig.max_points and sig.max_points > 0 else 0 %}
+    {% set _lvl = 'lvl-zero' if sig.skipped or sig.points == 0 else ('lvl-high' if _ratio >= 0.7 else ('lvl-med' if _ratio >= 0.4 else 'lvl-low')) %}
+    <div class="signal-row {{ _lvl }}{% if sig.skipped %} skipped{% endif %}">
+      <div class="signal-dot"></div>
       <div class="signal-name">{{ sig.name }}{% if sig.value %}<span class="sub">{{ sig.value }}</span>{% endif %}</div>
-      <div class="signal-track">
-        <div class="signal-fill
-          {%- if sig.points == 0 %} c-zero
-          {%- elif sig.max_points > 0 and (sig.points / sig.max_points) >= 0.7 %} c-high
-          {%- elif sig.max_points > 0 and (sig.points / sig.max_points) >= 0.4 %} c-med
-          {%- else %} c-low{%- endif %}"
-             style="width:{% if sig.max_points > 0 %}{{ (sig.points / sig.max_points * 100) | round }}{% else %}0{% endif %}%"></div>
-      </div>
-      <div class="signal-pts">{{ sig.points }}<span class="max">/{{ sig.max_points }}</span></div>
+      <div class="signal-pct">{% if sig.skipped %}skipped{% elif sig.max_points and sig.max_points > 0 %}{{ (_ratio * 100) | round }}% utilised{% else %}—{% endif %}</div>
+      <div class="signal-pts">{% if sig.skipped %}N/A{% else %}{{ sig.points }}<span class="max"> / {{ sig.max_points }}</span>{% endif %}</div>
     </div>
     {% endfor %}
   </div>
@@ -830,25 +1309,27 @@
   </div>
 
   {% if profile is defined and profile %}
-  <div class="two-col">
-    <div>
-      <table class="kv">
-        <tr><th colspan="2" style="background:var(--gold);color:var(--surface);font-family:var(--mono);text-transform:uppercase;letter-spacing:1.5px;font-size:8pt;text-align:center">Profile summary</th></tr>
-        <tr><th>Sophistication</th><td>{{ profile.sophistication | default("N/A") }}</td></tr>
-        <tr><th>Confidence</th><td>{{ profile.confidence | default("N/A") }}%</td></tr>
-        <tr><th>Objective</th><td>{{ profile.objective | default("N/A") }}</td></tr>
-        <tr><th>Organized score</th><td>{{ profile.organized_score | default("N/A") }} / 10</td></tr>
-        {% if profile.persistence %}<tr><th>Persistence</th><td>{{ profile.persistence }}</td></tr>{% endif %}
-        {% if profile.operator_type %}<tr><th>Operator type</th><td>{{ profile.operator_type }}</td></tr>{% endif %}
-      </table>
+  <div class="profile-grid">
+    <div class="profile-card">
+      <div class="profile-card-h">Profile summary</div>
+      <div class="profile-rows">
+        <div class="profile-row"><span class="profile-key">Sophistication</span><span class="profile-val">{{ profile.sophistication | default("N/A") }}</span></div>
+        <div class="profile-row"><span class="profile-key">Confidence</span><span class="profile-val">{{ profile.confidence | default("N/A") }}%</span></div>
+        <div class="profile-row"><span class="profile-key">Objective</span><span class="profile-val">{{ profile.objective | default("N/A") }}</span></div>
+        <div class="profile-row"><span class="profile-key">Organized score</span><span class="profile-val">{{ profile.organized_score | default("N/A") }} <span class="profile-val-max">/ 10</span></span></div>
+        {% if profile.persistence %}<div class="profile-row"><span class="profile-key">Persistence</span><span class="profile-val">{{ profile.persistence }}</span></div>{% endif %}
+        {% if profile.operator_type %}<div class="profile-row"><span class="profile-key">Operator type</span><span class="profile-val">{{ profile.operator_type }}</span></div>{% endif %}
+      </div>
     </div>
-    <div>
-      <table>
-        <tr><th>Behavioral traits</th></tr>
+    <div class="profile-card">
+      <div class="profile-card-h">Behavioral traits</div>
+      <ul class="profile-traits">
         {% for trait in profile.behavioral_traits | default([]) %}
-        <tr><td>{{ trait }}</td></tr>
+        <li>{{ trait }}</li>
+        {% else %}
+        <li class="muted">No behavioral traits identified.</li>
         {% endfor %}
-      </table>
+      </ul>
     </div>
   </div>
   {% if profile.detective_narrative is defined and profile.detective_narrative %}
@@ -904,8 +1385,8 @@
   </div>
   <p>
     All evidence artifacts are integrity-protected using SHA-256 hashing.
-    {% if coc_timestamp_authority is defined and coc_timestamp_authority %}
-      Timestamps anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>
+    {% if custody_ok %}Timestamps are anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>
+    {% else %}RFC&nbsp;3161 timestamping is supported but was not executed for this report &#8212; the SHA-256 hashes below are verifiable, but no TSA-signed token is attached.<sup class="ref">5</sup>
     {% endif %}
   </p>
   {% if chain_of_custody is defined and chain_of_custody | length > 0 %}
@@ -968,16 +1449,109 @@
   {% endif %}
 </section>
 
-{# ═══ 10 REFERENCES ═══ #}
+{# ═══ 10 CONCLUSION ═══ #}
 <section class="section">
   <div class="section-bar">
     <span class="section-num">10</span>
+    <h1 class="section-title">Conclusion</h1>
+    <span class="section-tag">~/wrap_up</span>
+  </div>
+  <p>
+    The session <code>{{ session_id }}</code> originating from <code>{{ source_ip }}</code>
+    ({{ geo_city | default("unknown city") }}, {{ geo_country | default("unknown country") }} ·
+    AS{{ asn | default("?") }}) has been classified as
+    <strong>{{ risk_level | default("INFO") }}</strong>
+    with a composite risk score of <strong>{{ risk_score }} / 100</strong>
+    {% if risk_confidence is defined and risk_confidence %}(confidence: {{ risk_confidence }}){% endif %}.
+    {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
+    The analysis identified <strong>{{ mitre_techniques | length }}</strong> MITRE ATT&amp;CK
+    technique{{ "s" if mitre_techniques | length > 1 else "" }} across the kill-chain
+    {% if kc_reached is defined %}(stage {{ kc_reached }}/{{ kc_stages_labels | default(['','','','','','','',''])|length }}){% endif %}.
+    {% endif %}
+    {% if yara_matches is defined and yara_matches | length > 0 %}
+    YARA flagged <strong>{{ yara_matches | length }}</strong> signature
+    {{ "matches" if yara_matches | length > 1 else "match" }}.
+    {% endif %}
+    {% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %}
+    VirusTotal returned <strong>{{ vt_malicious }}/{{ vt_total | default("?") }}</strong> AV detections.
+    {% endif %}
+  </p>
+  {% if bottom_line is defined and bottom_line %}
+  <p>{{ bottom_line }}</p>
+  {% endif %}
+  <p>
+    All evidentiary artifacts are integrity-protected by SHA-256 hashing.
+    {% if custody_ok %}A signed RFC&nbsp;3161 timestamp token from <code>{{ coc_timestamp_authority }}</code> is attached.
+    {% else %}RFC&nbsp;3161 timestamping is supported by the platform but was <em>not</em> executed for this report
+    (offline mode or TSA unreachable). Hash chain alone is shown below.
+    {% endif %}
+  </p>
+
+  {# ── Integrity certification — honest: SHA-256 real, TSA only if signed ── #}
+  <h2>Integrity certification · evidence hash chain</h2>
+  <div class="integrity-grid no-break">
+    <div class="integrity-card">
+      <div class="integrity-card-h">Log integrity</div>
+      <div class="integrity-rows">
+        <div class="integrity-row">
+          <span class="integrity-key">SHA-256</span>
+          <span class="integrity-val mono">{% if chain_of_custody is defined and chain_of_custody | length > 0 and chain_of_custody[0].sha256 %}{{ chain_of_custody[0].sha256[:32] }}…{% else %}n/a{% endif %}</span>
+        </div>
+        <div class="integrity-row">
+          <span class="integrity-key">Source</span>
+          <span class="integrity-val">{% if chain_of_custody is defined and chain_of_custody | length > 0 %}{{ chain_of_custody[0].artifact }}{% else %}Session JSON snapshot{% endif %}</span>
+        </div>
+        <div class="integrity-row">
+          <span class="integrity-key">Session start</span>
+          <span class="integrity-val mono">{% if chain_of_custody is defined and chain_of_custody | length > 0 %}{{ chain_of_custody[0].timestamp }}{% else %}{{ generated_at }}{% endif %}</span>
+        </div>
+        {% if custody_ok %}
+        <div class="integrity-row">
+          <span class="integrity-key">RFC 3161 TSA</span>
+          <span class="integrity-val">{{ coc_timestamp_authority }} &middot; signed token attached</span>
+        </div>
+        {% endif %}
+      </div>
+      <div class="integrity-foot">
+        {% if custody_ok %}&#10003;&nbsp; Hash verified · TSA-signed timestamp{% else %}&#10003;&nbsp; SHA-256 verifiable · TSA timestamp not attached{% endif %}
+      </div>
+    </div>
+
+    <div class="integrity-card">
+      <div class="integrity-card-h">Report PDF integrity</div>
+      <div class="integrity-rows">
+        <div class="integrity-row">
+          <span class="integrity-key">Report ID</span>
+          <span class="integrity-val mono">{{ report_id }}</span>
+        </div>
+        <div class="integrity-row">
+          <span class="integrity-key">Generated</span>
+          <span class="integrity-val mono">{{ generated_at }}</span>
+        </div>
+        <div class="integrity-row">
+          <span class="integrity-key">Renderer</span>
+          <span class="integrity-val">WeasyPrint &middot; ForenHive Engine v{{ engine_version | default("1.0") }}</span>
+        </div>
+        <div class="integrity-row">
+          <span class="integrity-key">PDF SHA-256</span>
+          <span class="integrity-val mono">attached as <code>X-PDF-SHA256</code> response header</span>
+        </div>
+      </div>
+      <div class="integrity-foot">✓&nbsp; Tamper-resistant · post-generation SHA-256 attached</div>
+    </div>
+  </div>
+</section>
+
+{# ═══ 11 REFERENCES ═══ #}
+<section class="section">
+  <div class="section-bar">
+    <span class="section-num">11</span>
     <h1 class="section-title">References</h1>
     <span class="section-tag">~/refs</span>
   </div>
   <ol class="ref-list">
     <li>AbuseIPDB. &#8220;IP Address Lookup &#8212; {{ source_ip }}.&#8221; <em>abuseipdb.com/check/{{ source_ip }}</em>. Accessed {{ generated_at[:10] | default("2026") }}.</li>
-    <li>US-CERT. &#8220;Alert TA17-132A: Indicators Associated With WannaCry Ransomware.&#8221; <em>cisa.gov</em>. Published May 2017.</li>
+    <li>{% if malware_family is defined and malware_family %}Malware family classification &#8212; <strong>{{ malware_family }}</strong>. Derived from YARA ruleset{% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %} and VirusTotal multi-engine detections ({{ vt_malicious }}/{{ vt_total | default("?") }}){% endif %}.{% else %}Malware triage methodology &#8212; YARA signature scanning &amp; VirusTotal v3 SHA-256 hash lookup. No known family matched for this session.{% endif %}</li>
     <li>MITRE ATT&amp;CK. &#8220;Enterprise Techniques.&#8221; <em>attack.mitre.org/techniques/enterprise</em>. {% for t in mitre_techniques | default([]) %}{{ t.tid }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
     <li>Zatyko, K. &amp; Bay, J. (2014). Turvey, B. (2011). <em>Criminal Profiling: BEA</em>. Ressler &amp; Douglas (1988). Canter, D. (2004).</li>
     <li>FreeTSA. &#8220;RFC 3161 Time-Stamp Authority.&#8221; <em>freetsa.org</em>.</li>

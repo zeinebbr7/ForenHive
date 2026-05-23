@@ -162,6 +162,13 @@
 .lnd-stamp-sha{background:rgba(140,26,43,0.10);color:var(--gold);border:1px solid var(--border2)}
 .lnd-stamp-stix{background:rgba(26,79,187,0.10);color:var(--blue2);border:1px solid rgba(26,79,187,0.25)}
 .lnd-stamp-pdf{background:rgba(201,61,85,0.10);color:var(--red2);border:1px solid rgba(201,61,85,0.25)}
+.lnd-report-section-sub{font-weight:400;color:var(--text3);letter-spacing:.04em;text-transform:none}
+.lnd-report-section-title-lead{color:#b06f12}
+[data-theme="light"] .lnd-report-section-title-lead{color:#8a5200}
+.lnd-report-section-sub-lead{color:#b06f12}
+[data-theme="light"] .lnd-report-section-sub-lead{color:#8a5200}
+.lnd-report-note{font-size:9px;color:var(--text3);font-weight:400}
+.lnd-report-ts{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3);margin-top:6px;padding-bottom:4px}
 
 /* ALERT CARDS */
 .lnd-alert-card{background:var(--surface);border:1px solid var(--border2);border-radius:10px;overflow:hidden}

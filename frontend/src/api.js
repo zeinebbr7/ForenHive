@@ -131,12 +131,12 @@ const api = {
   /* ─── forensic PDF reports (Sprint 4) ─── */
   forensicSessions(limit = 50) { return this._call('/api/reports/forensic/sessions?limit=' + limit); },
   forensicSessionEnrichment(sid) { return this._call('/api/reports/forensic/sessions/' + encodeURIComponent(sid) + '/enrichment'); },
-  forensicReportPreviewUrl(sid) {
-    return this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/preview';
+  forensicReportPreviewUrl(sid, lang = 'en') {
+    return this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/preview?lang=' + encodeURIComponent(lang);
   },
-  async forensicReportDownload(sid) {
+  async forensicReportDownload(sid, lang = 'en') {
     const tok = this.token();
-    const res = await fetch(this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/generate', {
+    const res = await fetch(this.base + '/api/reports/forensic/' + encodeURIComponent(sid) + '/generate?lang=' + encodeURIComponent(lang), {
       method: 'POST',
       headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
     });

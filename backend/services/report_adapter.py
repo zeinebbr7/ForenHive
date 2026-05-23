@@ -1,11 +1,19 @@
 """
-Adapter between risk_score_optimized output and report template data shapes.
+Adapter between forensic-engine v2.0.0 risk_score output and report template data shapes.
 
-Scorer outputs:
-    {"reputation": {"points": 25, "max": 25, "label": "...", "detail": "..."}, ...}
+Scorer outputs (signal_breakdown JSONB from ip_risk_scores / forensic_sessions):
+    {"reputation":          {"points": 11, "max": 15, "label": "...", "detail": "..."},
+     "anonymization":       {"points": 10, "max": 10, ...},
+     "threat_history":      {"points":  8, "max":  8, ...},
+     "intent_volume":       {"points":  6, "max": 10, ...},
+     "compromise_depth":    {"points": 12, "max": 15, ...},
+     "exfiltration":        {"points":  4, "max":  8, ...},
+     "lateral_movement":    {"points":  6, "max": 10, ...},
+     "malware":             {"points":  6, "max": 12, ...},
+     "mitre_sophistication":{"points":  8, "max": 12, ...}}
 
-Report template expects:
-    [{"name": "IP Reputation", "points": 25, "max_points": 25}, ...]
+Report template (report.html / forenhive_rapport_v2.html) expects:
+    [{"name": "IP Reputation", "points": 11, "max_points": 15, "detail": "..."}, ...]
 """
 
 from typing import Dict, List

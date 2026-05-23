@@ -287,7 +287,7 @@
           </div>
           <div class="rc-hero-r">
             <div class="rc-risk-big" style="color:${riskColor(rs)}">${rs}</div>
-            <div class="rc-risk-lbl">Risk · ${esc(s.risk_level || (rs >= 80 ? 'CRITICAL' : rs >= 50 ? 'HIGH' : rs >= 20 ? 'MEDIUM' : 'LOW'))}</div>
+            <div class="rc-risk-lbl">Risk · ${esc(s.risk_level || (rs >= 70 ? 'CRITICAL' : rs >= 45 ? 'HIGH' : rs >= 25 ? 'MEDIUM' : rs >= 10 ? 'LOW' : 'INFO'))}</div>
           </div>
         </div>
 

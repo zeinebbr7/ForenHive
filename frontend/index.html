@@ -6,8 +6,12 @@
   <title>ForenHive — SOC Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Non-blocking external CSS: load via "print" media then swap to "all"
+       on load. Keeps the app rendering even if a CDN is slow or offline. -->
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Sora:wght@300;400;500;600;700&display=swap" />
+  <link rel="stylesheet" media="print" onload="this.media='all'"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script>
     (function(){ const t = localStorage.getItem('fh.theme') || 'dark'; document.documentElement.setAttribute('data-theme', t); })();
   </script>
@@ -29,7 +33,57 @@
 </head>
 <body>
   <div class="grid-bg"></div>
-  <div id="root"></div>
+  <div id="root">
+    <noscript>
+      <div style="padding:40px;color:#C93D55;font-family:monospace">
+        JavaScript is disabled. ForenHive requires JS to run.
+      </div>
+    </noscript>
+    <div id="fh-boot-diag" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:monospace;color:#9aa4b7;background:#0e1117">
+      <div style="font-size:13px;letter-spacing:.5px">ForenHive&nbsp;·&nbsp;booting&hellip;</div>
+      <div id="fh-boot-line" style="font-size:11px;margin-top:8px;color:#5a6478">initialising</div>
+    </div>
+  </div>
+  <script>
+    // Watchdog: if React hasn't taken over within 5 s, show network diagnostics
+    // directly on the page so we don't need DevTools to see what's failing.
+    (function () {
+      var line = document.getElementById('fh-boot-line');
+      var t0 = performance.now();
+      function tick(msg) { if (line) line.textContent = msg; }
+      tick('loading bundle…');
+      window.__fhBootWatchdog = setTimeout(async function () {
+        var probes = [];
+        async function probe(label, url) {
+          var t = performance.now();
+          try {
+            var r = await fetch(url, { cache: 'no-store' });
+            probes.push(label + ' → ' + r.status + ' (' + Math.round(performance.now() - t) + ' ms)');
+          } catch (e) {
+            probes.push(label + ' → ERROR: ' + (e && e.message ? e.message : String(e)));
+          }
+        }
+        await probe('GET /',                   '/');
+        await probe('GET /api/health',         '/api/health');
+        await probe('GET main bundle',         document.querySelector('script[type=module]').src);
+        var diag = document.getElementById('fh-boot-diag');
+        if (diag) {
+          diag.innerHTML =
+            '<div style="font-family:monospace;color:#e0e6f0;background:#0e1117;padding:40px;max-width:760px;font-size:12px;line-height:1.6">' +
+              '<div style="color:#ff9933;font-size:14px;margin-bottom:14px">⚠ React did not mount within 5 s.</div>' +
+              '<div style="color:#9aa4b7;margin-bottom:8px">Network probes:</div>' +
+              '<div style="background:#070a12;border:1px solid #1e2538;padding:14px;border-radius:6px;white-space:pre-wrap">' +
+              probes.join('\n') +
+              '</div>' +
+              '<div style="color:#5a6478;margin-top:14px">User-Agent: ' + navigator.userAgent + '</div>' +
+              '<div style="color:#5a6478">Elapsed: ' + Math.round(performance.now() - t0) + ' ms</div>' +
+              '<div style="color:#5a6478;margin-top:8px">If you see this, open DevTools (F12) → Console and copy any red error messages.</div>' +
+            '</div>';
+        }
+      }, 5000);
+    })();
+  </script>
+  <!-- Vite injects the production bundle here at build time -->
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

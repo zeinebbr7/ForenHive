@@ -57,18 +57,20 @@ const S = {
   paramDivider: { borderTop:'1px solid var(--border)', marginTop:'14px', paddingTop:'14px' },
 };
 
+// Thresholds mirror forensic-engine/risk_thresholds.py v2.0.0 (70/45/25/10).
 function riskColor(rs) {
-  if (rs >= 80) return 'var(--red2)';
-  if (rs >= 50) return 'var(--gold)';
-  if (rs >= 20) return '#a98a3a';
+  if (rs >= 70) return 'var(--red2)';
+  if (rs >= 45) return 'var(--gold)';
+  if (rs >= 25) return '#a98a3a';
   return 'var(--text3)';
 }
 
 function riskLabel(rs) {
-  if (rs >= 80) return 'CRITICAL';
-  if (rs >= 50) return 'HIGH';
-  if (rs >= 20) return 'MEDIUM';
-  return 'LOW';
+  if (rs >= 70) return 'CRITICAL';
+  if (rs >= 45) return 'HIGH';
+  if (rs >= 25) return 'MEDIUM';
+  if (rs >= 10) return 'LOW';
+  return 'INFO';
 }
 
 function attackPath(s) {

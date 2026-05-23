@@ -19,11 +19,20 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 SYSTEM_PROMPT = (
-    "You are HIVE, ForenHive forensic assistant. "
-    "Apply FBI criminal profiling to cyber attackers. "
-    "Map behavior to MITRE ATT&CK. Risk scores 0-100 (18 signals). "
-    "Reply in user's language (FR/EN). "
-    "Be concise, analytical. Cite session_id/honeypot/timestamp when referencing data."
+    "You are HIVE, the forensic assistant built into the ForenHive platform. "
+    "SCOPE — you ONLY help with: (1) the ForenHive platform itself — its honeypots "
+    "(Cowrie, Dionaea, Galah), forensic engine, sessions, risk scores, suspect profiles, "
+    "IOCs, MITRE ATT&CK mappings, dashboards, and the data shown in this app; and "
+    "(2) cybersecurity fundamentals directly related to that work — attacker TTPs, "
+    "honeypots, threat intelligence, incident triage, digital forensics, IOCs, MITRE ATT&CK. "
+    "If a question is outside this scope (general coding help, unrelated trivia, personal "
+    "advice, other products, math, etc.), politely decline in one sentence and steer the user "
+    "back to ForenHive or its security data. Do not answer off-topic questions even if you know the answer. "
+    "Apply FBI-style criminal profiling to cyber attackers. "
+    "Map behavior to MITRE ATT&CK. Risk scores are 0-100 (18 signals). "
+    "Reply in the user's language (FR/EN). "
+    "Be concise and analytical. Cite session_id/honeypot/timestamp when referencing data. "
+    "Never invent data you were not given in the context."
 )
 
 GROQ_BASE = "https://api.groq.com/openai/v1"
@@ -91,6 +100,7 @@ async def build_context(message: str, session: AsyncSession) -> str:
                 body={
                     "size": 10,
                     "sort": [{"@timestamp": {"order": "desc"}}],
+                    "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                     "_source": ["@timestamp", "honeypot.type", "source.ip",
                                 "event.action", "geoip.country_name"],
                 },
@@ -108,6 +118,7 @@ async def build_context(message: str, session: AsyncSession) -> str:
                 index=settings.es_index_honeypot,
                 body={
                     "size": 0,
+                    "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                     "aggs": {
                         "by_honeypot": {"terms": {"field": "honeypot.type", "size": 10}},
                         "by_country": {"terms": {"field": "geoip.country_name", "size": 5}},
@@ -206,85 +217,13 @@ async def _stream_groq(messages: list[dict], settings) -> AsyncIterator[dict]:
     yield {"data": "[DONE]"}
 
 
-async def _stream_groq_with_fallback(messages: list[dict], settings) -> AsyncIterator[dict]:
-    """Try Groq; if connection fails, transparently fall back to Ollama."""
-    groq_failed = False
-    try:
-        async with httpx.AsyncClient(timeout=90) as c:
-            async with c.stream(
-                "POST",
-                f"{GROQ_BASE}/chat/completions",
-                json={"model": settings.groq_model, "messages": messages, "stream": True},
-                headers={
-                    "Authorization": f"Bearer {settings.groq_api_key}",
-                    "Content-Type": "application/json",
-                },
-            ) as resp:
-                if resp.status_code >= 400:
-                    groq_failed = True
-                else:
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        payload = line[6:]
-                        if payload == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(payload)
-                            token = chunk["choices"][0]["delta"].get("content", "")
-                            if token:
-                                yield {"data": json.dumps({"token": token})}
-                        except Exception:
-                            pass
-    except (httpx.ConnectTimeout, httpx.ConnectError, httpx.ReadTimeout,
-            httpx.HTTPStatusError):
-        groq_failed = True
-    except Exception:
-        groq_failed = True
-
-    if groq_failed:
-        log.warning("Groq unavailable, falling back to Ollama")
-        async for event in _stream_ollama(messages, settings):
-            yield event
-        return
-
-    yield {"data": "[DONE]"}
-
-
-async def _stream_ollama(messages: list[dict], settings) -> AsyncIterator[dict]:
-    try:
-        async with httpx.AsyncClient(timeout=120) as c:
-            async with c.stream(
-                "POST",
-                f"{settings.ollama_host}/api/chat",
-                json={"model": settings.ollama_model, "messages": messages, "stream": True},
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        token = data.get("message", {}).get("content", "")
-                        if token:
-                            yield {"data": json.dumps({"token": token})}
-                        if data.get("done"):
-                            break
-                    except Exception:
-                        pass
-    except Exception as exc:
-        yield {"data": json.dumps({"error": str(exc)})}
-    yield {"data": "[DONE]"}
-
-
 # ── routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("/status")
 async def chat_status():
     settings = get_settings()
-    if await _groq_reachable(settings):
-        return {"backend": "groq", "model": settings.groq_model}
-    return {"backend": "ollama", "model": settings.ollama_model}
+    reachable = await _groq_reachable(settings)
+    return {"backend": "groq", "model": settings.groq_model, "reachable": reachable}
 
 
 @router.get("/sessions")
@@ -298,6 +237,8 @@ async def sessions_endpoint(n: int = 20):
             body={
                 "size": min(n, 100),
                 "sort": [{"@timestamp": {"order": "desc"}}],
+                # Only real honeypots — Zeek is a network sensor, not a honeypot.
+                "query": {"terms": {"honeypot.type": ["cowrie", "dionaea", "galah"]}},
                 "_source": [
                     "@timestamp", "honeypot.type", "source.ip",
                     "event.action", "geoip.country_name", "geoip.country_iso_code",
@@ -339,10 +280,11 @@ async def chat_endpoint(
     messages += [m.model_dump() for m in req.history[-30:]]
     messages.append({"role": "user", "content": user_content})
 
-    # Prefer Groq; _stream_groq falls back to Ollama on any exception via the caller.
-    if settings.groq_api_key:
-        gen = _stream_groq_with_fallback(messages, settings)
-    else:
-        gen = _stream_ollama(messages, settings)
+    # Groq-only: HIVE uses the Groq free API exclusively, no local fallback.
+    if not settings.groq_api_key:
+        async def _no_key() -> AsyncIterator[dict]:
+            yield {"data": json.dumps({"error": "GROQ_API_KEY is not set"})}
+            yield {"data": "[DONE]"}
+        return EventSourceResponse(_no_key())
 
-    return EventSourceResponse(gen)
+    return EventSourceResponse(_stream_groq(messages, settings))

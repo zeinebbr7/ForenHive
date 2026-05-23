@@ -13,6 +13,32 @@ async def list_sessions(
     active_only: bool = Query(False),
 ) -> SessionListResponse:
     rows = await get_es().sessions(limit=limit, active_only=active_only)
+
+    # Enrich with the forensic engine's per-session risk_score (stored in
+    # PostgreSQL forensic_sessions). The ES aggregation has no score, so without
+    # this every session would surface as 0 in the UI.
+    sids = [r.get("session_id") for r in rows if r.get("session_id")]
+    if sids:
+        try:
+            from sqlalchemy import text
+            from db import session_scope
+            async with session_scope() as db:
+                res = await db.execute(
+                    text("SELECT session_id, risk_score FROM forensic_sessions WHERE session_id = ANY(:sids)"),
+                    {"sids": sids},
+                )
+                score_by_sid = {row["session_id"]: row["risk_score"] for row in res.mappings()}
+            for r in rows:
+                score = score_by_sid.get(r.get("session_id"))
+                if score is not None:
+                    r["risk_score"] = int(score)
+                    r["risk_level"] = (
+                        "CRITICAL" if score >= 80 else "HIGH" if score >= 60
+                        else "MEDIUM" if score >= 40 else "LOW" if score >= 20 else "INFO"
+                    )
+        except Exception:
+            pass
+
     items = [SessionSummary(**{k: v for k, v in r.items() if k in SessionSummary.model_fields}) for r in rows]
     active = sum(1 for r in rows if r.get("status") == "active")
     return SessionListResponse(total=len(items), active=active, items=items)

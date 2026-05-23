@@ -1,5 +1,4 @@
 import ipaddress
-import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -8,11 +7,9 @@ from pydantic import BaseModel
 
 from services.elasticsearch import get_es
 from services.forensic_runner import last_forensic_run, run_forensic_engine
-from services.yara_client import get_forensic_engine
 
 router = APIRouter(prefix="/api/forensics", tags=["forensics"])
 
-_SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 
 
 # ────────────── Timeline ──────────────
@@ -107,45 +104,6 @@ async def timeline(
     total = resp["hits"]["total"]
     total = total["value"] if isinstance(total, dict) else total
     return TimelineResponse(total=int(total), events=events)
-
-
-# ────────────── YARA ──────────────
-
-class YaraMatch(BaseModel):
-    rule: str
-    tags: List[str] = []
-    meta: Dict[str, Any] = {}
-
-
-class YaraScanResponse(BaseModel):
-    sha256: str
-    matches: List[YaraMatch] = []
-    engine_available: bool = True
-
-
-@router.get("/yara/{sha256}", response_model=YaraScanResponse)
-async def yara_scan(sha256: str) -> YaraScanResponse:
-    if not _SHA256_RE.match(sha256):
-        raise HTTPException(status_code=400, detail="invalid sha256")
-    data = await get_forensic_engine().scan_sha256(sha256.lower())
-    matches = [
-        YaraMatch(
-            rule=m.get("rule", "unknown"),
-            tags=m.get("tags", []),
-            meta=m.get("meta", {}),
-        )
-        for m in data.get("matches", [])
-    ]
-    return YaraScanResponse(
-        sha256=sha256.lower(),
-        matches=matches,
-        engine_available=data.get("engine_available", True),
-    )
-
-
-@router.get("/yara")
-async def yara_dionaea_scan(limit: int = Query(50, ge=1, le=500)):
-    return {"results": await get_forensic_engine().scan_all_dionaea(limit=limit)}
 
 
 @router.post("/run")

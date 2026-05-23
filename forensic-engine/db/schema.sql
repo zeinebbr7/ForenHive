@@ -212,3 +212,45 @@ CREATE TABLE IF NOT EXISTS ip_risk_scores (
 CREATE INDEX IF NOT EXISTS idx_ip_risk_score  ON ip_risk_scores(risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ip_risk_level  ON ip_risk_scores(risk_level);
 CREATE INDEX IF NOT EXISTS idx_ip_risk_scored ON ip_risk_scores(scored_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Risk score v2.0.0 migration
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE forensic_sessions
+    ADD COLUMN IF NOT EXISTS score_version VARCHAR(16);
+
+ALTER TABLE ip_risk_scores
+    ADD COLUMN IF NOT EXISTS score_version VARCHAR(16);
+
+-- Tag old rows so they're filterable
+UPDATE forensic_sessions  SET score_version = '1.0.0' WHERE score_version IS NULL;
+UPDATE ip_risk_scores     SET score_version = '1.0.0' WHERE score_version IS NULL;
+
+-- Composite index for Phase 9 (audit fix P-5)
+CREATE INDEX IF NOT EXISTS idx_sessions_ip_time
+    ON forensic_sessions(source_ip, started_at DESC);
+
+-- OPTIONAL: label backfill (commented out by default)
+-- Uncomment ONLY if you want old rows displayed under v2 cutoffs in dashboards.
+-- WARNING: this re-maps v1.0 scores using v2.0 cutoffs. The resulting labels
+-- describe v2 cutoffs applied to v1-scale numbers — NOT what v2 would have
+-- said about the same attacker. Old rows will appear to "jump tiers" because
+-- the absolute scale shifted, not because their behavior was reassessed.
+-- Filter dashboards by score_version='2.0.0' for apples-to-apples instead.
+--
+-- UPDATE forensic_sessions SET risk_level = CASE
+--     WHEN risk_score >= 70 THEN 'CRITICAL'
+--     WHEN risk_score >= 45 THEN 'HIGH'
+--     WHEN risk_score >= 25 THEN 'MEDIUM'
+--     WHEN risk_score >= 10 THEN 'LOW'
+--     ELSE 'INFO' END
+-- WHERE score_version = '1.0.0';
+--
+-- UPDATE ip_risk_scores SET risk_level = CASE
+--     WHEN risk_score >= 70 THEN 'CRITICAL'
+--     WHEN risk_score >= 45 THEN 'HIGH'
+--     WHEN risk_score >= 25 THEN 'MEDIUM'
+--     WHEN risk_score >= 10 THEN 'LOW'
+--     ELSE 'INFO' END
+-- WHERE score_version = '1.0.0';

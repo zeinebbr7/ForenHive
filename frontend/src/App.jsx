@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ModalProvider } from './contexts/ModalContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -21,7 +22,6 @@ const Access         = lazy(() => import('./pages/Access'));
 const Settings       = lazy(() => import('./pages/Settings'));
 const Config         = lazy(() => import('./pages/Config'));
 const Audit          = lazy(() => import('./pages/Audit'));
-const Yara           = lazy(() => import('./pages/Yara'));
 const Sessions       = lazy(() => import('./pages/Sessions'));
 const Dashboard      = lazy(() => import('./pages/Dashboard'));
 
@@ -36,7 +36,8 @@ function Protected({ children, roles }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
+      <LanguageProvider>
+       <AuthProvider>
         <ModalProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -61,7 +62,6 @@ export default function App() {
                 <Route path="/settings"       element={<Settings />} />
                 <Route path="/config"         element={<Protected roles={['admin']}><Config /></Protected>} />
                 <Route path="/audit"          element={<Audit />} />
-                <Route path="/yara"           element={<Yara />} />
                 <Route path="/sessions"       element={<Sessions />} />
                 <Route path="/dashboard"      element={<Navigate to="/stats" replace />} />
                 <Route path="*"               element={<Navigate to="/stats" replace />} />
@@ -69,7 +69,8 @@ export default function App() {
             </Routes>
           </Suspense>
         </ModalProvider>
-      </AuthProvider>
+       </AuthProvider>
+      </LanguageProvider>
     </BrowserRouter>
   );
 }

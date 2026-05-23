@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from '../contexts/LanguageContext';
 import { NAV_GROUPS, NAV, ROLES } from '../constants';
+
+const SECTION_KEYS = {
+  'Monitoring':            'nav.section.monitoring',
+  'Forensic Analysis':     'nav.section.forensic_analysis',
+  'Threat Intelligence':   'nav.section.threat_intel',
+  'Reports':               'nav.section.reports',
+  'Honeypot Management':   'nav.section.honeypot_mgmt',
+  'Access Control':        'nav.section.access_control',
+};
 function LiveClock() {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}));
   useEffect(() => {
@@ -28,6 +38,7 @@ function ThemeToggle() {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -54,12 +65,12 @@ export default function Layout() {
         </div>
         <div className={`sb-role ${user?.role}`}>
           <span className="sb-role-dot" />
-          {role.label}
+          {t('role.' + (user?.role || 'analyst'))}
         </div>
         <nav className="sb-nav">
           {visibleGroups.map(group => (
             <React.Fragment key={group.label || '__root'}>
-              {group.label && <div className="sb-section">{group.label}</div>}
+              {group.label && <div className="sb-section">{t(SECTION_KEYS[group.label] || group.label)}</div>}
               {group.items.map(n => (
                 <NavLink
                   key={n.id}
@@ -68,13 +79,13 @@ export default function Layout() {
                   onClick={() => setSidebarOpen(false)}
                 >
                   <span className="sb-item-ic">{n.icon}</span>
-                  <span>{n.label}</span>
+                  <span>{t('nav.' + n.id)}</span>
                 </NavLink>
               ))}
             </React.Fragment>
           ))}
         </nav>
-        <button className="sb-logout" onClick={logout}> Sign Out</button>
+        <button className="sb-logout" onClick={logout}> {t('topbar.signout')}</button>
       </aside>
 
       <div className="main">
@@ -83,11 +94,11 @@ export default function Layout() {
             <button className="burger" onClick={() => setSidebarOpen(o => !o)} />
             <div className="tb-page">
               {currentGroup?.label && (
-                <div className="tb-group">{currentGroup.label}</div>
+                <div className="tb-group">{t(SECTION_KEYS[currentGroup.label] || currentGroup.label)}</div>
               )}
-              <h1 className="tb-title">{currentPage?.label || 'ForenHive'}</h1>
+              <h1 className="tb-title">{currentPage ? t('nav.' + currentPage.id) : 'ForenHive'}</h1>
               {currentPage?.sub && (
-                <div className="tb-sub">{currentPage.sub}</div>
+                <div className="tb-sub">{t('nav.' + currentPage.id + '.sub')}</div>
               )}
             </div>
           </div>
@@ -95,13 +106,13 @@ export default function Layout() {
             <ThemeToggle />
             <div className="tb-live">
               <span className="tb-live-dot" />
-              LIVE · <LiveClock />
+              {t('topbar.live')} · <LiveClock />
             </div>
             <div className="tb-user">
               <div className="tb-avatar"></div>
               <div className="tb-user-info">
                 <div className="tb-name">{user?.email?.split('@')[0] || '—'}</div>
-                <div className="tb-role">{role.label}</div>
+                <div className="tb-role">{t('role.' + (user?.role || 'analyst'))}</div>
               </div>
             </div>
           </div>

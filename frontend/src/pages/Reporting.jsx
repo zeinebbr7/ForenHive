@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api';
 import { fmt, esc } from '../utils';
-import { RISK_MEDIUM, RISK_HIGH, riskLevel } from '../constants';
+import { RISK_MEDIUM, RISK_HIGH, RISK_CRITICAL, riskLevel } from '../constants';
+import { useTranslation } from '../contexts/LanguageContext';
 
 /* ── helpers ─────────────────────────────────────────────── */
 function scoreCls(s) {
@@ -71,20 +72,22 @@ function SessionRow({ session, active, onSelect }) {
 
 /* ── main component ──────────────────────────────────────── */
 export default function Reporting() {
+  const { t } = useTranslation();
   const [sessions,        setSessions]        = useState([]);
   const [selectedSession, setSelectedSession] = useState(null); // full session object
   const [loading,         setLoading]         = useState(false);
   const [previewLoading,  setPreviewLoading]  = useState(false);
   const [status,          setStatus]          = useState(null);  // { text, ok }
   const [kpis,            setKpis]            = useState({ total: '—', crit: '—', elev: '—', avg: '—' });
+  const [reportLang,      setReportLang]      = useState(() => localStorage.getItem('fh.report.lang') || 'en');
 
   const iframeContainerRef = useRef(null);
 
   /* ── KPI calculation ─────────────────────────────────────── */
   function calcKpis(list) {
     const total  = list.length;
-    const crit   = list.filter(s => s.risk_score != null && s.risk_score >= 70).length;
-    const elev   = list.filter(s => s.risk_score != null && s.risk_score >= 40 && s.risk_score < 70).length;
+    const crit   = list.filter(s => s.risk_score != null && s.risk_score >= RISK_CRITICAL).length;
+    const elev   = list.filter(s => s.risk_score != null && s.risk_score >= RISK_HIGH && s.risk_score < RISK_CRITICAL).length;
     const scored = list.filter(s => s.risk_score != null);
     const avg    = scored.length
       ? Math.round(scored.reduce((a, s) => a + s.risk_score, 0) / scored.length)
@@ -142,7 +145,7 @@ export default function Reporting() {
   useEffect(() => { loadList(); }, [loadList]);
 
   /* ── Generate preview ────────────────────────────────────── */
-  const generatePreview = useCallback(async (sid) => {
+  const generatePreview = useCallback(async (sid, langOverride) => {
     setPreviewLoading(true);
     setStatus(null);
 
@@ -153,7 +156,8 @@ export default function Reporting() {
 
     try {
       const tok = api.token();
-      const res = await fetch(`/api/reports/forensic/${encodeURIComponent(sid)}/preview`, {
+      const lang = langOverride || reportLang;
+      const res = await fetch(`/api/reports/forensic/${encodeURIComponent(sid)}/preview?lang=${encodeURIComponent(lang)}`, {
         headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
       });
 
@@ -167,7 +171,7 @@ export default function Reporting() {
       // Render in a sandboxed iframe so styles don't leak into the SPA
       const iframe = document.createElement('iframe');
       iframe.style.cssText = 'width:100%;height:100%;min-height:800px;border:none;background:#fff;';
-      iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-popups allow-downloads allow-modals');
 
       if (iframeContainerRef.current) {
         iframeContainerRef.current.innerHTML = '';
@@ -193,15 +197,21 @@ export default function Reporting() {
         errDiv.style.cssText = 'padding:32px;text-align:center;color:#ef4444;font-family:\'JetBrains Mono\',monospace;font-size:12px';
         errDiv.innerHTML =
           '<div style="font-size:32px;margin-bottom:12px">⚠</div>' +
-          '<div>Preview failed: ' + esc(e.message) + '</div>' +
-          '<div style="margin-top:8px;opacity:.6;font-size:11px">Check backend logs — session may not exist in Elasticsearch.</div>';
+          '<div>' + esc(t('reporting.preview_failed')) + ' ' + esc(e.message) + '</div>' +
+          '<div style="margin-top:8px;opacity:.6;font-size:11px">' + esc(t('reporting.preview_failed_hint')) + '</div>';
         iframeContainerRef.current.appendChild(errDiv);
       }
       setStatus({ text: '✗ ' + e.message, ok: false });
     } finally {
       setPreviewLoading(false);
     }
-  }, []);
+  }, [reportLang, t]);
+
+  function setReportLangAndRegen(lang) {
+    setReportLang(lang);
+    localStorage.setItem('fh.report.lang', lang);
+    if (selectedSession) generatePreview(selectedSession.session_id, lang);
+  }
 
   /* ── Select session ──────────────────────────────────────── */
   function selectSession(sid) {
@@ -229,25 +239,25 @@ export default function Reporting() {
   async function handleDownload() {
     if (!selectedSession || downloading) return;
     setDownloading(true);
-    setStatus({ text: 'Requesting certified PDF from server…', ok: null });
+    setStatus({ text: t('reporting.status.requesting'), ok: null });
     try {
-      const result = await api.forensicReportDownload(selectedSession.session_id);
+      const result = await api.forensicReportDownload(selectedSession.session_id, reportLang);
       const sha256 = result && result.sha256;
       setStatus({
         text: sha256
-          ? `✓ PDF downloaded · SHA-256: ${sha256}`
-          : '✓ Certified PDF downloaded successfully',
+          ? t('reporting.status.dl_ok_sha', { sha: sha256 })
+          : t('reporting.status.dl_ok'),
         ok: true,
       });
     } catch (e) {
-      setStatus({ text: `✗ PDF generation failed: ${e.message}`, ok: false });
+      setStatus({ text: t('reporting.status.dl_fail', { err: e.message }), ok: false });
     } finally {
       setDownloading(false);
     }
   }
 
   /* ── Derived values for the preview panel header ─────────── */
-  const pvTitle = selectedSession ? selectedSession.session_id : 'Report Preview';
+  const pvTitle = selectedSession ? selectedSession.session_id : t('reporting.pv_title');
   const pvSubParts = selectedSession ? (() => {
     const s   = selectedSession;
     const cls = scoreCls(s.risk_score);
@@ -263,7 +273,7 @@ export default function Reporting() {
         {s.kill_chain_phase || '—'}
       </>
     );
-  })() : 'Select a session to generate the forensic report.';
+  })() : t('reporting.pv_select');
 
   /* ── render ──────────────────────────────────────────────── */
   return (
@@ -271,15 +281,15 @@ export default function Reporting() {
       {/* Page header */}
       <div className="page-head">
         <div>
-          <div className="section-tag" style={{ marginBottom: 8 }}>Reporting</div>
-          <h2 className="page-title">Forensic <span>Reports</span></h2>
+          <div className="section-tag" style={{ marginBottom: 8 }}>{t('reporting.tag')}</div>
+          <h2 className="page-title">{t('reporting.title_html_1')} <span>{t('reporting.title_html_2')}</span></h2>
           <div className="page-sub">
-            Select a session · Report generates automatically · Download the SHA-256 certified PDF.
+            {t('reporting.subtitle')}
           </div>
         </div>
         <div className="page-actions">
           <button className="btn btn-gh btn-sm" onClick={loadList} disabled={loading}>
-            {loading ? 'Loading…' : 'Refresh'}
+            {loading ? t('common.loading') : t('reporting.refresh')}
           </button>
         </div>
       </div>
@@ -287,24 +297,24 @@ export default function Reporting() {
       {/* KPI row */}
       <div className="fkpi-row">
         <div className="fkpi" style={{ borderColor: '#f0b42955' }}>
-          <div className="fkpi-label">Total Sessions</div>
+          <div className="fkpi-label">{t('reporting.kpi.total')}</div>
           <div className="fkpi-val" style={{ color: 'var(--gold)' }}>{kpis.total}</div>
-          <div className="fkpi-sub">available reports</div>
+          <div className="fkpi-sub">{t('reporting.kpi.total_sub')}</div>
         </div>
         <div className="fkpi" style={{ borderColor: '#ff505055' }}>
-          <div className="fkpi-label">Critical</div>
+          <div className="fkpi-label">{t('reporting.kpi.critical')}</div>
           <div className="fkpi-val" style={{ color: '#ff5050' }}>{kpis.crit}</div>
-          <div className="fkpi-sub">risk score ≥ 70</div>
+          <div className="fkpi-sub">{t('reporting.kpi.critical_sub')}</div>
         </div>
         <div className="fkpi" style={{ borderColor: '#ff993355' }}>
-          <div className="fkpi-label">Elevated</div>
+          <div className="fkpi-label">{t('reporting.kpi.elevated')}</div>
           <div className="fkpi-val" style={{ color: '#ff9933' }}>{kpis.elev}</div>
-          <div className="fkpi-sub">score 40 – 69</div>
+          <div className="fkpi-sub">{t('reporting.kpi.elevated_sub')}</div>
         </div>
         <div className="fkpi" style={{ borderColor: '#2dd4bf55' }}>
-          <div className="fkpi-label">Avg Risk Score</div>
+          <div className="fkpi-label">{t('reporting.kpi.avg')}</div>
           <div className="fkpi-val" style={{ color: '#2dd4bf' }}>{kpis.avg}</div>
-          <div className="fkpi-sub">out of 100</div>
+          <div className="fkpi-sub">{t('reporting.kpi.avg_sub')}</div>
         </div>
       </div>
 
@@ -314,16 +324,16 @@ export default function Reporting() {
         {/* Session list panel */}
         <div className="card" style={{ padding: 0, alignSelf: 'start' }}>
           <div className="card-h" style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div className="card-t">Available Sessions</div>
-            <div className="card-sub">sessions · sorted by risk</div>
+            <div className="card-t">{t('reporting.sessions')}</div>
+            <div className="card-sub">{t('reporting.sessions.sub')}</div>
           </div>
           <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
             {loading ? (
-              <div className="alert info" style={{ margin: 14 }}>Loading…</div>
+              <div className="alert info" style={{ margin: 14 }}>{t('common.loading')}</div>
             ) : sessions.length === 0 ? (
               <div className="alert info" style={{ margin: 14 }}>
-                <b>No sessions found.</b><br />
-                Run the forensic engine to generate sessions.
+                <b>{t('reporting.no_sessions')}</b><br />
+                {t('reporting.run_engine')}
               </div>
             ) : (
               sessions.map(s => (
@@ -356,30 +366,69 @@ export default function Reporting() {
                 {pvSubParts}
               </div>
             </div>
-            <div className="flex gap-8">
+            <div className="flex gap-8" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                role="group"
+                aria-label="Report language"
+                title="Report language"
+                style={{
+                  display: 'inline-flex',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  overflow: 'hidden',
+                  fontFamily: "'Share Tech Mono',monospace",
+                  fontSize: 11,
+                  marginRight: 4,
+                }}
+              >
+                {['en', 'fr'].map(code => {
+                  const active = reportLang === code;
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setReportLangAndRegen(code)}
+                      aria-pressed={active}
+                      disabled={previewLoading || downloading}
+                      style={{
+                        padding: '6px 10px',
+                        background: active ? 'var(--gold)' : 'transparent',
+                        color: active ? '#060810' : 'var(--text2)',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: active ? 700 : 500,
+                        letterSpacing: '1px',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {code}
+                    </button>
+                  );
+                })}
+              </div>
               <button
                 className="btn btn-gh btn-sm"
                 onClick={() => selectedSession && generatePreview(selectedSession.session_id)}
                 disabled={!selectedSession || previewLoading}
-                title="Regenerate report"
+                title={t('reporting.btn.regenerate_tip')}
               >
-                ↺ Regenerate
+                {t('reporting.btn.regenerate')}
               </button>
               <button
                 className="btn btn-gh btn-sm"
                 onClick={handlePrint}
                 disabled={!selectedSession || previewLoading}
-                title="Open browser print dialog"
+                title={t('reporting.btn.print_tip')}
               >
-                Print Preview
+                {t('reporting.btn.print')}
               </button>
               <button
                 className="btn btn-gold btn-sm"
                 onClick={handleDownload}
                 disabled={!selectedSession || downloading}
-                title="Download WeasyPrint certified PDF from server"
+                title={t('reporting.btn.download_tip')}
               >
-                {downloading ? '⏳ Generating…' : '↓ Certified PDF'}
+                {downloading ? t('reporting.btn.generating') : t('reporting.btn.download')}
               </button>
             </div>
           </div>
@@ -401,7 +450,7 @@ export default function Reporting() {
                   animation: 'spin .8s linear infinite',
                 }} />
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
-                  Génération du rapport forensique…
+                  {t('reporting.generating_report')}
                 </div>
               </div>
             )}
@@ -412,8 +461,8 @@ export default function Reporting() {
                 flexDirection: 'column', gap: 12, color: '#888', padding: 60, height: '100%',
               }}>
                 <div style={{ fontSize: 48, opacity: .3 }}>📄</div>
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>No report selected</div>
-                <div style={{ fontSize: 12, opacity: .6 }}>Click a session on the left to preview its forensic report</div>
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{t('reporting.empty.title')}</div>
+                <div style={{ fontSize: 12, opacity: .6 }}>{t('reporting.empty.hint')}</div>
               </div>
             )}
 

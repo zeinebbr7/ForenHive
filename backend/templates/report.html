@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1a1a1a; font-size: 10pt; line-height: 1.4; }
+    h1 { font-size: 18pt; margin: 0 0 4pt; color: #0d2a4a; }
+    h2 { font-size: 12pt; margin: 16pt 0 6pt; color: #0d2a4a; border-bottom: 1pt solid #c8c8c8; padding-bottom: 2pt; }
+    .meta { color: #555; font-size: 8.5pt; margin-bottom: 12pt; }
+    .meta span { margin-right: 14pt; }
+    table { width: 100%; border-collapse: collapse; margin: 6pt 0; }
+    th, td { border: 0.5pt solid #ccc; padding: 4pt 6pt; text-align: left; font-size: 8.5pt; vertical-align: top; }
+    th { background: #f0f3f7; font-weight: 600; }
+    .kpi { display: flex; gap: 12pt; margin: 8pt 0 14pt; }
+    .kpi-box { flex: 1; border: 0.5pt solid #c8c8c8; border-radius: 4pt; padding: 8pt 10pt; }
+    .kpi-box .lbl { font-size: 7.5pt; text-transform: uppercase; color: #6b6b6b; letter-spacing: 0.5pt; }
+    .kpi-box .val { font-size: 16pt; font-weight: 700; color: #0d2a4a; margin-top: 2pt; }
+    .pill { display: inline-block; padding: 1pt 6pt; border-radius: 8pt; font-size: 7.5pt; font-weight: 600; color: #fff; }
+    .pill-CRITICAL { background: #C62828; }
+    .pill-HIGH     { background: #b36000; }
+    .pill-MEDIUM   { background: #1565C0; }
+    .pill-LOW      { background: #388E3C; }
+    .pill-INFO     { background: #757575; }
+    .sig-row { display: flex; align-items: center; gap: 8pt; margin: 3pt 0; font-size: 8.5pt; }
+    .sig-name { flex: 1; }
+    .sig-track { flex: 2; height: 6pt; background: #eee; border-radius: 3pt; overflow: hidden; }
+    .sig-fill { height: 100%; background: #1565C0; }
+    .muted { color: #888; font-style: italic; }
+    .small { font-size: 8pt; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <div class="meta">
+    <span><strong>Report ID:</strong> {{ report_id }}</span>
+    <span><strong>Scope:</strong> {{ scope }}</span>
+    <span><strong>Generated:</strong> {{ created_at }}</span>
+    <span><strong>Analyst:</strong> {{ analyst }}</span>
+  </div>
+
+  {% if risk_score is defined %}
+  <h2>Unified IP Risk Assessment</h2>
+  <div class="kpi">
+    <div class="kpi-box"><div class="lbl">Source IP</div><div class="val" style="font-size:11pt">{{ source_ip }}</div></div>
+    <div class="kpi-box"><div class="lbl">Risk Score</div><div class="val">{{ risk_score }} / 100</div></div>
+    <div class="kpi-box"><div class="lbl">Risk Level</div><div class="val"><span class="pill pill-{{ risk_level | default('INFO') }}">{{ risk_level | default("INFO") }}</span></div></div>
+    <div class="kpi-box"><div class="lbl">Confidence</div><div class="val" style="font-size:11pt">{{ risk_confidence | default("N/A") }}</div></div>
+  </div>
+
+  <table>
+    <tr><th>Country</th><td>{{ geo_country }}</td><th>City</th><td>{{ geo_city }}</td></tr>
+    <tr><th>ASN</th><td>{{ asn }}</td><th>ISP / Org</th><td>{{ isp }}</td></tr>
+    <tr><th>AbuseIPDB</th><td>{{ abuse_score }}/100</td><th>Honeypots Hit</th><td>{{ honeypots_hit | join(", ") if honeypots_hit else "—" }} ({{ honeypot_count | default(0) }})</td></tr>
+  </table>
+
+  {% if signal_breakdown and signal_breakdown | length > 0 %}
+  <h2>9-Signal Risk Breakdown (v2.0.0)</h2>
+  {% for sig in signal_breakdown %}
+    <div class="sig-row">
+      <div class="sig-name"><strong>{{ sig.name }}</strong>{% if sig.detail %} <span class="small">— {{ sig.detail }}</span>{% endif %}</div>
+      <div class="sig-track"><div class="sig-fill" style="width:{% if sig.max_points > 0 %}{{ (sig.points / sig.max_points * 100) | round }}{% else %}0{% endif %}%"></div></div>
+      <div class="small">{{ sig.points }} / {{ sig.max_points }}</div>
+    </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if recommendations and recommendations | length > 0 %}
+  <h2>Recommendations</h2>
+  <table>
+    <tr><th>Priority</th><th>Action</th><th>Rationale</th></tr>
+    {% for r in recommendations %}
+    <tr><td><span class="pill pill-{{ r.priority if r.priority in ['CRITICAL','HIGH','MEDIUM','LOW'] else 'HIGH' }}">{{ r.priority }}</span></td><td>{{ r.action }}</td><td class="small">{{ r.rationale }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% endif %}
+
+  <h2>Event Summary ({{ event_count }} events)</h2>
+  {% if summary.top_ips %}
+  <p class="small"><strong>Top Source IPs:</strong>
+    {% for ip, n in summary.top_ips %}{{ ip }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if summary.top_countries %}
+  <p class="small"><strong>Top Countries:</strong>
+    {% for c, n in summary.top_countries %}{{ c }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if summary.honeypots %}
+  <p class="small"><strong>Honeypots:</strong>
+    {% for h, n in summary.honeypots %}{{ h }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+
+  {% if events and events | length > 0 %}
+  <h2>Event Sample (first {{ events | length }} of {{ event_count }})</h2>
+  <table>
+    <tr><th>Timestamp</th><th>Source IP</th><th>Honeypot</th><th>Event Type</th></tr>
+    {% for e in events[:50] %}
+    <tr>
+      <td class="small">{{ e['@timestamp'] | default('—') }}</td>
+      <td class="small">{{ (e.source.ip if e.source else None) | default(e.src_ip) | default('—') }}</td>
+      <td class="small">{{ (e.honeypot.type if e.honeypot is mapping else e.honeypot) | default('—') }}</td>
+      <td class="small">{{ e.event.action | default(e.event_type) | default('—') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No events in scope.</p>
+  {% endif %}
+
+  <p class="small" style="margin-top: 18pt; color:#888;">
+    ForenHive · Generated by ReportService · Engine v2.0.0 · 9-signal risk model (WHO 33 / WHAT 43 / HOW 24)
+  </p>
+</body>
+</html>

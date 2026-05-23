@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -23,6 +24,35 @@ from services.report_adapter import adapt_risk_data_for_report
 log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+
+async def _query_forensic_iocs(source_ip: str, limit: int = 500) -> List[Dict[str, Any]]:
+    """Pull deduped IoCs for an IP from forensic_iocs (richer than re-regexing events)."""
+    try:
+        async with session_scope() as db:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT ioc_type, ioc_value, first_seen, last_seen, occurrences,
+                           honeypot_types
+                    FROM forensic_iocs
+                    WHERE source_ip = CAST(:ip AS INET)
+                    ORDER BY last_seen DESC
+                    LIMIT :lim
+                    """
+                ),
+                {"ip": source_ip, "lim": limit},
+            )
+            rows = []
+            for r in result.mappings().all():
+                d = dict(r)
+                for k in ("first_seen", "last_seen"):
+                    if d.get(k) is not None:
+                        d[k] = str(d[k])
+                rows.append(d)
+            return rows
+    except Exception:
+        return []
 
 
 async def _query_unified_risk_score(source_ip: str) -> dict:
@@ -122,6 +152,7 @@ class ReportService:
 
         with open(pdf_path, "rb") as fp:
             pdf_bytes = fp.read()
+        pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
         custody = await get_custody().seal(pdf_bytes)
 
         stix_path: Optional[str] = None
@@ -139,6 +170,7 @@ class ReportService:
             created_by=req.analyst,
             path=str(pdf_path),
             sha256=custody.sha256,
+            pdf_sha256=pdf_sha256,
             tsa_timestamp=custody.tsa_token_b64,
             size_bytes=size,
             event_count=len(events),
@@ -174,10 +206,13 @@ class ReportService:
         if not meta:
             return None
         events: List[Dict[str, Any]] = []
+        iocs_pg: List[Dict[str, Any]] = []
         es = get_es()
         if meta.scope == ReportScope.IP:
             ip = self._extract_ip_from_title(meta.title)
             if ip:
+                # Prefer deduped IoCs from forensic_iocs (richer first/last/count)
+                iocs_pg = await _query_forensic_iocs(ip)
                 events = await es.events_for_ip(ip=ip, size=500)
         elif meta.scope == ReportScope.SESSION:
             sid = self._extract_session_from_title(meta.title)
@@ -194,7 +229,7 @@ class ReportService:
                     events = [h["_source"] | {"_id": h["_id"]} for h in resp["hits"]["hits"]]
         # time_range scope: we cannot reconstruct dates from title alone — return empty bundle.
 
-        bundle = self.build_stix_bundle(events, meta.title)
+        bundle = self.build_stix_bundle(events, meta.title, iocs_pg=iocs_pg)
         stix_file = Path(self.settings.reports_dir) / f"{report_id}.stix.json"
         stix_file.write_text(json.dumps(bundle, indent=2))
         if not meta.stix_path:
@@ -254,7 +289,11 @@ class ReportService:
         }
 
     @staticmethod
-    def build_stix_bundle(events: List[Dict[str, Any]], title: str) -> Dict[str, Any]:
+    def build_stix_bundle(
+        events: List[Dict[str, Any]],
+        title: str,
+        iocs_pg: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         now = datetime.now(tz=timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
         identity_id = f"identity--{uuid.uuid5(uuid.NAMESPACE_DNS, 'forenhive')}"
         objects: List[Dict[str, Any]] = [
@@ -271,7 +310,54 @@ class ReportService:
 
         ip_seen: Dict[str, str] = {}
         hash_seen: Dict[str, str] = {}
+        url_seen: Dict[str, str] = {}
+        domain_seen: Dict[str, str] = {}
 
+        # ── Source 1: deduped IoCs from forensic_iocs (preferred — richer dates/counts)
+        def _ts(v):
+            return (v or now).replace(" ", "T").split("+")[0] + "Z" if v else now
+
+        for ioc in (iocs_pg or []):
+            t = (ioc.get("ioc_type") or "").lower()
+            v = ioc.get("ioc_value") or ""
+            if not v:
+                continue
+            valid_from = _ts(ioc.get("first_seen"))
+            valid_until = _ts(ioc.get("last_seen"))
+            count = int(ioc.get("occurrences") or 1)
+            if t == "ipv4_external" and v not in ip_seen:
+                obs_id = f"ipv4-addr--{uuid.uuid5(uuid.NAMESPACE_DNS, f'ip:{v}')}"
+                ip_seen[v] = obs_id
+                objects.append({"type": "ipv4-addr", "spec_version": "2.1", "id": obs_id, "value": v})
+                ind_id = f"indicator--{uuid.uuid5(uuid.NAMESPACE_DNS, f'ind-ip:{v}')}"
+                objects.append({
+                    "type": "indicator", "spec_version": "2.1", "id": ind_id,
+                    "created_by_ref": identity_id, "created": now, "modified": now,
+                    "name": f"Malicious IP {v} (seen {count}x)",
+                    "pattern": f"[ipv4-addr:value = '{v}']", "pattern_type": "stix",
+                    "valid_from": valid_from, "valid_until": valid_until,
+                    "indicator_types": ["malicious-activity"],
+                })
+            elif t == "sha256" and v not in hash_seen:
+                file_id = f"file--{uuid.uuid5(uuid.NAMESPACE_DNS, f'hash:{v}')}"
+                hash_seen[v] = file_id
+                objects.append({"type": "file", "spec_version": "2.1", "id": file_id,
+                                "hashes": {"SHA-256": v}})
+            elif t == "md5" and v not in hash_seen:
+                file_id = f"file--{uuid.uuid5(uuid.NAMESPACE_DNS, f'hash:{v}')}"
+                hash_seen[v] = file_id
+                objects.append({"type": "file", "spec_version": "2.1", "id": file_id,
+                                "hashes": {"MD5": v}})
+            elif t == "url" and v not in url_seen:
+                obs_id = f"url--{uuid.uuid5(uuid.NAMESPACE_DNS, f'url:{v}')}"
+                url_seen[v] = obs_id
+                objects.append({"type": "url", "spec_version": "2.1", "id": obs_id, "value": v})
+            elif t == "domain" and v not in domain_seen:
+                obs_id = f"domain-name--{uuid.uuid5(uuid.NAMESPACE_DNS, f'dom:{v}')}"
+                domain_seen[v] = obs_id
+                objects.append({"type": "domain-name", "spec_version": "2.1", "id": obs_id, "value": v})
+
+        # ── Source 2: raw events (fallback / supplemental, dedup with the above)
         for e in events:
             src = (e.get("source") or {})
             ip = src.get("ip") or e.get("src_ip")
@@ -340,13 +426,19 @@ class ReportService:
 
     def resolve_pdf_path(self, meta: ReportMeta) -> Path:
         path = Path(meta.path)
-        if not path.exists():
-            raise FileNotFoundError(str(path))
-        # prevent traversal: must live under reports_dir
+        # 1. Containment check FIRST — never even stat() a file outside reports_dir
+        #    so we don't leak existence of attacker-controlled paths via timing.
         reports_root = Path(self.settings.reports_dir).resolve()
-        if reports_root not in path.resolve().parents:
+        try:
+            resolved = path.resolve(strict=False)
+        except (OSError, RuntimeError) as exc:
+            raise PermissionError("invalid report path") from exc
+        if reports_root not in resolved.parents and resolved != reports_root:
             raise PermissionError("report outside reports directory")
-        return path
+        # 2. Only then check existence.
+        if not resolved.exists():
+            raise FileNotFoundError(str(resolved))
+        return resolved
 
 
 _svc: Optional[ReportService] = None

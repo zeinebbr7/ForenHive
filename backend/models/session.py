@@ -34,6 +34,8 @@ class SessionSummary(BaseModel):
     command_count: int = 0
     auth_attempts: int = 0
     status: str = "closed"
+    risk_score: Optional[int] = None
+    risk_level: Optional[str] = None
 
 
 class SessionDetail(SessionSummary):
