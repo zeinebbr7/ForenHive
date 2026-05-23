@@ -411,16 +411,31 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
                         iocs.append({"type": "URL", "value": part, "context": f"Download command: {inp[:60]}"})
                         break
 
-    # Dropped files (one entry per captured binary)
+    # Dropped files (one entry per captured binary). The engine stores VT
+    # results in file_analysis.virustotal_result with the normalized flat
+    # shape {malicious, total_engines, ...}; older code expected the raw VT
+    # API shape (last_analysis_stats nested). Handle both so future re-shapes
+    # don't blank the VT detections column.
     dropped_files: List[Dict] = []
     if ioc_hashes:
         vt = ctx.get("vt_result") or {}
+        stats = vt.get("last_analysis_stats") or {}
+        vt_detections = (
+            vt.get("malicious")
+            if vt.get("malicious") is not None
+            else stats.get("malicious")
+        )
+        vt_total = (
+            vt.get("total_engines")
+            or vt.get("total")
+            or (sum(stats.values()) if stats else None)
+        )
         dropped_files.append({
             "filename":      profile.get("captured_file", "captured_file"),
             "sha256":        ioc_hashes[0],
             "yara_hits":     yara_matches,
-            "vt_detections": vt.get("malicious") if vt else None,
-            "vt_total":      vt.get("total") if vt else None,
+            "vt_detections": vt_detections,
+            "vt_total":      vt_total,
         })
 
     # Chain of custody — prefers the engine-persisted seal in
