@@ -10,12 +10,14 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN  = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_WA_NUMBER   = os.environ.get("TWILIO_WA_NUMBER", "")
-DEST_WA            = os.environ.get("DEST_WA", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_WA_NUMBER = os.environ.get("TWILIO_WA_NUMBER", "")
+DEST_WA = os.environ.get("DEST_WA", "")
 
 
-def _whatsapp_alert(ip: str, score: int, is_internal: bool = False, network_class: str = "") -> None:
+def _whatsapp_alert(
+    ip: str, score: int, is_internal: bool = False, network_class: str = ""
+) -> None:
     from twilio.rest import Client
 
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -39,7 +41,9 @@ def _whatsapp_alert(ip: str, score: int, is_internal: bool = False, network_clas
         to=DEST_WA,
         body=body,
     )
-    log.info("WhatsApp alert sent  ip=%s score=%d is_internal=%s sid=%s", ip, score, is_internal, msg.sid)
+    log.info(
+        "WhatsApp alert sent  ip=%s score=%d is_internal=%s sid=%s", ip, score, is_internal, msg.sid
+    )
 
 
 def send_alert(ip: str, score: int, is_internal: bool = False, network_class: str = "") -> None:

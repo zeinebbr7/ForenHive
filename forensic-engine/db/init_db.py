@@ -7,31 +7,35 @@ Run once before starting the forensic engine.
 import os
 import sys
 import time
-import psycopg2
 from pathlib import Path
+
+import psycopg2
 
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
+
 def get_conn_params():
     return {
-        "host":     os.environ.get("PG_HOST", "forenhive-postgresql"),
-        "port":     int(os.environ.get("PG_PORT", 5432)),
-        "dbname":   os.environ.get("PG_DB", "forenhive"),
-        "user":     os.environ.get("PG_USER", "forenhive"),
+        "host": os.environ.get("PG_HOST", "forenhive-postgresql"),
+        "port": int(os.environ.get("PG_PORT", 5432)),
+        "dbname": os.environ.get("PG_DB", "forenhive"),
+        "user": os.environ.get("PG_USER", "forenhive"),
         "password": os.environ.get("PG_PASSWORD", ""),
     }
+
 
 def wait_for_postgres(params, retries=10, delay=3):
     for attempt in range(1, retries + 1):
         try:
             conn = psycopg2.connect(**params)
             conn.close()
-            print(f"[init_db] PostgreSQL ready.")
+            print("[init_db] PostgreSQL ready.")
             return True
         except psycopg2.OperationalError as e:
             print(f"[init_db] Waiting for PostgreSQL ({attempt}/{retries}): {e}")
             time.sleep(delay)
     return False
+
 
 def init_schema(params):
     sql = SCHEMA_FILE.read_text()
@@ -40,6 +44,7 @@ def init_schema(params):
             cur.execute(sql)
         conn.commit()
     print("[init_db] Schema applied successfully.")
+
 
 if __name__ == "__main__":
     # Load .env if present (for local runs outside Docker)

@@ -1,13 +1,21 @@
+"""
+risk_score.py — Scores de risque par IP
+Rôle : lookup et listing des risk scores (table ip_risk_scores PG).
+URL    : /api/risk-scores/*
+Deps   : PostgreSQL (ip_risk_scores), alerts.alert_manager (notif si CRITICAL).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict, Optional
-
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from sqlalchemy import text
+from typing import Any
 
 from alerts.alert_manager import send_alert
 from db import session_scope
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from sqlalchemy import text
 
 router = APIRouter(prefix="/api/risk-scores", tags=["Risk Scores"])
 
@@ -20,7 +28,7 @@ def _validate_ip(ip: str) -> str:
     return ip
 
 
-@router.get("/{source_ip}/breakdown", response_model=Dict[str, Any])
+@router.get("/{source_ip}/breakdown", response_model=dict[str, Any])
 async def get_signal_breakdown(source_ip: str):
     """Detailed signal breakdown for an IP (for dashboard charts)."""
     _validate_ip(source_ip)
@@ -49,7 +57,7 @@ async def get_signal_breakdown(source_ip: str):
         return d
 
 
-@router.get("/{source_ip}", response_model=Dict[str, Any])
+@router.get("/{source_ip}", response_model=dict[str, Any])
 async def get_unified_risk_score(source_ip: str, background_tasks: BackgroundTasks):
     """Unified risk score for a source IP (aggregates all honeypots)."""
     _validate_ip(source_ip)
@@ -80,15 +88,15 @@ async def get_unified_risk_score(source_ip: str, background_tasks: BackgroundTas
         return d
 
 
-@router.get("/", response_model=Dict[str, Any])
+@router.get("/", response_model=dict[str, Any])
 async def list_risk_scores(
-    risk_level: Optional[str] = Query(
+    risk_level: str | None = Query(
         None,
         description="Filter by level: CRITICAL|HIGH|MEDIUM|LOW|INFO",
     ),
     min_score: int = Query(0, ge=0, le=100),
     limit: int = Query(100, ge=1, le=500),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """List all unified IP risk scores, optionally filtered."""
     async with session_scope() as session:
         if risk_level:

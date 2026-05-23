@@ -1,22 +1,43 @@
 """
-ForenHive Forensic Engine — Main Orchestrator
-Coordinates all 4 analysis phases:
+engine.py — ForenHive Forensic Engine
+======================================
+Rôle    : orchestration séquentielle de la chaîne forensique complète.
+Entrée  : fenêtre temporelle (--hours), sessions ES non encore analysées.
+Sortie  : 4 tables PG (forensic_sessions, file_analysis, forensic_iocs,
+          forensic_chain_of_custody) + index ES forenhive-suspect-profiles.
+Appelé  : CLI standalone (cron/systemd) ; aussi via le scheduler backend.
+Deps    : tous les modules de l'engine + PostgreSQL + Elasticsearch + Ollama.
 
-  1. IP Enrichment   : GeoIP, AbuseIPDB, Shodan InternetDB, Whois, Tor/VPN
-  2. YARA Scan       : Dionaea captured malware binaries
-  3. VirusTotal      : SHA-256 lookup for YARA-matched + Cowrie-downloaded files
-  4. Session Scoring : risk score (0-100) + deterministic MITRE mapping
-                       + LLM-based MITRE enrichment via Ollama/Mistral 7B
+═══════════════════════════════════════════════════════════════════════════════
+MOTEUR D'ORCHESTRATION — POINT D'ENTRÉE PRINCIPAL DU FORENSIC ENGINE
+═══════════════════════════════════════════════════════════════════════════════
+ORDRE D'EXÉCUTION (chaîne séquentielle stricte) :
+   1. enricher.py         → Enrichissement GeoIP + réputation par IP
+   2. yara_scanner.py     → Scan YARA sur payloads Dionaea
+   3. virustotal.py       → Lookup VT (si quota dispo, sinon skip)
+   4. smb_analyzer.py     → Analyse logs SMB/NTLM Dionaea+Zeek
+   5. timeline_builder.py → Timeline ms-précision multi-honeypot
+   6. ioc_extractor.py    → Extraction IoCs (URLs, hashes, CVEs…)
+   7. mitre_mapper.py     → Mapping ATT&CK hybride (15 IDs + narration LLM)
+   8. risk_score.py       → Score de risque 9 signaux (v2.0.0)
+   9. profiler.py         → Profil criminologique Mistral (BAU framework)
+  10. chain_of_custody.py → Scellement SHA-256 + RFC 3161 (TSA freetsa.org)
+  11. PostgreSQL commit   → Persistance atomique des 4 tables forensiques
 
-Multi-honeypot support: Cowrie (SSH/Telnet), Dionaea (SMB/services), Galah (HTTP)
+SUPPORT MULTI-HONEYPOT :
+  • Cowrie  (SSH:2222, Telnet:2223)
+  • Dionaea (11 protocoles : SMB, FTP, HTTP, MySQL, SIP…)
+  • Galah   (HTTP:8080/8888 — Mistral LLM honeypot)
+  • Zeek    (IDS réseau passif, host network)
 
-Usage:
-  python engine.py                      # full analysis (last 24h)
-  python engine.py --hours 48           # look back 48 hours
-  python engine.py --enrich-only        # IP enrichment only
-  python engine.py --yara-only          # YARA scan only
-  python engine.py --score-only         # scoring + MITRE only (skip enrichment/YARA)
-  python engine.py --init-db            # initialize PostgreSQL schema
+USAGE CLI :
+  python engine.py                  # analyse complète (24h dernières)
+  python engine.py --hours 48       # fenêtre étendue 48h
+  python engine.py --enrich-only    # uniquement l'enrichissement IP
+  python engine.py --yara-only      # uniquement le scan YARA
+  python engine.py --score-only     # scoring + MITRE (skip enrich/YARA)
+  python engine.py --init-db        # initialise le schéma PostgreSQL
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import argparse
@@ -26,43 +47,41 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone, timedelta
-
-import psycopg2
-import psycopg2.extras
-import requests
-from elasticsearch import Elasticsearch
+from datetime import UTC, datetime, timedelta, timezone
 
 import config
-from db.init_db import init_schema, wait_for_postgres, get_conn_params
-from enricher import IPEnricher
-from yara_scanner import YARAScanner
-from virustotal import VirusTotalScanner
-from risk_score import score_session, score_ip, SCORE_VERSION
-from risk_thresholds import risk_level
-from risk_thresholds import ALERT_INDEX_MIN
-from mitre_mapper import MitreMapper
-from timeline_builder import TimelineBuilder
-from ioc_extractor import IOCExtractor
-from chain_of_custody import ChainOfCustody
-from profiler import AttackerProfiler
+import psycopg2
+import psycopg2.extras
 import smb_analyzer
+from chain_of_custody import ChainOfCustody
+from db.init_db import get_conn_params, init_schema, wait_for_postgres
+from elasticsearch import Elasticsearch
+from enricher import IPEnricher
+from ioc_extractor import IOCExtractor
+from mitre_mapper import MitreMapper
+from profiler import AttackerProfiler
+from risk_score import SCORE_VERSION, score_ip, score_session
+from risk_thresholds import ALERT_INDEX_MIN
+from timeline_builder import TimelineBuilder
+from virustotal import VirusTotalScanner
+from yara_scanner import YARAScanner
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%SZ",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("engine")
 
+
 # ── WhatsApp alert via Twilio ─────────────────────────────────────────────────
 def _send_whatsapp_alert(ip: str, score: int) -> None:
-    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
     token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     from_ = os.environ.get("TWILIO_WA_NUMBER", "")
-    to    = os.environ.get("DEST_WA", "")
+    to = os.environ.get("DEST_WA", "")
 
     if not all([sid, token, from_, to]):
         log.warning("Twilio env vars missing — WhatsApp alert skipped")
@@ -76,6 +95,7 @@ def _send_whatsapp_alert(ip: str, score: int) -> None:
         f"Niveau : {level} — Vérification requise."
     )
     from twilio.rest import Client
+
     client = Client(sid, token)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -92,10 +112,11 @@ def _send_whatsapp_alert(ip: str, score: int) -> None:
 
 
 def _now_utc():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     return db_pool.pooled_conn()
@@ -104,6 +125,7 @@ def _pg_conn():
 # ══════════════════════════════════════════════════════════════════════════════
 # ELASTICSEARCH QUERIES
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def _build_es_client() -> Elasticsearch:
     return Elasticsearch(
@@ -143,8 +165,8 @@ def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
             "bool": {
                 "filter": [
                     {"range": {"@timestamp": {"gte": since}}},
-                    {"term":  {"honeypot.type.keyword": "cowrie"}},
-                    {"exists": {"field": "session.id"}}
+                    {"term": {"honeypot.type.keyword": "cowrie"}},
+                    {"exists": {"field": "session.id"}},
                 ]
             }
         },
@@ -152,18 +174,18 @@ def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
             "by_session": {
                 "terms": {"field": "session.id.keyword", "size": 5000},
                 "aggs": {
-                    "source_ip":     {"terms": {"field": "source.ip.keyword",     "size": 1}},
-                    "dest_port":     {"terms": {"field": "destination.port", "size": 1}},
-                    "login_count":   {"filter": {"prefix": {"event.id": "cowrie.login"}}},
+                    "source_ip": {"terms": {"field": "source.ip.keyword", "size": 1}},
+                    "dest_port": {"terms": {"field": "destination.port", "size": 1}},
+                    "login_count": {"filter": {"prefix": {"event.id": "cowrie.login"}}},
                     "login_success": {"filter": {"prefix": {"event.id": "cowrie.login.success"}}},
-                    "login_failed":  {"filter": {"prefix": {"event.id": "cowrie.login.failed"}}},
+                    "login_failed": {"filter": {"prefix": {"event.id": "cowrie.login.failed"}}},
                     "command_count": {"filter": {"prefix": {"event.id": "cowrie.command"}}},
-                    "total_bytes":   {"sum":    {"field": "network.bytes"}},
-                    "first_seen":    {"min":    {"field": "@timestamp"}},
-                    "last_seen":     {"max":    {"field": "@timestamp"}},
-                }
+                    "total_bytes": {"sum": {"field": "network.bytes"}},
+                    "first_seen": {"min": {"field": "@timestamp"}},
+                    "last_seen": {"max": {"field": "@timestamp"}},
+                },
             }
-        }
+        },
     }
 
     try:
@@ -174,21 +196,23 @@ def _query_cowrie_sessions(es: Elasticsearch, hours_back: int) -> list:
     sessions = []
     for bucket in resp.get("aggregations", {}).get("by_session", {}).get("buckets", []):
         session_id = bucket["key"]
-        source_ip  = (bucket["source_ip"]["buckets"] or [{}])[0].get("key", "")
-        dest_port  = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
-        sessions.append({
-            "session_id":     session_id,
-            "honeypot_type":  "cowrie",
-            "source_ip":      source_ip,
-            "login_attempts": bucket["login_count"]["doc_count"],
-            "success_count":  bucket["login_success"]["doc_count"],
-            "failed_count":   bucket["login_failed"]["doc_count"],
-            "command_count":  bucket["command_count"]["doc_count"],
-            "exfil_bytes":    int(bucket["total_bytes"]["value"] or 0),
-            "destination_port": dest_port,
-            "started_at":     bucket["first_seen"]["value_as_string"],
-            "ended_at":       bucket["last_seen"]["value_as_string"],
-        })
+        source_ip = (bucket["source_ip"]["buckets"] or [{}])[0].get("key", "")
+        dest_port = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
+        sessions.append(
+            {
+                "session_id": session_id,
+                "honeypot_type": "cowrie",
+                "source_ip": source_ip,
+                "login_attempts": bucket["login_count"]["doc_count"],
+                "success_count": bucket["login_success"]["doc_count"],
+                "failed_count": bucket["login_failed"]["doc_count"],
+                "command_count": bucket["command_count"]["doc_count"],
+                "exfil_bytes": int(bucket["total_bytes"]["value"] or 0),
+                "destination_port": dest_port,
+                "started_at": bucket["first_seen"]["value_as_string"],
+                "ended_at": bucket["last_seen"]["value_as_string"],
+            }
+        )
     return sessions
 
 
@@ -201,8 +225,8 @@ def _query_dionaea_sessions(es: Elasticsearch, hours_back: int) -> list:
             "bool": {
                 "filter": [
                     {"range": {"@timestamp": {"gte": since}}},
-                    {"term":  {"honeypot.type.keyword": "dionaea"}},
-                    {"exists": {"field": "source.ip"}}
+                    {"term": {"honeypot.type.keyword": "dionaea"}},
+                    {"exists": {"field": "source.ip"}},
                 ]
             }
         },
@@ -210,14 +234,14 @@ def _query_dionaea_sessions(es: Elasticsearch, hours_back: int) -> list:
             "by_ip": {
                 "terms": {"field": "source.ip.keyword", "size": 5000},
                 "aggs": {
-                    "dest_port":   {"terms": {"field": "destination.port", "size": 1}},
+                    "dest_port": {"terms": {"field": "destination.port", "size": 1}},
                     "event_count": {"value_count": {"field": "@timestamp"}},
                     "total_bytes": {"sum": {"field": "network.bytes"}},
-                    "first_seen":  {"min": {"field": "@timestamp"}},
-                    "last_seen":   {"max": {"field": "@timestamp"}},
-                }
+                    "first_seen": {"min": {"field": "@timestamp"}},
+                    "last_seen": {"max": {"field": "@timestamp"}},
+                },
             }
-        }
+        },
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -229,19 +253,21 @@ def _query_dionaea_sessions(es: Elasticsearch, hours_back: int) -> list:
     for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
         source_ip = bucket["key"]
         dest_port = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
-        sessions.append({
-            "session_id":       f"dionaea-{source_ip}-{dest_port}",
-            "honeypot_type":    "dionaea",
-            "source_ip":        source_ip,
-            "login_attempts":   bucket["event_count"]["value"],
-            "success_count":    0,
-            "failed_count":     0,
-            "command_count":    0,
-            "exfil_bytes":      int(bucket["total_bytes"]["value"] or 0),
-            "destination_port": dest_port,
-            "started_at":       bucket["first_seen"]["value_as_string"],
-            "ended_at":         bucket["last_seen"]["value_as_string"],
-        })
+        sessions.append(
+            {
+                "session_id": f"dionaea-{source_ip}-{dest_port}",
+                "honeypot_type": "dionaea",
+                "source_ip": source_ip,
+                "login_attempts": bucket["event_count"]["value"],
+                "success_count": 0,
+                "failed_count": 0,
+                "command_count": 0,
+                "exfil_bytes": int(bucket["total_bytes"]["value"] or 0),
+                "destination_port": dest_port,
+                "started_at": bucket["first_seen"]["value_as_string"],
+                "ended_at": bucket["last_seen"]["value_as_string"],
+            }
+        )
     return sessions
 
 
@@ -254,8 +280,8 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
             "bool": {
                 "filter": [
                     {"range": {"@timestamp": {"gte": since}}},
-                    {"term":  {"honeypot.type.keyword": "galah"}},
-                    {"exists": {"field": "source.ip"}}
+                    {"term": {"honeypot.type.keyword": "galah"}},
+                    {"exists": {"field": "source.ip"}},
                 ]
             }
         },
@@ -263,15 +289,15 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
             "by_ip": {
                 "terms": {"field": "source.ip.keyword", "size": 5000},
                 "aggs": {
-                    "dest_port":   {"terms": {"field": "destination.port", "size": 1}},
+                    "dest_port": {"terms": {"field": "destination.port", "size": 1}},
                     "event_count": {"value_count": {"field": "@timestamp"}},
                     "total_bytes": {"sum": {"field": "network.bytes"}},
-                    "first_seen":  {"min": {"field": "@timestamp"}},
-                    "last_seen":   {"max": {"field": "@timestamp"}},
-                    "http_paths":  {"terms": {"field": "url.path.keyword", "size": 20}},
-                }
+                    "first_seen": {"min": {"field": "@timestamp"}},
+                    "last_seen": {"max": {"field": "@timestamp"}},
+                    "http_paths": {"terms": {"field": "url.path.keyword", "size": 20}},
+                },
             }
-        }
+        },
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -281,23 +307,25 @@ def _query_galah_sessions(es: Elasticsearch, hours_back: int) -> list:
 
     sessions = []
     for bucket in resp.get("aggregations", {}).get("by_ip", {}).get("buckets", []):
-        source_ip  = bucket["key"]
-        dest_port  = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
+        source_ip = bucket["key"]
+        dest_port = (bucket["dest_port"]["buckets"] or [{}])[0].get("key", 0)
         http_paths = [p["key"] for p in bucket.get("http_paths", {}).get("buckets", [])]
-        sessions.append({
-            "session_id":       f"galah-{source_ip}",
-            "honeypot_type":    "galah",
-            "source_ip":        source_ip,
-            "login_attempts":   bucket["event_count"]["value"],
-            "success_count":    0,
-            "failed_count":     0,
-            "command_count":    0,
-            "exfil_bytes":      int(bucket["total_bytes"]["value"] or 0),
-            "destination_port": dest_port,
-            "started_at":       bucket["first_seen"]["value_as_string"],
-            "ended_at":         bucket["last_seen"]["value_as_string"],
-            "http_paths":       http_paths,
-        })
+        sessions.append(
+            {
+                "session_id": f"galah-{source_ip}",
+                "honeypot_type": "galah",
+                "source_ip": source_ip,
+                "login_attempts": bucket["event_count"]["value"],
+                "success_count": 0,
+                "failed_count": 0,
+                "command_count": 0,
+                "exfil_bytes": int(bucket["total_bytes"]["value"] or 0),
+                "destination_port": dest_port,
+                "started_at": bucket["first_seen"]["value_as_string"],
+                "ended_at": bucket["last_seen"]["value_as_string"],
+                "http_paths": http_paths,
+            }
+        )
     return sessions
 
 
@@ -309,19 +337,21 @@ def _query_cowrie_commands(es: Elasticsearch, session_id: str) -> list:
         "query": {
             "bool": {
                 "filter": [
-                    {"term":   {"session.id.keyword": session_id}},
-                    {"prefix": {"event.id": "cowrie.command"}}
+                    {"term": {"session.id.keyword": session_id}},
+                    {"prefix": {"event.id": "cowrie.command"}},
                 ]
             }
         },
-        "sort": [{"@timestamp": "asc"}]
+        "sort": [{"@timestamp": "asc"}],
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
         commands = []
         for hit in resp["hits"]["hits"]:
             src = hit["_source"]
-            cmd = src.get("process", {}).get("command_line") or src.get("event", {}).get("original", "")
+            cmd = src.get("process", {}).get("command_line") or src.get("event", {}).get(
+                "original", ""
+            )
             if cmd:
                 commands.append(cmd)
         return commands
@@ -336,11 +366,11 @@ def _query_cowrie_file_downloads(es: Elasticsearch, session_id: str) -> int:
         "query": {
             "bool": {
                 "filter": [
-                    {"term":   {"session.id.keyword": session_id}},
-                    {"prefix": {"event.id": "cowrie.session.file_download"}}
+                    {"term": {"session.id.keyword": session_id}},
+                    {"prefix": {"event.id": "cowrie.session.file_download"}},
                 ]
             }
-        }
+        },
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -359,13 +389,11 @@ def _query_sha256_from_es(es: Elasticsearch, hours_back: int) -> list:
             "bool": {
                 "filter": [
                     {"range": {"@timestamp": {"gte": since}}},
-                    {"exists": {"field": "file.hash.sha256"}}
+                    {"exists": {"field": "file.hash.sha256"}},
                 ]
             }
         },
-        "aggs": {
-            "hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 1000}}
-        }
+        "aggs": {"hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 1000}}},
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -383,20 +411,18 @@ def _query_ip_to_sha256(es: Elasticsearch, hours_back: int) -> dict:
         "query": {
             "bool": {
                 "filter": [
-                    {"range":  {"@timestamp":      {"gte": since}}},
+                    {"range": {"@timestamp": {"gte": since}}},
                     {"exists": {"field": "file.hash.sha256"}},
-                    {"exists": {"field": "source.ip"}}
+                    {"exists": {"field": "source.ip"}},
                 ]
             }
         },
         "aggs": {
             "by_ip": {
                 "terms": {"field": "source.ip.keyword", "size": 10000},
-                "aggs": {
-                    "hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 100}}
-                }
+                "aggs": {"hashes": {"terms": {"field": "file.hash.sha256.keyword", "size": 100}}},
             }
-        }
+        },
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -416,14 +442,22 @@ def _query_ip_honeypot_types(es: Elasticsearch, hours_back: int) -> dict:
     since = (_now_utc() - timedelta(hours=hours_back)).isoformat()
     query = {
         "size": 0,
-        "query": {"bool": {"filter": [
-            {"range":  {"@timestamp": {"gte": since}}},
-            {"exists": {"field": "source.ip"}},
-        ]}},
-        "aggs": {"by_ip": {
-            "terms": {"field": "source.ip.keyword", "size": 10000},
-            "aggs": {"honeypot_types": {"terms": {"field": "honeypot.type.keyword", "size": 10}}}
-        }}
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {"@timestamp": {"gte": since}}},
+                    {"exists": {"field": "source.ip"}},
+                ]
+            }
+        },
+        "aggs": {
+            "by_ip": {
+                "terms": {"field": "source.ip.keyword", "size": 10000},
+                "aggs": {
+                    "honeypot_types": {"terms": {"field": "honeypot.type.keyword", "size": 10}}
+                },
+            }
+        },
     }
     try:
         resp = es.search(index=config.ES_INDEX, body=query)
@@ -459,16 +493,20 @@ def _load_file_analysis_from_pg(hours_back: int = 168) -> dict:
                     sha256 = row["sha256"]
                     yara = row["yara_matches"] or []
                     yara_with_sev = [
-                        {"rule": m["rule"], "severity": (m.get("meta") or {}).get("severity", "medium")}
-                        for m in yara if isinstance(m, dict) and "rule" in m
+                        {
+                            "rule": m["rule"],
+                            "severity": (m.get("meta") or {}).get("severity", "medium"),
+                        }
+                        for m in yara
+                        if isinstance(m, dict) and "rule" in m
                     ]
                     vt = row["virustotal_result"] or {}
                     results[sha256] = {
-                        "yara_matches":  yara_with_sev,
-                        "vt_malicious":  int(vt.get("malicious", 0)),
-                        "vt_family":     vt.get("family", "") or "",
-                        "vt_tags":       vt.get("tags", []) or [],
-                        "vt_names":      vt.get("names", []) or [],
+                        "yara_matches": yara_with_sev,
+                        "vt_malicious": int(vt.get("malicious", 0)),
+                        "vt_family": vt.get("family", "") or "",
+                        "vt_tags": vt.get("tags", []) or [],
+                        "vt_names": vt.get("names", []) or [],
                         "vt_first_seen": vt.get("first_seen", "") or "",
                     }
     except Exception as e:
@@ -491,7 +529,7 @@ def _query_recidivism(hours_back: int = 720) -> dict:
                       AND risk_score >= 20
                     GROUP BY source_ip
                     """,
-                    (int(hours_back),)
+                    (int(hours_back),),
                 )
                 for row in cur.fetchall():
                     results[row[0]] = int(row[1])
@@ -504,11 +542,15 @@ def _compute_time_metrics(started_at, ended_at, attempts: int) -> dict:
     """Derive duration, attack velocity, and off-hours flag."""
     try:
         start = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
-        end   = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
         duration = max((end - start).total_seconds(), 0.0)
     except Exception:
-        return {"session_duration_sec": 0.0, "attack_velocity": 0.0,
-                "hour_local": -1, "is_off_hours": False}
+        return {
+            "session_duration_sec": 0.0,
+            "attack_velocity": 0.0,
+            "hour_local": -1,
+            "is_off_hours": False,
+        }
 
     velocity = (attempts / duration) if duration > 0 else 0.0
     tunis = timezone(timedelta(hours=1))  # Africa/Tunis = GMT+1
@@ -519,9 +561,9 @@ def _compute_time_metrics(started_at, ended_at, attempts: int) -> dict:
     off_hours = (hour_local >= 22) or (0 <= hour_local < 6)
     return {
         "session_duration_sec": duration,
-        "attack_velocity":      velocity,
-        "hour_local":           hour_local,
-        "is_off_hours":         off_hours,
+        "attack_velocity": velocity,
+        "hour_local": hour_local,
+        "is_off_hours": off_hours,
     }
 
 
@@ -556,9 +598,7 @@ ON CONFLICT (session_id) DO UPDATE
         updated_at         = NOW()
 """
 
-_SESSION_ROW_TEMPLATE = (
-    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"
-)
+_SESSION_ROW_TEMPLATE = "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())"
 
 
 def _session_row(session: dict) -> tuple:
@@ -594,13 +634,17 @@ def _save_sessions_batch(sessions: list):
         with _pg_conn() as conn:
             with conn.cursor() as cur:
                 psycopg2.extras.execute_values(
-                    cur, _SESSION_INSERT_SQL, rows,
-                    template=_SESSION_ROW_TEMPLATE, page_size=200,
+                    cur,
+                    _SESSION_INSERT_SQL,
+                    rows,
+                    template=_SESSION_ROW_TEMPLATE,
+                    page_size=200,
                 )
             conn.commit()
     except Exception as e:
-        log.warning(f"Batch save failed ({len(sessions)} sessions): {e}; "
-                    "falling back to per-row upsert")
+        log.warning(
+            f"Batch save failed ({len(sessions)} sessions): {e}; falling back to per-row upsert"
+        )
         for s in sessions:
             _save_session(s)
 
@@ -623,18 +667,18 @@ def _save_session(session: dict):
 # FORENSIC ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-class ForensicEngine:
 
+class ForensicEngine:
     def __init__(self):
         log.info("Initializing ForensicEngine ...")
-        self.es       = _build_es_client()
+        self.es = _build_es_client()
         self.enricher = IPEnricher()
-        self.yara     = YARAScanner()
-        self.vt       = VirusTotalScanner()
-        self.mitre    = MitreMapper(use_llm=True)
+        self.yara = YARAScanner()
+        self.vt = VirusTotalScanner()
+        self.mitre = MitreMapper(use_llm=True)
         self.timeline = TimelineBuilder(self.es, _pg_conn)
-        self.ioc      = IOCExtractor(_pg_conn)
-        self.coc      = ChainOfCustody(_pg_conn)
+        self.ioc = IOCExtractor(_pg_conn)
+        self.coc = ChainOfCustody(_pg_conn)
         self.profiler = AttackerProfiler(self.es, _pg_conn)
 
     # ── Phase 0: SMB analysis ─────────────────────────────────────────────────
@@ -656,7 +700,7 @@ class ForensicEngine:
             log.info("SMB analysis: no SMB connections found")
             return 0
 
-        all_ips   = set(dionaea_data.keys())
+        all_ips = set(dionaea_data.keys())
         ntlm_data = smb_analyzer.extract_zeek_ntlm(smb_analyzer.ZEEK_LOGS, all_ips)
 
         # Re-use enrichment already computed in Phase 1 (avoids double API calls)
@@ -686,9 +730,9 @@ class ForensicEngine:
         log.info("=== Phase 7: LLM Attacker Profiling ===")
         threshold = config.PROFILE_RISK_THRESHOLD
         max_profiles = config.MAX_PROFILES_PER_RUN
-        high_risk_ips = list({
-            ip for _, ip, score, _, _ in scored if score >= threshold
-        })[:max_profiles]
+        high_risk_ips = list({ip for _, ip, score, _, _ in scored if score >= threshold})[
+            :max_profiles
+        ]
 
         if not high_risk_ips:
             log.info("Profiling: no high-risk IPs (score ≥ 60) this run")
@@ -740,7 +784,7 @@ class ForensicEngine:
 
                 # Normalise MITRE tags to plain strings
                 mitre_tags = []
-                for t in (mitre_raw if isinstance(mitre_raw, list) else []):
+                for t in mitre_raw if isinstance(mitre_raw, list) else []:
                     if isinstance(t, dict):
                         tid = t.get("id") or t.get("technique_id", "")
                         if tid:
@@ -768,7 +812,7 @@ class ForensicEngine:
 
                 alert_doc = {
                     "id": session_id,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "severity": level.lower(),
                     "threat_type": threat_type,
                     "source_ip": source_ip,
@@ -804,9 +848,7 @@ class ForensicEngine:
                 log.warning(f"Alert fire failed for session {session_id}: {e}")
                 failed_count += 1
 
-        log.info(
-            f"Alert evaluation complete: {alert_count} fired, {failed_count} failed"
-        )
+        log.info(f"Alert evaluation complete: {alert_count} fired, {failed_count} failed")
         return {"fired": alert_count, "failed": failed_count}
 
     # ── Phase 9: Unified risk scoring ────────────────────────────────────────
@@ -898,8 +940,7 @@ class ForensicEngine:
         if not source_ips:
             return {}
         try:
-            resp = self.es.mget(index="forenhive-smb-analysis",
-                                body={"ids": source_ips})
+            resp = self.es.mget(index="forenhive-smb-analysis", body={"ids": source_ips})
             profiles = {}
             for doc in resp.get("docs", []):
                 if doc.get("found"):
@@ -907,9 +948,9 @@ class ForensicEngine:
                     smb = src.get("smb_activity", {})
                     ops = smb.get("dcerpc_operations", [])
                     profiles[doc["_id"]] = {
-                        "smb_share_enum":   smb.get("share_enumerated", False),
+                        "smb_share_enum": smb.get("share_enumerated", False),
                         "epmapper_prescan": smb.get("epmapper_prescan", 0),
-                        "exploit_cve":      [o["advisory"] for o in ops if o.get("advisory")],
+                        "exploit_cve": [o["advisory"] for o in ops if o.get("advisory")],
                     }
             return profiles
         except Exception as e:
@@ -952,24 +993,25 @@ class ForensicEngine:
 
     # ── Phase 3: Session Scoring + MITRE ──────────────────────────────────────
 
-    def run_session_scoring(self, hours_back: int = 24, enrichment_cache: dict = None,
-                            vt_was_available: bool = True):
+    def run_session_scoring(
+        self, hours_back: int = 24, enrichment_cache: dict = None, vt_was_available: bool = True
+    ):
         log.info(f"=== Phase 3: Session Scoring + MITRE (last {hours_back}h) ===")
 
         # Gather sessions + correlation data from ES in parallel (independent queries)
         with ThreadPoolExecutor(max_workers=6) as pool:
-            f_cowrie         = pool.submit(_query_cowrie_sessions, self.es, hours_back)
-            f_dionaea        = pool.submit(_query_dionaea_sessions, self.es, hours_back)
-            f_galah          = pool.submit(_query_galah_sessions, self.es, hours_back)
-            f_ip_to_sha256   = pool.submit(_query_ip_to_sha256, self.es, hours_back)
+            f_cowrie = pool.submit(_query_cowrie_sessions, self.es, hours_back)
+            f_dionaea = pool.submit(_query_dionaea_sessions, self.es, hours_back)
+            f_galah = pool.submit(_query_galah_sessions, self.es, hours_back)
+            f_ip_to_sha256 = pool.submit(_query_ip_to_sha256, self.es, hours_back)
             f_honeypot_types = pool.submit(_query_ip_honeypot_types, self.es, hours_back)
-            f_file_analysis  = pool.submit(_load_file_analysis_from_pg, max(hours_back, 168))
-            cowrie_sessions  = f_cowrie.result()
+            f_file_analysis = pool.submit(_load_file_analysis_from_pg, max(hours_back, 168))
+            cowrie_sessions = f_cowrie.result()
             dionaea_sessions = f_dionaea.result()
-            galah_sessions   = f_galah.result()
-            ip_to_sha256     = f_ip_to_sha256.result()
-            honeypot_types   = f_honeypot_types.result()
-            file_analysis    = f_file_analysis.result()
+            galah_sessions = f_galah.result()
+            ip_to_sha256 = f_ip_to_sha256.result()
+            honeypot_types = f_honeypot_types.result()
+            file_analysis = f_file_analysis.result()
 
         all_sessions = cowrie_sessions + dionaea_sessions + galah_sessions
         log.info(
@@ -980,53 +1022,56 @@ class ForensicEngine:
 
         enrichment_cache = enrichment_cache or {}
 
-        log.info(f"File analysis: {len(file_analysis)} entries, "
-                 f"{len(ip_to_sha256)} IPs with file hashes")
+        log.info(
+            f"File analysis: {len(file_analysis)} entries, {len(ip_to_sha256)} IPs with file hashes"
+        )
 
         # Cross-correlation data (SMB depends on all_ips; recidivism uses PG)
         all_ips = list({s.get("source_ip") for s in all_sessions if s.get("source_ip")})
         with ThreadPoolExecutor(max_workers=2) as pool:
-            f_smb        = pool.submit(self._query_smb_profiles, all_ips)
+            f_smb = pool.submit(self._query_smb_profiles, all_ips)
             f_recidivism = pool.submit(_query_recidivism)
             smb_profiles = f_smb.result()
-            recidivism   = f_recidivism.result()
-        log.info(f"SMB profiles: {len(smb_profiles)}, "
-                 f"Honeypot-type correlation: {len(honeypot_types)} IPs, "
-                 f"Recidivists: {len(recidivism)}")
+            recidivism = f_recidivism.result()
+        log.info(
+            f"SMB profiles: {len(smb_profiles)}, "
+            f"Honeypot-type correlation: {len(honeypot_types)} IPs, "
+            f"Recidivists: {len(recidivism)}"
+        )
 
         scored = []
         sessions_to_save = []
 
         for session in all_sessions:
-            source_ip  = session.get("source_ip", "")
-            enrich     = enrichment_cache.get(source_ip, {})
+            source_ip = session.get("source_ip", "")
+            enrich = enrichment_cache.get(source_ip, {})
             reputation = enrich.get("reputation", {})
-            privacy    = enrich.get("privacy", {})
-            geo        = enrich.get("geo", {})
-            infra      = enrich.get("infrastructure", {})
-            whois      = enrich.get("whois", {})
-            dns        = enrich.get("dns", {})
-            threat     = enrich.get("threat_summary", {})
-            shodan_host = (infra.get("host_detail") or {})
+            privacy = enrich.get("privacy", {})
+            geo = enrich.get("geo", {})
+            infra = enrich.get("infrastructure", {})
+            whois = enrich.get("whois", {})
+            dns = enrich.get("dns", {})
+            threat = enrich.get("threat_summary", {})
+            shodan_host = infra.get("host_detail") or {}
 
             # Classify private IPs
-            is_private    = enrich.get("private", False)
+            is_private = enrich.get("private", False)
             network_class = enrich.get("network_class", "")
-            private_risk  = enrich.get("private_risk_level", "")
+            private_risk = enrich.get("private_risk_level", "")
 
             if private_risk == "ignore":
                 log.debug(f"Skipping internal infrastructure IP {source_ip} ({network_class})")
                 continue
 
             # Aggregate YARA/VT signals across all files from this IP
-            ip_hashes       = ip_to_sha256.get(source_ip, [])
-            yara_matches    = []
-            vt_malicious    = 0
-            vt_family       = ""
-            vt_tags         = []
-            vt_names        = []
-            vt_first_seen   = ""
-            ip_sha256_list  = []
+            ip_hashes = ip_to_sha256.get(source_ip, [])
+            yara_matches = []
+            vt_malicious = 0
+            vt_family = ""
+            vt_tags = []
+            vt_names = []
+            vt_first_seen = ""
+            ip_sha256_list = []
             for sha256 in ip_hashes:
                 fa = file_analysis.get(sha256, {})
                 if not fa:
@@ -1034,10 +1079,10 @@ class ForensicEngine:
                 ip_sha256_list.append(sha256)
                 yara_matches.extend(fa.get("yara_matches", []))
                 if fa.get("vt_malicious", 0) > vt_malicious:
-                    vt_malicious  = fa["vt_malicious"]
-                    vt_family     = fa.get("vt_family", "") or vt_family
-                    vt_tags       = fa.get("vt_tags", []) or vt_tags
-                    vt_names      = fa.get("vt_names", []) or vt_names
+                    vt_malicious = fa["vt_malicious"]
+                    vt_family = fa.get("vt_family", "") or vt_family
+                    vt_tags = fa.get("vt_tags", []) or vt_tags
+                    vt_names = fa.get("vt_names", []) or vt_names
                     vt_first_seen = fa.get("vt_first_seen", "") or vt_first_seen
             yara_matches = list(set(yara_matches))
 
@@ -1049,8 +1094,9 @@ class ForensicEngine:
 
             # Time metrics
             time_metrics = _compute_time_metrics(
-                session.get("started_at"), session.get("ended_at"),
-                int(session.get("login_attempts", 0))
+                session.get("started_at"),
+                session.get("ended_at"),
+                int(session.get("login_attempts", 0)),
             )
             session.update(time_metrics)  # persist velocity/duration to PG via _save_session
 
@@ -1058,88 +1104,88 @@ class ForensicEngine:
             session_data = {
                 **session,
                 # Reputation
-                "abuse_score":         reputation.get("abuse_score", 0),
+                "abuse_score": reputation.get("abuse_score", 0),
                 "abuse_total_reports": reputation.get("total_reports", 0),
                 "abuse_distinct_users": reputation.get("distinct_users", 0),
                 "abuse_last_reported": reputation.get("last_reported_at", ""),
-                "abuse_categories":    threat.get("attack_categories", []),
+                "abuse_categories": threat.get("attack_categories", []),
                 "abuse_recent_comments": reputation.get("recent_comments", []),
-                "abuse_usage_type":    reputation.get("usage_type", ""),
-                "geo_isp":             reputation.get("isp", "") or privacy.get("company_name", "") or "",
+                "abuse_usage_type": reputation.get("usage_type", ""),
+                "geo_isp": reputation.get("isp", "") or privacy.get("company_name", "") or "",
                 # Privacy / anonymization
-                "is_tor":              threat.get("is_tor", False),
-                "is_vpn":              threat.get("is_vpn", False),
-                "is_proxy":            threat.get("is_proxy", False),
-                "is_hosting":          privacy.get("is_hosting", False),
-                "is_datacenter":       threat.get("is_datacenter", False),
-                "is_anonymized":       threat.get("is_anonymized", False),
-                "is_abuser_listed":    threat.get("is_abuser_listed", False),
-                "is_bogon":            threat.get("is_bogon", False),
+                "is_tor": threat.get("is_tor", False),
+                "is_vpn": threat.get("is_vpn", False),
+                "is_proxy": threat.get("is_proxy", False),
+                "is_hosting": privacy.get("is_hosting", False),
+                "is_datacenter": threat.get("is_datacenter", False),
+                "is_anonymized": threat.get("is_anonymized", False),
+                "is_abuser_listed": threat.get("is_abuser_listed", False),
+                "is_bogon": threat.get("is_bogon", False),
                 # GeoIP / ASN
-                "geo_country":         geo.get("country", "") or "",
-                "geo_country_code":    geo.get("country_code", "") or reputation.get("country_code", "") or "",
-                "geo_region":          geo.get("region", "") or "",
-                "geo_city":            geo.get("city", "") or "",
-                "geo_postal":          geo.get("postal_code", "") or "",
-                "geo_lat":             geo.get("lat"),
-                "geo_lon":             geo.get("lon"),
-                "geo_timezone":        geo.get("timezone", "") or "",
-                "geo_continent":       geo.get("continent", "") or "",
-                "geo_asn":             geo.get("asn", 0) or whois.get("asn") or 0,
-                "geo_org":             geo.get("org", "") or whois.get("asn_description", "") or "",
-                "network_cidr":        threat.get("network_cidr", ""),
-                "asn_route":           privacy.get("asn_route", ""),
-                "asn_type":            privacy.get("asn_type", ""),
-                "company_domain":      privacy.get("company_domain", ""),
-                "abuse_contact":       threat.get("abuse_contact", ""),
+                "geo_country": geo.get("country", "") or "",
+                "geo_country_code": geo.get("country_code", "")
+                or reputation.get("country_code", "")
+                or "",
+                "geo_region": geo.get("region", "") or "",
+                "geo_city": geo.get("city", "") or "",
+                "geo_postal": geo.get("postal_code", "") or "",
+                "geo_lat": geo.get("lat"),
+                "geo_lon": geo.get("lon"),
+                "geo_timezone": geo.get("timezone", "") or "",
+                "geo_continent": geo.get("continent", "") or "",
+                "geo_asn": geo.get("asn", 0) or whois.get("asn") or 0,
+                "geo_org": geo.get("org", "") or whois.get("asn_description", "") or "",
+                "network_cidr": threat.get("network_cidr", ""),
+                "asn_route": privacy.get("asn_route", ""),
+                "asn_type": privacy.get("asn_type", ""),
+                "company_domain": privacy.get("company_domain", ""),
+                "abuse_contact": threat.get("abuse_contact", ""),
                 # DNS
-                "ptr_hostname":        dns.get("ptr", ""),
-                "all_hostnames":       threat.get("hostnames", []),
+                "ptr_hostname": dns.get("ptr", ""),
+                "all_hostnames": threat.get("hostnames", []),
                 # Whois
-                "whois_network":       whois.get("network_name", ""),
-                "whois_registry":      whois.get("asn_registry", ""),
-                "whois_registration":  whois.get("registration", ""),
+                "whois_network": whois.get("network_name", ""),
+                "whois_registry": whois.get("asn_registry", ""),
+                "whois_registration": whois.get("registration", ""),
                 # Shodan / attacker infrastructure
-                "shodan_vulns":        infra.get("vulns", []) or [],
-                "shodan_tags":         infra.get("tags", []) or [],
-                "shodan_open_ports":   infra.get("open_ports", []) or [],
-                "shodan_hostnames":    infra.get("hostnames", []) or [],
-                "shodan_cpes":         infra.get("cpes", []) or [],
-                "shodan_os":           shodan_host.get("os", ""),
-                "shodan_services":     shodan_host.get("services", []),
-                "shodan_last_update":  shodan_host.get("last_update", ""),
+                "shodan_vulns": infra.get("vulns", []) or [],
+                "shodan_tags": infra.get("tags", []) or [],
+                "shodan_open_ports": infra.get("open_ports", []) or [],
+                "shodan_hostnames": infra.get("hostnames", []) or [],
+                "shodan_cpes": infra.get("cpes", []) or [],
+                "shodan_os": shodan_host.get("os", ""),
+                "shodan_services": shodan_host.get("services", []),
+                "shodan_last_update": shodan_host.get("last_update", ""),
                 # Threat summary (derived)
-                "threat_tier":         threat.get("tier", ""),
+                "threat_tier": threat.get("tier", ""),
                 # Malware
-                "yara_matches":        yara_matches,
-                "vt_malicious":        vt_malicious,
-                "vt_family":           vt_family,
-                "vt_tags":             vt_tags,
-                "vt_names":            vt_names,
-                "vt_first_seen":       vt_first_seen,
-                "sha256_hashes":       ip_sha256_list,
+                "yara_matches": yara_matches,
+                "vt_malicious": vt_malicious,
+                "vt_family": vt_family,
+                "vt_tags": vt_tags,
+                "vt_names": vt_names,
+                "vt_first_seen": vt_first_seen,
+                "sha256_hashes": ip_sha256_list,
                 # Classification
-                "is_private":          is_private,
-                "vt_available":        vt_was_available,
-                "network_class":       network_class,
+                "is_private": is_private,
+                "vt_available": vt_was_available,
+                "network_class": network_class,
                 # SMB
-                "smb_share_enum":      smb.get("smb_share_enum", False),
-                "epmapper_prescan":    smb.get("epmapper_prescan", 0),
-                "exploit_cve":         smb.get("exploit_cve", []),
+                "smb_share_enum": smb.get("smb_share_enum", False),
+                "epmapper_prescan": smb.get("epmapper_prescan", 0),
+                "exploit_cve": smb.get("exploit_cve", []),
                 # Correlation
-                "honeypot_types_hit":  honeypot_types.get(source_ip, []),
+                "honeypot_types_hit": honeypot_types.get(source_ip, []),
                 # Recidivism
-                "previously_seen":     source_ip in recidivism,
-                "previous_sessions":   recidivism.get(source_ip, 0),
+                "previously_seen": source_ip in recidivism,
+                "previous_sessions": recidivism.get(source_ip, 0),
                 # Time metrics
                 **time_metrics,
             }
 
             # ── Fetch behavioral data BEFORE scoring ────────────────────────────
             if session.get("honeypot_type") == "cowrie":
-                session_data["commands"] = _query_cowrie_commands(
-                    self.es, session["session_id"]
-                )
+                session_data["commands"] = _query_cowrie_commands(self.es, session["session_id"])
                 session_data["file_download_count"] = _query_cowrie_file_downloads(
                     self.es, session["session_id"]
                 )
@@ -1148,9 +1194,14 @@ class ForensicEngine:
                 session_data["file_download_count"] = 0
 
             # ── MITRE deterministic mapping (techniques feed the scorer) ────────
-            from mitre_mapper import (get_techniques_deterministic, get_kill_chain_phase,
-                                      get_kill_chain_stage_number, KILL_CHAIN_LABELS)
-            tech_ids         = get_techniques_deterministic(session_data)
+            from mitre_mapper import (
+                KILL_CHAIN_LABELS,
+                get_kill_chain_phase,
+                get_kill_chain_stage_number,
+                get_techniques_deterministic,
+            )
+
+            tech_ids = get_techniques_deterministic(session_data)
             kill_chain_phase = get_kill_chain_phase(tech_ids)
             kill_chain_stage = get_kill_chain_stage_number(kill_chain_phase)
 
@@ -1162,64 +1213,72 @@ class ForensicEngine:
             result = score_session(session_data)
 
             # ── LLM narrative (techniques already mapped above) ─────────────────
-            mitre_full         = self.mitre.narrative_for(session_data, tech_ids)
-            mitre_techniques   = mitre_full["techniques"]
-            primary_technique  = mitre_full["primary_technique"]
+            mitre_full = self.mitre.narrative_for(session_data, tech_ids)
+            mitre_techniques = mitre_full["techniques"]
+            primary_technique = mitre_full["primary_technique"]
             forensic_narrative = mitre_full["forensic_narrative"]
 
-            session["risk_score"]         = result.risk_score
-            session["risk_level"]         = result.risk_level
-            session["confidence"]         = result.confidence
-            session["signal_breakdown"]   = result.signal_breakdown
-            session["score_version"]      = result.score_version
-            session["mitre_techniques"]   = tech_ids
-            session["kill_chain_phase"]   = kill_chain_phase
-            session["kill_chain_stage"]   = kill_chain_stage
-            session["primary_technique"]  = primary_technique
+            session["risk_score"] = result.risk_score
+            session["risk_level"] = result.risk_level
+            session["confidence"] = result.confidence
+            session["signal_breakdown"] = result.signal_breakdown
+            session["score_version"] = result.score_version
+            session["mitre_techniques"] = tech_ids
+            session["kill_chain_phase"] = kill_chain_phase
+            session["kill_chain_stage"] = kill_chain_stage
+            session["primary_technique"] = primary_technique
             session["forensic_narrative"] = forensic_narrative
-            session["enrichment_data"]    = {
+            session["enrichment_data"] = {
                 **enrich,
-                "risk_level":          result.risk_level,
-                "confidence":          result.confidence,
-                "score_version":       result.score_version,
-                "signal_breakdown":    result.signal_breakdown,
-                "active_signals":      result.active_signals,
-                "command_count":       session_data.get("command_count", 0),
+                "risk_level": result.risk_level,
+                "confidence": result.confidence,
+                "score_version": result.score_version,
+                "signal_breakdown": result.signal_breakdown,
+                "active_signals": result.active_signals,
+                "command_count": session_data.get("command_count", 0),
                 "file_download_count": session_data["file_download_count"],
-                "exfil_bytes":         session.get("exfil_bytes", 0),
-                "mitre_techniques":    mitre_techniques,
-                "kill_chain_phase":    kill_chain_phase,
-                "kill_chain_stage":    kill_chain_stage,
-                "kill_chain_label":    KILL_CHAIN_LABELS.get(kill_chain_phase, kill_chain_phase),
-                "primary_technique":   primary_technique,
-                "forensic_narrative":  forensic_narrative,
-                "mapping_source":      mitre_full.get("mapping_source", "deterministic"),
-                "yara_matches":        yara_matches,
-                "vt_malicious":        vt_malicious,
-                "vt_family":           vt_family,
-                "vt_available":        vt_was_available,
+                "exfil_bytes": session.get("exfil_bytes", 0),
+                "mitre_techniques": mitre_techniques,
+                "kill_chain_phase": kill_chain_phase,
+                "kill_chain_stage": kill_chain_stage,
+                "kill_chain_label": KILL_CHAIN_LABELS.get(kill_chain_phase, kill_chain_phase),
+                "primary_technique": primary_technique,
+                "forensic_narrative": forensic_narrative,
+                "mapping_source": mitre_full.get("mapping_source", "deterministic"),
+                "yara_matches": yara_matches,
+                "vt_malicious": vt_malicious,
+                "vt_family": vt_family,
+                "vt_available": vt_was_available,
                 # Persist new fields so Phase 9 can read them back
-                "smb_share_enum":      session_data.get("smb_share_enum", False),
-                "epmapper_prescan":    session_data.get("epmapper_prescan", 0),
-                "exploit_cve":         session_data.get("exploit_cve", []),
-                "previously_seen":     session_data.get("previously_seen", False),
-                "previous_sessions":   session_data.get("previous_sessions", 0),
-                "shodan_vulns":        session_data.get("shodan_vulns", []),
-                "is_bogon":            session_data.get("is_bogon", False),
-                "geo_country_code":    session_data.get("geo_country_code", ""),
-                "destination_port":    session_data.get("destination_port", 0),
+                "smb_share_enum": session_data.get("smb_share_enum", False),
+                "epmapper_prescan": session_data.get("epmapper_prescan", 0),
+                "exploit_cve": session_data.get("exploit_cve", []),
+                "previously_seen": session_data.get("previously_seen", False),
+                "previous_sessions": session_data.get("previous_sessions", 0),
+                "shodan_vulns": session_data.get("shodan_vulns", []),
+                "is_bogon": session_data.get("is_bogon", False),
+                "geo_country_code": session_data.get("geo_country_code", ""),
+                "destination_port": session_data.get("destination_port", 0),
             }
 
             sessions_to_save.append(session)
-            scored.append((session["session_id"], source_ip, result.risk_score,
-                           result.risk_level, session.get("honeypot_type", "")))
+            scored.append(
+                (
+                    session["session_id"],
+                    source_ip,
+                    result.risk_score,
+                    result.risk_level,
+                    session.get("honeypot_type", ""),
+                )
+            )
 
             if result.risk_score >= 40:
                 lm = result.signal_breakdown.get("lateral_movement", {}).get("points", 0) > 0
                 flags = " [LATERAL]" if lm else ""
-                if kill_chain_phase: flags += f" [{kill_chain_phase}]"
+                if kill_chain_phase:
+                    flags += f" [{kill_chain_phase}]"
                 log.info(
-                    f"[{result.risk_level}] {session.get('honeypot_type','?'):7s} "
+                    f"[{result.risk_level}] {session.get('honeypot_type', '?'):7s} "
                     f"Session {session['session_id'][:12]}... "
                     f"IP={source_ip} score={result.risk_score}{flags}"
                 )
@@ -1235,9 +1294,9 @@ class ForensicEngine:
 
     def run_full_analysis(self, hours_back: int = 24):
         start = time.time()
-        log.info(f"{'='*60}")
+        log.info(f"{'=' * 60}")
         log.info(f"  ForenHive Full Forensic Analysis (last {hours_back}h)")
-        log.info(f"{'='*60}")
+        log.info(f"{'=' * 60}")
 
         # Fail fast if Elasticsearch is unreachable — otherwise every query
         # silently returns [] and we'd score an empty corpus.
@@ -1292,7 +1351,8 @@ class ForensicEngine:
             for src_ip in unique_ips:
                 try:
                     # Narrowed SELECT (audit fix P-2)
-                    cur.execute("""
+                    cur.execute(
+                        """
                         SELECT honeypot_type, login_attempts, success_count,
                                attack_velocity, mitre_techniques, kill_chain_stage,
                                kill_chain_phase, enrichment_data, started_at
@@ -1301,82 +1361,94 @@ class ForensicEngine:
                           AND started_at > NOW() - make_interval(hours => %s)
                           AND honeypot_type != 'unified'
                         ORDER BY started_at DESC
-                    """, (src_ip, hours_back))
+                    """,
+                        (src_ip, hours_back),
+                    )
 
                     sessions_for_ip = []
                     for row in cur.fetchall():
                         ed = row["enrichment_data"] or {}
                         if isinstance(ed, str):
                             import json as _json
+
                             ed = _json.loads(ed)
-                        sessions_for_ip.append({
-                            "honeypot_type":     row["honeypot_type"],
-                            "login_attempts":    row["login_attempts"] or 0,
-                            "success_count":     row["success_count"] or 0,
-                            "attack_velocity":   row["attack_velocity"] or 0.0,
-                            "command_count":     ed.get("command_count", 0),
-                            "exfil_bytes":       ed.get("exfil_bytes", 0),
-                            "file_download_count": ed.get("file_download_count", 0),
-                            "mitre_techniques":  row["mitre_techniques"] or [],
-                            "kill_chain_stage":  row["kill_chain_stage"] or 0,
-                            "kill_chain_phase":  row["kill_chain_phase"] or "",
-                            "yara_matches":      ed.get("yara_matches", []),
-                            "vt_malicious":      ed.get("vt_malicious", 0),
-                            "vt_family":         ed.get("vt_family", ""),
-                            "smb_share_enum":    ed.get("smb_share_enum", False),
-                            "epmapper_prescan":  ed.get("epmapper_prescan", 0),
-                            "exploit_cve":       ed.get("exploit_cve", []),
-                            "previously_seen":   ed.get("previously_seen", False),
-                            "previous_sessions": ed.get("previous_sessions", 0),
-                            "command_quality_tags": (
-                                ed.get("signal_breakdown", {})
-                                  .get("compromise_depth", {})
-                                  .get("evidence", {})
-                                  .get("command_quality_tags", [])
-                            ),
-                        })
+                        sessions_for_ip.append(
+                            {
+                                "honeypot_type": row["honeypot_type"],
+                                "login_attempts": row["login_attempts"] or 0,
+                                "success_count": row["success_count"] or 0,
+                                "attack_velocity": row["attack_velocity"] or 0.0,
+                                "command_count": ed.get("command_count", 0),
+                                "exfil_bytes": ed.get("exfil_bytes", 0),
+                                "file_download_count": ed.get("file_download_count", 0),
+                                "mitre_techniques": row["mitre_techniques"] or [],
+                                "kill_chain_stage": row["kill_chain_stage"] or 0,
+                                "kill_chain_phase": row["kill_chain_phase"] or "",
+                                "yara_matches": ed.get("yara_matches", []),
+                                "vt_malicious": ed.get("vt_malicious", 0),
+                                "vt_family": ed.get("vt_family", ""),
+                                "smb_share_enum": ed.get("smb_share_enum", False),
+                                "epmapper_prescan": ed.get("epmapper_prescan", 0),
+                                "exploit_cve": ed.get("exploit_cve", []),
+                                "previously_seen": ed.get("previously_seen", False),
+                                "previous_sessions": ed.get("previous_sessions", 0),
+                                "command_quality_tags": (
+                                    ed.get("signal_breakdown", {})
+                                    .get("compromise_depth", {})
+                                    .get("evidence", {})
+                                    .get("command_quality_tags", [])
+                                ),
+                            }
+                        )
 
                     # Load enrichment once per IP (same connection)
                     cur.execute(
-                        "SELECT data FROM ip_enrichment_cache WHERE ip = %s LIMIT 1",
-                        (src_ip,))
+                        "SELECT data FROM ip_enrichment_cache WHERE ip = %s LIMIT 1", (src_ip,)
+                    )
                     row = cur.fetchone()
                     enrichment = (row["data"] if row else {}) or {}
                     if isinstance(enrichment, str):
                         import json as _json
+
                         enrichment = _json.loads(enrichment)
 
                     unified = score_ip(src_ip, sessions_for_ip, enrichment)
-                    log.info(f"Unified score for {src_ip}: "
-                             f"{unified.risk_score}/{unified.risk_level}")
+                    log.info(
+                        f"Unified score for {src_ip}: {unified.risk_score}/{unified.risk_level}"
+                    )
 
                     hps = sorted({s["honeypot_type"] for s in sessions_for_ip})
-                    self._store_unified_risk_score({
-                        "source_ip":         src_ip,
-                        "risk_score":        unified.risk_score,
-                        "risk_level":        unified.risk_level,
-                        "confidence":        unified.confidence,
-                        "active_signals":    unified.active_signals,
-                        "signal_breakdown":  unified.signal_breakdown,
-                        "honeypots_hit":     hps,
-                        "honeypot_count":    len(hps),
-                        "honeypot_summary":  {hp: sum(1 for s in sessions_for_ip
-                                                      if s["honeypot_type"] == hp)
-                                              for hp in hps},
-                        "sessions_count":    unified.sessions_aggregated or 0,
-                        "key_findings":      [],
-                        "recommendations":   [],
-                        "enrichment_snapshot": {
-                            "country":     (enrichment.get("geo") or {}).get("country"),
-                            "city":        (enrichment.get("geo") or {}).get("city"),
-                            "asn":         (enrichment.get("geo") or {}).get("asn"),
-                            "org":         (enrichment.get("geo") or {}).get("org"),
-                            "is_tor":      (enrichment.get("privacy") or {}).get("is_tor", False),
-                            "is_vpn":      (enrichment.get("privacy") or {}).get("is_vpn", False),
-                            "abuse_score": (enrichment.get("reputation") or {}).get("abuse_score", 0),
-                        },
-                        "score_version": unified.score_version,
-                    })
+                    self._store_unified_risk_score(
+                        {
+                            "source_ip": src_ip,
+                            "risk_score": unified.risk_score,
+                            "risk_level": unified.risk_level,
+                            "confidence": unified.confidence,
+                            "active_signals": unified.active_signals,
+                            "signal_breakdown": unified.signal_breakdown,
+                            "honeypots_hit": hps,
+                            "honeypot_count": len(hps),
+                            "honeypot_summary": {
+                                hp: sum(1 for s in sessions_for_ip if s["honeypot_type"] == hp)
+                                for hp in hps
+                            },
+                            "sessions_count": unified.sessions_aggregated or 0,
+                            "key_findings": [],
+                            "recommendations": [],
+                            "enrichment_snapshot": {
+                                "country": (enrichment.get("geo") or {}).get("country"),
+                                "city": (enrichment.get("geo") or {}).get("city"),
+                                "asn": (enrichment.get("geo") or {}).get("asn"),
+                                "org": (enrichment.get("geo") or {}).get("org"),
+                                "is_tor": (enrichment.get("privacy") or {}).get("is_tor", False),
+                                "is_vpn": (enrichment.get("privacy") or {}).get("is_vpn", False),
+                                "abuse_score": (enrichment.get("reputation") or {}).get(
+                                    "abuse_score", 0
+                                ),
+                            },
+                            "score_version": unified.score_version,
+                        }
+                    )
                     unified_count += 1
                 except Exception as e:
                     log.warning(f"Unified scoring failed for {src_ip}: {e}")
@@ -1385,9 +1457,9 @@ class ForensicEngine:
 
         # ── Summary ───────────────────────────────────────────────────────────
         elapsed = time.time() - start
-        log.info(f"{'='*60}")
-        log.info(f"  Analysis Complete")
-        log.info(f"{'='*60}")
+        log.info(f"{'=' * 60}")
+        log.info("  Analysis Complete")
+        log.info(f"{'=' * 60}")
         log.info(f"  IPs enriched   : {len(enrichment_cache)}")
         log.info(f"  Sessions scored: {len(scored)}")
         if scored:
@@ -1399,42 +1471,64 @@ class ForensicEngine:
             log.info(f"  By honeypot    : {hp_str}")
 
             critical = sum(1 for _, _, s, _, _ in scored if s >= 80)
-            high     = sum(1 for _, _, s, _, _ in scored if 60 <= s < 80)
-            medium   = sum(1 for _, _, s, _, _ in scored if 40 <= s < 60)
-            low      = sum(1 for _, _, s, _, _ in scored if 20 <= s < 40)
-            info     = sum(1 for _, _, s, _, _ in scored if s < 20)
-            log.info(f"  Risk breakdown : CRITICAL={critical} HIGH={high} "
-                     f"MEDIUM={medium} LOW={low} INFO={info}")
-        log.info(f"  Timeline events: +{timeline_stats['inserted']} "
-                 f"(seen: {timeline_stats['seen']})")
-        log.info(f"  IoCs extracted : {ioc_stats['extracted']} "
-                 f"(from {ioc_stats['rows_scanned']} timeline rows)")
+            high = sum(1 for _, _, s, _, _ in scored if 60 <= s < 80)
+            medium = sum(1 for _, _, s, _, _ in scored if 40 <= s < 60)
+            low = sum(1 for _, _, s, _, _ in scored if 20 <= s < 40)
+            info = sum(1 for _, _, s, _, _ in scored if s < 20)
+            log.info(
+                f"  Risk breakdown : CRITICAL={critical} HIGH={high} "
+                f"MEDIUM={medium} LOW={low} INFO={info}"
+            )
+        log.info(
+            f"  Timeline events: +{timeline_stats['inserted']} (seen: {timeline_stats['seen']})"
+        )
+        log.info(
+            f"  IoCs extracted : {ioc_stats['extracted']} "
+            f"(from {ioc_stats['rows_scanned']} timeline rows)"
+        )
         log.info(f"  SMB profiles   : {smb_count}")
-        log.info(f"  Custody sealed : {coc_stats['sealed']} session(s), "
-                 f"batch=#{coc_stats.get('batch_id')}, "
-                 f"TSA={coc_stats.get('tsa_status')}")
+        log.info(
+            f"  Custody sealed : {coc_stats['sealed']} session(s), "
+            f"batch=#{coc_stats.get('batch_id')}, "
+            f"TSA={coc_stats.get('tsa_status')}"
+        )
         log.info(f"  LLM profiles   : {profiled}")
-        log.info(f"  Alerts fired   : {alert_stats.get('fired', 0)} (failed: {alert_stats.get('failed', 0)})")
+        log.info(
+            f"  Alerts fired   : {alert_stats.get('fired', 0)} (failed: {alert_stats.get('failed', 0)})"
+        )
         log.info(f"  Unified scores : {unified_count}/{len(unique_ips)} IPs")
         log.info(f"  Duration       : {elapsed:.1f}s")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="ForenHive Forensic Engine")
-    parser.add_argument("--hours",       type=int, default=24, help="Hours to look back")
-    parser.add_argument("--enrich-only", action="store_true",  help="IP enrichment only")
-    parser.add_argument("--yara-only",   action="store_true",  help="YARA scan only")
-    parser.add_argument("--score-only",  action="store_true",  help="Scoring + MITRE only")
+    parser.add_argument("--hours", type=int, default=24, help="Hours to look back")
+    parser.add_argument("--enrich-only", action="store_true", help="IP enrichment only")
+    parser.add_argument("--yara-only", action="store_true", help="YARA scan only")
+    parser.add_argument("--score-only", action="store_true", help="Scoring + MITRE only")
     parser.add_argument("--timeline-only", action="store_true", help="Build per-IP timeline only")
-    parser.add_argument("--ioc-only",      action="store_true", help="Extract IoCs from existing timeline only")
-    parser.add_argument("--coc-only",      action="store_true", help="Seal unsealed sessions (chain of custody) only")
-    parser.add_argument("--smb-only",      action="store_true", help="SMB forensic analysis only")
-    parser.add_argument("--profile-only",  action="store_true", help="LLM profiling only (high-risk IPs)")
-    parser.add_argument("--init-db",     action="store_true",  help="Initialize PostgreSQL schema")
-    parser.add_argument("--quota-status", action="store_true", help="Print external-API quota status and exit")
-    parser.add_argument("--quota-reset",  metavar="API",       help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)")
+    parser.add_argument(
+        "--ioc-only", action="store_true", help="Extract IoCs from existing timeline only"
+    )
+    parser.add_argument(
+        "--coc-only", action="store_true", help="Seal unsealed sessions (chain of custody) only"
+    )
+    parser.add_argument("--smb-only", action="store_true", help="SMB forensic analysis only")
+    parser.add_argument(
+        "--profile-only", action="store_true", help="LLM profiling only (high-risk IPs)"
+    )
+    parser.add_argument("--init-db", action="store_true", help="Initialize PostgreSQL schema")
+    parser.add_argument(
+        "--quota-status", action="store_true", help="Print external-API quota status and exit"
+    )
+    parser.add_argument(
+        "--quota-reset",
+        metavar="API",
+        help="Manually clear exhausted flag for API (virustotal|abuseipdb|iplocate|shodan)",
+    )
     args = parser.parse_args()
 
     if args.init_db:
@@ -1445,13 +1539,17 @@ def main():
 
     if args.quota_status:
         from quota_tracker import get_tracker
+
         for row in get_tracker().status():
             mark = "EXHAUSTED" if row["exhausted"] else "ok"
-            log.info(f"  {row['api_name']:12s} {mark:10s} reset_at={row['reset_at']} last_error={row['last_error']}")
+            log.info(
+                f"  {row['api_name']:12s} {mark:10s} reset_at={row['reset_at']} last_error={row['last_error']}"
+            )
         sys.exit(0)
 
     if args.quota_reset:
         from quota_tracker import get_tracker
+
         get_tracker().reset(args.quota_reset)
         sys.exit(0)
 

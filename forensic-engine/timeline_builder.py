@@ -1,27 +1,42 @@
 """
-ForenHive Forensic Engine — Timeline Builder
+timeline_builder.py — ForenHive Forensic Engine
+================================================
+Rôle    : construction d'une timeline forensique unifiée par IP source.
+Entrée  : événements ES (Cowrie + Dionaea + Galah + Zeek) sur une fenêtre.
+Sortie  : table PG `forensic_timeline_events` (chronologie ms-précision).
+Appelé  : par `engine.py` après scoring, alimente le PDF + UI Reconstruction.
+Deps    : Elasticsearch (lecture), PostgreSQL (écriture).
 
-Builds a per-IP unified event timeline by fusing Cowrie, Dionaea, Galah and
-Zeek events from Elasticsearch into a single stream persisted in PostgreSQL
-(`forensic_timeline_events`).
+═══════════════════════════════════════════════════════════════════════════════
+CONSTRUCTEUR DE TIMELINE FORENSIQUE
+═══════════════════════════════════════════════════════════════════════════════
+Agrège tous les événements d'une session ou d'une IP en ordre chronologique
+strict. Précision MILLISECONDE (ISO 8601 avec ms) pour respecter l'ordre
+réel des événements lors d'attaques rapides (bruteforce SSH, exploitation
+SMB, scan multi-port).
 
-Each attacker event — TCP connect, login attempt, shell command, HTTP
-request, SMB exploit, file drop, Zeek conn/weird — becomes one row with
-millisecond-precise timestamp, enabling cross-honeypot reconstruction of
-the kill chain for a given source IP.
+ÉVÉNEMENTS UNIFIÉS :
+  • TCP connect           (Cowrie/Dionaea)
+  • login attempt         (Cowrie ssh/telnet)
+  • shell command         (Cowrie input)
+  • HTTP request          (Galah)
+  • SMB exploit / payload (Dionaea)
+  • file drop             (Dionaea downloads)
+  • Zeek conn / weird     (réseau IDS)
 
-Idempotent: uses the ES `_id` as a unique key so re-running the builder on
-overlapping time windows does not create duplicates.
+IDEMPOTENCE :
+Utilise l'`_id` ES comme clé unique → relancer le builder sur des fenêtres
+temporelles chevauchantes ne crée pas de doublons.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+import config
 import psycopg2
 import psycopg2.extras
 from elasticsearch import Elasticsearch
-
-import config
 
 log = logging.getLogger("timeline")
 
@@ -31,6 +46,7 @@ ES_PAGE_SIZE = 1000
 # ══════════════════════════════════════════════════════════════════════════════
 # Per-honeypot normalizers — map raw ES doc → unified timeline row
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def _get(src: dict, *path, default=None):
     """Fetch a field that may be stored either nested ({"a":{"b":1}}) or
@@ -118,16 +134,21 @@ def _norm_dionaea(src: dict) -> dict | None:
 
 
 def _norm_galah(src: dict) -> dict | None:
-    method = (_get(src, "http", "request", "method")
-              or _get(src, "method") or "")
-    path = (_get(src, "http", "request", "uri")
-            or _get(src, "url", "path")
-            or _get(src, "request", "path") or "")[:200]
-    status = (_get(src, "http", "response", "status_code")
-              or _get(src, "http", "response", "status")
-              or "?")
-    ua = (_get(src, "http", "request", "user_agent")
-          or _get(src, "user_agent", "original") or "")[:80]
+    method = _get(src, "http", "request", "method") or _get(src, "method") or ""
+    path = (
+        _get(src, "http", "request", "uri")
+        or _get(src, "url", "path")
+        or _get(src, "request", "path")
+        or ""
+    )[:200]
+    status = (
+        _get(src, "http", "response", "status_code")
+        or _get(src, "http", "response", "status")
+        or "?"
+    )
+    ua = (_get(src, "http", "request", "user_agent") or _get(src, "user_agent", "original") or "")[
+        :80
+    ]
     llm_src = _get(src, "galah", "response", "source") or ""
     suffix = f" [llm={llm_src}]" if llm_src else ""
     return {
@@ -190,16 +211,17 @@ def _norm_zeek(src: dict) -> dict | None:
 
 
 NORMALIZERS = {
-    "cowrie":  _norm_cowrie,
+    "cowrie": _norm_cowrie,
     "dionaea": _norm_dionaea,
-    "galah":   _norm_galah,
-    "zeek":    _norm_zeek,
+    "galah": _norm_galah,
+    "zeek": _norm_zeek,
 }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Elasticsearch scroll
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def _scroll_honeypot(es: Elasticsearch, honeypot_type: str, since_iso: str):
     """Yield all ES docs for one honeypot type in the time window."""
@@ -208,7 +230,7 @@ def _scroll_honeypot(es: Elasticsearch, honeypot_type: str, since_iso: str):
             "bool": {
                 "filter": [
                     {"range": {"@timestamp": {"gte": since_iso}}},
-                    {"term":  {"honeypot.type.keyword": honeypot_type}},
+                    {"term": {"honeypot.type.keyword": honeypot_type}},
                     {"exists": {"field": "source.ip"}},
                 ]
             }
@@ -222,8 +244,7 @@ def _scroll_honeypot(es: Elasticsearch, honeypot_type: str, since_iso: str):
     hits = resp["hits"]["hits"]
     try:
         while hits:
-            for h in hits:
-                yield h
+            yield from hits
             resp = es.scroll(scroll_id=sid, scroll="2m")
             sid = resp.get("_scroll_id")
             hits = resp["hits"]["hits"]
@@ -239,14 +260,14 @@ def _scroll_honeypot(es: Elasticsearch, honeypot_type: str, since_iso: str):
 # Main builder
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TimelineBuilder:
 
+class TimelineBuilder:
     def __init__(self, es: Elasticsearch, pg_conn_factory):
         self.es = es
         self._pg = pg_conn_factory
 
     def build(self, hours_back: int = 24) -> dict:
-        since = (datetime.now(timezone.utc) - timedelta(hours=hours_back)).isoformat()
+        since = (datetime.now(UTC) - timedelta(hours=hours_back)).isoformat()
         totals = {hp: 0 for hp in NORMALIZERS}
         inserted = 0
 
@@ -276,19 +297,21 @@ class TimelineBuilder:
                         except (TypeError, ValueError):
                             dport = None
 
-                        batch.append((
-                            ip,
-                            ts,
-                            hp,
-                            norm["category"],
-                            norm["action"][:64],
-                            norm.get("session_id"),
-                            dport,
-                            (norm.get("protocol") or "")[:16],
-                            (norm.get("summary") or "")[:1000],
-                            psycopg2.extras.Json(src),
-                            hit["_id"],
-                        ))
+                        batch.append(
+                            (
+                                ip,
+                                ts,
+                                hp,
+                                norm["category"],
+                                norm["action"][:64],
+                                norm.get("session_id"),
+                                dport,
+                                (norm.get("protocol") or "")[:16],
+                                (norm.get("summary") or "")[:1000],
+                                psycopg2.extras.Json(src),
+                                hit["_id"],
+                            )
+                        )
                         totals[hp] += 1
 
                         if len(batch) >= 500:
@@ -304,8 +327,7 @@ class TimelineBuilder:
                 after_count = cur.fetchone()[0]
                 inserted = after_count - before_count
 
-            log.info(f"Timeline build complete — inserted {inserted} new events "
-                     f"(seen: {totals})")
+            log.info(f"Timeline build complete — inserted {inserted} new events (seen: {totals})")
         finally:
             conn.close()
 

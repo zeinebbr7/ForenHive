@@ -19,27 +19,31 @@ Usage:
   docker exec forenhive-forensic-engine python verify_coc.py
 """
 
-import json
 import os
 import sys
 
+import config
 import psycopg2
 import psycopg2.extras
-
-import config
-from chain_of_custody import canonical_bytes, sha256_hex, merkle_root, SEALED_COLUMNS
+from chain_of_custody import SEALED_COLUMNS, canonical_bytes, merkle_root, sha256_hex
 
 
 def _pg():
     return psycopg2.connect(
-        host=config.PG_HOST, port=config.PG_PORT,
-        dbname=config.PG_DB, user=config.PG_USER,
-        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", "")
+        host=config.PG_HOST,
+        port=config.PG_PORT,
+        dbname=config.PG_DB,
+        user=config.PG_USER,
+        password=os.environ.get("PG_PASSWORD") or os.environ.get("POSTGRES_PASSWORD", ""),
     )
 
 
-def _fmt_ok(n):  return f"\033[32mOK\033[0m  {n}"
-def _fmt_bad(n): return f"\033[31mFAIL\033[0m {n}"
+def _fmt_ok(n):
+    return f"\033[32mOK\033[0m  {n}"
+
+
+def _fmt_bad(n):
+    return f"\033[31mFAIL\033[0m {n}"
 
 
 def main() -> int:
@@ -68,21 +72,24 @@ def main() -> int:
                 expected = sha256_hex(linked)
 
                 if expected != r["record_hash"]:
-                    print(_fmt_bad(
-                        f"session={r['session_id']} record_hash mismatch "
-                        f"(recomputed={expected[:12]}... stored={r['record_hash'][:12]}...)"
-                    ))
+                    print(
+                        _fmt_bad(
+                            f"session={r['session_id']} record_hash mismatch "
+                            f"(recomputed={expected[:12]}... stored={r['record_hash'][:12]}...)"
+                        )
+                    )
                     errors += 1
                 elif r["prev_hash"] != prev:
-                    print(_fmt_bad(
-                        f"session={r['session_id']} prev_hash broken "
-                        f"(expected={prev[:12] if prev else 'NULL'}... stored={(r['prev_hash'] or 'NULL')[:12]}...)"
-                    ))
+                    print(
+                        _fmt_bad(
+                            f"session={r['session_id']} prev_hash broken "
+                            f"(expected={prev[:12] if prev else 'NULL'}... stored={(r['prev_hash'] or 'NULL')[:12]}...)"
+                        )
+                    )
                     errors += 1
                 prev = r["record_hash"]
 
-            print(f"  → {len(rows)} sealed sessions checked, "
-                  f"{len(rows) - errors} valid")
+            print(f"  → {len(rows)} sealed sessions checked, {len(rows) - errors} valid")
 
             # 2. Per-batch Merkle root check
             cur.execute("""
@@ -101,19 +108,23 @@ def main() -> int:
                 batch_hashes = [row["record_hash"] for row in cur.fetchall()]
                 recomputed = merkle_root(batch_hashes)
                 if recomputed != b["merkle_root"]:
-                    print(_fmt_bad(
-                        f"batch #{b['id']} merkle mismatch "
-                        f"(recomputed={recomputed[:12]}... stored={b['merkle_root'][:12]}...)"
-                    ))
+                    print(
+                        _fmt_bad(
+                            f"batch #{b['id']} merkle mismatch "
+                            f"(recomputed={recomputed[:12]}... stored={b['merkle_root'][:12]}...)"
+                        )
+                    )
                     errors += 1
                     continue
                 tsa_marker = f"TSA {b['tsa_status']}"
                 if b["tsa_time"]:
                     tsa_marker += f" @ {b['tsa_time'].isoformat()}"
-                print(_fmt_ok(
-                    f"batch #{b['id']} {len(batch_hashes)} records, "
-                    f"merkle={b['merkle_root'][:12]}... {tsa_marker}"
-                ))
+                print(
+                    _fmt_ok(
+                        f"batch #{b['id']} {len(batch_hashes)} records, "
+                        f"merkle={b['merkle_root'][:12]}... {tsa_marker}"
+                    )
+                )
 
     finally:
         conn.close()

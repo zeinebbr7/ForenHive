@@ -1,8 +1,16 @@
+"""
+profiling.py — Profils criminologiques (Suspect Profiler)
+Rôle : exposition des profils BAU générés par forensic-engine/profiler.py.
+URL    : /api/profiling/*
+Deps   : Elasticsearch (forenhive-suspect-profiles), PostgreSQL (suspect_profiles).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import ipaddress
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-
 from models.report import AttackerProfile
 from services.elasticsearch import get_es
 from services.profiler import build_profile
@@ -10,8 +18,8 @@ from services.profiler import build_profile
 router = APIRouter(prefix="/api/profiling", tags=["profiling"])
 
 
-@router.get("", response_model=List[Dict[str, Any]])
-async def list_profiles(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
+@router.get("", response_model=list[dict[str, Any]])
+async def list_profiles(limit: int = Query(50, ge=1, le=200)) -> list[dict[str, Any]]:
     """List top attacker IPs with summary stats (lightweight per-row profile).
 
     Backed by an ES aggregation over honeypot indices. Each row carries the
@@ -26,7 +34,7 @@ async def list_profiles(limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, 
 
 
 @router.get("/stats/summary")
-async def stats_summary() -> Dict[str, Any]:
+async def stats_summary() -> dict[str, Any]:
     """Severity-band counts + average risk across the top attackers."""
     rows = await get_es().top_attackers(limit=200)
     counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}

@@ -1,21 +1,41 @@
 """
-ForenHive Forensic Engine — YARA Scanner
-Scans Dionaea malware captures with YARA rules.
-Results are saved to the file_analysis table in PostgreSQL.
+yara_scanner.py — ForenHive Forensic Engine
+============================================
+Rôle    : détection de signatures malware (YARA) sur payloads capturés.
+Entrée  : fichiers déposés par Dionaea (binaires, scripts, executables).
+Sortie  : table PG `file_analysis` (matchs YARA + métadonnées).
+Appelé  : par `engine.py` après l'enrichissement IP.
+Deps    : python-yara, règles YARA dans `forensic-engine/yara_rules/`.
+
+═══════════════════════════════════════════════════════════════════════════════
+SCANNER YARA — DÉTECTION DE SIGNATURES MALWARE
+═══════════════════════════════════════════════════════════════════════════════
+Applique les règles YARA du projet sur les payloads capturés par Dionaea.
+
+SCORING TIERED selon la criticité de la règle matchée (contribution
+au signal `malware` du risk_score) :
+  CRITICAL rules  : +30 points  (ransomware, exploits 0-day)
+  HIGH rules      : +20 points  (backdoors, shells web connus)
+  MEDIUM rules    : +10 points  (suspects, packers)
+
+COUVERTURE DES RÈGLES :
+  • Ransomware (WannaCry, NotPetya, Locky, Ryuk…)
+  • Backdoors (Metasploit, Cobalt Strike, ShellBot)
+  • Shells web (PHP, ASP, JSP webshells)
+  • Exploits connus (EternalBlue payloads, BlueKeep)
+
+IDEMPOTENCE :
+Hash SHA-256 du fichier comme clé → re-scan ne crée pas de doublons.
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import hashlib
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Optional
-
-import psycopg2
-import psycopg2.extras
-import yara
 
 import config
+import yara
 
 log = logging.getLogger("yara_scanner")
 
@@ -28,19 +48,19 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     return db_pool.pooled_conn()
 
 
 class YARAScanner:
-
-    def __init__(self, rules_dir: Optional[str] = None):
+    def __init__(self, rules_dir: str | None = None):
         self.rules_dir = rules_dir or config.YARA_RULES_DIR
         self.rules = self._compile_rules()
 
-    def _compile_rules(self) -> Optional[yara.Rules]:
+    def _compile_rules(self) -> yara.Rules | None:
         rule_files = list(Path(self.rules_dir).glob("*.yar"))
         if not rule_files:
             log.warning(f"No YARA rules found in {self.rules_dir}")
@@ -65,15 +85,19 @@ class YARAScanner:
             matches = self.rules.match(filepath)
             result = []
             for m in matches:
-                result.append({
-                    "rule":      m.rule,
-                    "namespace": m.namespace,
-                    "meta":      dict(m.meta),
-                    "strings":   [
-                        {"offset": s.instances[0].offset, "identifier": s.identifier}
-                        for s in m.strings
-                    ] if m.strings else [],
-                })
+                result.append(
+                    {
+                        "rule": m.rule,
+                        "namespace": m.namespace,
+                        "meta": dict(m.meta),
+                        "strings": [
+                            {"offset": s.instances[0].offset, "identifier": s.identifier}
+                            for s in m.strings
+                        ]
+                        if m.strings
+                        else [],
+                    }
+                )
             return result
         except Exception as e:
             log.warning(f"YARA scan failed on {filepath}: {e}")
@@ -91,7 +115,7 @@ class YARAScanner:
                             SET yara_matches = EXCLUDED.yara_matches,
                                 analyzed_at  = NOW()
                         """,
-                        (sha256, json.dumps(yara_matches))
+                        (sha256, json.dumps(yara_matches)),
                     )
                 conn.commit()
         except Exception as e:
@@ -117,9 +141,9 @@ class YARAScanner:
 
             entry = {
                 "filepath": str(filepath),
-                "sha256":   sha256,
-                "matches":  matches,
-                "matched":  len(matches) > 0,
+                "sha256": sha256,
+                "matches": matches,
+                "matched": len(matches) > 0,
             }
             results.append(entry)
 

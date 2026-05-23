@@ -1,29 +1,50 @@
 """Tests for risk_score.py v2.0.0 (9-signal model)."""
-import pytest
 
+import pytest
 from risk_score import (
-    score_session, score_ip, SCORE_VERSION,
-    _signal_reputation, _signal_anonymization, _signal_threat_history,
-    _signal_intent_volume, _signal_compromise_depth, _signal_exfiltration,
-    _signal_lateral_movement, _signal_malware, _signal_mitre_sophistication,
+    SCORE_VERSION,
+    _signal_anonymization,
+    _signal_compromise_depth,
+    _signal_exfiltration,
+    _signal_intent_volume,
+    _signal_lateral_movement,
+    _signal_malware,
+    _signal_mitre_sophistication,
+    _signal_reputation,
+    _signal_threat_history,
+    score_ip,
+    score_session,
 )
 
-
 _EXPECTED_SIGNALS = {
-    "reputation", "anonymization", "threat_history",
-    "intent_volume", "compromise_depth", "exfiltration",
-    "lateral_movement", "malware", "mitre_sophistication",
+    "reputation",
+    "anonymization",
+    "threat_history",
+    "intent_volume",
+    "compromise_depth",
+    "exfiltration",
+    "lateral_movement",
+    "malware",
+    "mitre_sophistication",
 }
 
 
 # ── Signal 1: reputation ──────────────────────────────────────────────────────
-@pytest.mark.parametrize("abuse,expected", [
-    (95, 15), (90, 15),
-    (70, 11), (89, 11),
-    (50, 7),  (69, 7),
-    (25, 4),  (49, 4),
-    (24, 0),  (0, 0),
-])
+@pytest.mark.parametrize(
+    "abuse,expected",
+    [
+        (95, 15),
+        (90, 15),
+        (70, 11),
+        (89, 11),
+        (50, 7),
+        (69, 7),
+        (25, 4),
+        (49, 4),
+        (24, 0),
+        (0, 0),
+    ],
+)
 def test_reputation_buckets(abuse, expected):
     s = _signal_reputation({"abuse_score": abuse})
     assert s.points == expected
@@ -43,9 +64,14 @@ def test_reputation_clamps_negative_and_overflow():
 
 
 def test_reputation_evidence_populated_when_scoring():
-    s = _signal_reputation({"abuse_score": 95, "abuse_total_reports": 12,
-                            "abuse_distinct_users": 5,
-                            "abuse_categories": ["ssh-bruteforce"]})
+    s = _signal_reputation(
+        {
+            "abuse_score": 95,
+            "abuse_total_reports": 12,
+            "abuse_distinct_users": 5,
+            "abuse_categories": ["ssh-bruteforce"],
+        }
+    )
     assert s.evidence["abuse_score"] == 95
     assert s.evidence["total_reports"] == 12
     assert s.evidence["distinct_users"] == 5
@@ -109,12 +135,16 @@ def test_threat_history_shodan_vulns():
 
 
 def test_threat_history_caps_at_8():
-    s = _signal_threat_history({
-        "previously_seen": True, "previous_sessions": 1000,
-        "is_abuser_listed": True, "threat_tier": "high",
-        "geo_country_code": "KP",
-        "shodan_vulns": ["a", "b", "c"],
-    })
+    s = _signal_threat_history(
+        {
+            "previously_seen": True,
+            "previous_sessions": 1000,
+            "is_abuser_listed": True,
+            "threat_tier": "high",
+            "geo_country_code": "KP",
+            "shodan_vulns": ["a", "b", "c"],
+        }
+    )
     assert s.points == 8
 
 
@@ -124,39 +154,48 @@ def test_intent_volume_zero():
 
 
 def test_intent_volume_cowrie_full_weight():
-    s = _signal_intent_volume({"honeypot_type": "cowrie", "login_attempts": 100,
-                               "attack_velocity": 60.0})
+    s = _signal_intent_volume(
+        {"honeypot_type": "cowrie", "login_attempts": 100, "attack_velocity": 60.0}
+    )
     assert s.points > 0
     assert s.evidence["honeypot_type"] == "cowrie"
 
 
 def test_intent_volume_velocity_bonus():
-    low  = _signal_intent_volume({"honeypot_type": "cowrie", "login_attempts": 10})
-    high = _signal_intent_volume({"honeypot_type": "cowrie", "login_attempts": 10,
-                                  "attack_velocity": 100.0})
+    low = _signal_intent_volume({"honeypot_type": "cowrie", "login_attempts": 10})
+    high = _signal_intent_volume(
+        {"honeypot_type": "cowrie", "login_attempts": 10, "attack_velocity": 100.0}
+    )
     assert high.points > low.points
 
 
 def test_intent_volume_scan_paths_in_http_and_commands():
-    s = _signal_intent_volume({
-        "honeypot_type": "galah", "login_attempts": 5,
-        "http_paths": ["/admin", "/wp-admin"],
-        "commands": ["curl /.env"],
-    })
+    s = _signal_intent_volume(
+        {
+            "honeypot_type": "galah",
+            "login_attempts": 5,
+            "http_paths": ["/admin", "/wp-admin"],
+            "commands": ["curl /.env"],
+        }
+    )
     assert len(s.evidence["scan_paths_hit"]) >= 3
 
 
 def test_intent_volume_caps_at_10():
-    s = _signal_intent_volume({
-        "honeypot_type": "cowrie", "login_attempts": 1_000_000,
-        "attack_velocity": 9999.0,
-        "http_paths": _SCAN_PATHS_FULL_LIST(),
-    })
+    s = _signal_intent_volume(
+        {
+            "honeypot_type": "cowrie",
+            "login_attempts": 1_000_000,
+            "attack_velocity": 9999.0,
+            "http_paths": _SCAN_PATHS_FULL_LIST(),
+        }
+    )
     assert s.points == 10
 
 
 def _SCAN_PATHS_FULL_LIST():
     from risk_score import _SCAN_PATHS
+
     return list(_SCAN_PATHS)
 
 
@@ -194,30 +233,39 @@ def test_compromise_file_downloads_count_with_no_success():
 
 
 def test_compromise_caps_at_15():
-    s = _signal_compromise_depth({
-        "success_count": 999, "command_count": 999,
-        "commands": ["cat /etc/shadow", "rm -rf /", "ssh root@x"],
-        "file_download_count": 999,
-    })
+    s = _signal_compromise_depth(
+        {
+            "success_count": 999,
+            "command_count": 999,
+            "commands": ["cat /etc/shadow", "rm -rf /", "ssh root@x"],
+            "file_download_count": 999,
+        }
+    )
     assert s.points == 15
 
 
 def test_compromise_precomputed_tags_used():
     """IP-mode: tags pre-aggregated, commands empty — quality bypasses pattern matching."""
-    s = _signal_compromise_depth({
-        "success_count": 1, "commands": [],
-        "command_quality_tags": ["credential-access", "destructive"],
-    })
+    s = _signal_compromise_depth(
+        {
+            "success_count": 1,
+            "commands": [],
+            "command_quality_tags": ["credential-access", "destructive"],
+        }
+    )
     assert s.evidence["command_quality_tags"] == ["credential-access", "destructive"]
     assert s.points >= 5 + 4
 
 
 def test_compromise_empty_precomputed_falls_through():
     """Empty precomputed list should fall through to pattern matching."""
-    s = _signal_compromise_depth({
-        "success_count": 1, "commands": ["cat /etc/shadow"],
-        "command_quality_tags": [],
-    })
+    s = _signal_compromise_depth(
+        {
+            "success_count": 1,
+            "commands": ["cat /etc/shadow"],
+            "command_quality_tags": [],
+        }
+    )
     assert "credential-access" in s.evidence["command_quality_tags"]
 
 
@@ -274,11 +322,15 @@ def test_lateral_non_critical_port_no_pts():
 
 
 def test_lateral_caps_at_10():
-    s = _signal_lateral_movement({
-        "exploit_cve": ["CVE-1", "CVE-2"], "smb_share_enum": True,
-        "epmapper_prescan": 5, "honeypot_types_hit": ["a", "b", "c"],
-        "destination_port": 445,
-    })
+    s = _signal_lateral_movement(
+        {
+            "exploit_cve": ["CVE-1", "CVE-2"],
+            "smb_share_enum": True,
+            "epmapper_prescan": 5,
+            "honeypot_types_hit": ["a", "b", "c"],
+            "destination_port": 445,
+        }
+    )
     assert s.points == 10
 
 
@@ -305,18 +357,22 @@ def test_malware_vt_only():
 
 
 def test_malware_yara_plus_vt_additive():
-    s = _signal_malware({
-        "yara_matches": [{"rule": "X", "severity": "high"}],  # 4
-        "vt_malicious": 25,  # 6
-    })
+    s = _signal_malware(
+        {
+            "yara_matches": [{"rule": "X", "severity": "high"}],  # 4
+            "vt_malicious": 25,  # 6
+        }
+    )
     assert s.points == 10  # additive 4+6, under cap 12
 
 
 def test_malware_caps_at_12():
-    s = _signal_malware({
-        "yara_matches": [{"rule": "X", "severity": "critical"}],  # 6
-        "vt_malicious": 999,  # 6
-    })
+    s = _signal_malware(
+        {
+            "yara_matches": [{"rule": "X", "severity": "critical"}],  # 6
+            "vt_malicious": 999,  # 6
+        }
+    )
     assert s.points == 12
 
 
@@ -336,9 +392,11 @@ def test_mitre_techniques_dict_list():
 
 
 def test_mitre_distinct_tactics():
-    s = _signal_mitre_sophistication({
-        "mitre_techniques": ["T1110.001", "T1486"],  # credential_access + impact
-    })
+    s = _signal_mitre_sophistication(
+        {
+            "mitre_techniques": ["T1110.001", "T1486"],  # credential_access + impact
+        }
+    )
     assert len(s.evidence["distinct_tactics"]) >= 2
 
 
@@ -348,11 +406,12 @@ def test_mitre_stage_bonus():
 
 
 def test_mitre_caps_at_12():
-    s = _signal_mitre_sophistication({
-        "mitre_techniques": ["T1110.001", "T1078", "T1105", "T1190",
-                              "T1486", "T1210", "T1046"],
-        "kill_chain_stage": 99,
-    })
+    s = _signal_mitre_sophistication(
+        {
+            "mitre_techniques": ["T1110.001", "T1078", "T1105", "T1190", "T1486", "T1210", "T1046"],
+            "kill_chain_stage": 99,
+        }
+    )
     assert s.points == 12
 
 
@@ -386,25 +445,36 @@ def test_score_session_schema_contract():
 
 
 def test_score_session_caps_at_100():
-    r = score_session({
-        "abuse_score": 100, "is_tor": True, "shodan_vulns": ["a", "b"],
-        "previously_seen": True, "previous_sessions": 1000,
-        "is_abuser_listed": True, "threat_tier": "high",
-        "geo_country_code": "KP",
-        "honeypot_type": "cowrie", "login_attempts": 10000,
-        "attack_velocity": 999, "http_paths": ["/admin", "/.env"],
-        "success_count": 100, "command_count": 100,
-        "commands": ["cat /etc/shadow", "rm -rf /", "ssh user@x"],
-        "file_download_count": 50,
-        "exfil_bytes": 1024 * 1024 * 1024,
-        "exploit_cve": ["CVE-1"], "smb_share_enum": True,
-        "epmapper_prescan": 5,
-        "honeypot_types_hit": ["a", "b", "c"], "destination_port": 445,
-        "yara_matches": [{"rule": "X", "severity": "critical"}],
-        "vt_malicious": 50,
-        "mitre_techniques": ["T1110.001", "T1486", "T1105", "T1190", "T1210", "T1046"],
-        "kill_chain_stage": 9,
-    })
+    r = score_session(
+        {
+            "abuse_score": 100,
+            "is_tor": True,
+            "shodan_vulns": ["a", "b"],
+            "previously_seen": True,
+            "previous_sessions": 1000,
+            "is_abuser_listed": True,
+            "threat_tier": "high",
+            "geo_country_code": "KP",
+            "honeypot_type": "cowrie",
+            "login_attempts": 10000,
+            "attack_velocity": 999,
+            "http_paths": ["/admin", "/.env"],
+            "success_count": 100,
+            "command_count": 100,
+            "commands": ["cat /etc/shadow", "rm -rf /", "ssh user@x"],
+            "file_download_count": 50,
+            "exfil_bytes": 1024 * 1024 * 1024,
+            "exploit_cve": ["CVE-1"],
+            "smb_share_enum": True,
+            "epmapper_prescan": 5,
+            "honeypot_types_hit": ["a", "b", "c"],
+            "destination_port": 445,
+            "yara_matches": [{"rule": "X", "severity": "critical"}],
+            "vt_malicious": 50,
+            "mitre_techniques": ["T1110.001", "T1486", "T1105", "T1190", "T1210", "T1046"],
+            "kill_chain_stage": 9,
+        }
+    )
     assert r.risk_score == 100
 
 
@@ -413,25 +483,37 @@ def test_score_session_confidence_thresholds():
     r1 = score_session({"abuse_score": 50})
     assert r1.confidence == "LOW"
     # 3 active signals → MEDIUM
-    r3 = score_session({"abuse_score": 50, "is_tor": True,
-                        "previously_seen": True, "previous_sessions": 4})
+    r3 = score_session(
+        {"abuse_score": 50, "is_tor": True, "previously_seen": True, "previous_sessions": 4}
+    )
     assert r3.confidence == "MEDIUM"
     # 5+ active → HIGH
-    r5 = score_session({
-        "abuse_score": 50, "is_tor": True, "previously_seen": True,
-        "previous_sessions": 4, "honeypot_type": "cowrie",
-        "login_attempts": 50, "success_count": 2,
-        "commands": ["whoami"], "exfil_bytes": 100 * 1024,
-    })
+    r5 = score_session(
+        {
+            "abuse_score": 50,
+            "is_tor": True,
+            "previously_seen": True,
+            "previous_sessions": 4,
+            "honeypot_type": "cowrie",
+            "login_attempts": 50,
+            "success_count": 2,
+            "commands": ["whoami"],
+            "exfil_bytes": 100 * 1024,
+        }
+    )
     assert r5.confidence == "HIGH"
 
 
 def test_score_session_private_ip_other_signals_still_work():
-    r = score_session({
-        "is_private": True,
-        "honeypot_type": "cowrie", "login_attempts": 100,
-        "success_count": 5, "commands": ["cat /etc/shadow"],
-    })
+    r = score_session(
+        {
+            "is_private": True,
+            "honeypot_type": "cowrie",
+            "login_attempts": 100,
+            "success_count": 5,
+            "commands": ["cat /etc/shadow"],
+        }
+    )
     # reputation and anonymization should be skipped
     assert r.signal_breakdown["reputation"]["skipped"]
     assert r.signal_breakdown["anonymization"]["skipped"]
@@ -483,10 +565,10 @@ def test_score_ip_unions_mitre_techniques():
 def test_score_ip_passes_enrichment_who_signals():
     sessions = [{"honeypot_type": "cowrie", "login_attempts": 1}]
     enrichment = {
-        "reputation":      {"abuse_score": 95},
-        "threat_summary":  {"is_tor": True, "tier": "high"},
-        "geo":             {"country_code": "KP"},
-        "infrastructure":  {"vulns": ["CVE-2023-X"]},
+        "reputation": {"abuse_score": 95},
+        "threat_summary": {"is_tor": True, "tier": "high"},
+        "geo": {"country_code": "KP"},
+        "infrastructure": {"vulns": ["CVE-2023-X"]},
     }
     r = score_ip("1.2.3.4", sessions, enrichment)
     assert r.signal_breakdown["reputation"]["points"] == 15
@@ -496,10 +578,12 @@ def test_score_ip_passes_enrichment_who_signals():
 
 def test_score_ip_command_quality_tags_aggregated():
     sessions = [
-        {"honeypot_type": "cowrie", "success_count": 1,
-         "command_quality_tags": ["credential-access"]},
-        {"honeypot_type": "cowrie", "success_count": 1,
-         "command_quality_tags": ["destructive"]},
+        {
+            "honeypot_type": "cowrie",
+            "success_count": 1,
+            "command_quality_tags": ["credential-access"],
+        },
+        {"honeypot_type": "cowrie", "success_count": 1, "command_quality_tags": ["destructive"]},
     ]
     r = score_ip("1.2.3.4", sessions, {})
     cd = r.signal_breakdown["compromise_depth"]

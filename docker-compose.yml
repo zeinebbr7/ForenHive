@@ -1,6 +1,14 @@
 services:
 
-  # ── HONEYPOTS ────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COUCHE C1 — HONEYPOTS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── HONEYPOT SSH/TELNET ──────────────────────────────────────────────────
+  # Cowrie simule un serveur Linux/UNIX vulnérable (bannières, FS factice,
+  # honeytokens) pour piéger et tracer les attaquants tentant un accès shell.
+  # Ports : 2222 (SSH), 2223 (Telnet) — exposés sur l'hôte.
+  # Réseau : honeypot-net uniquement (isolation sécurité).
   cowrie:
     image: cowrie/cowrie:latest
     container_name: forenhive-cowrie
@@ -17,6 +25,10 @@ services:
     environment:
       - COWRIE_TELNET_ENABLED=yes
 
+  # ─── HONEYPOT MULTI-PROTOCOLES MALWARE ────────────────────────────────────
+  # Dionaea capture les payloads sur 11 protocoles (SMB, MSSQL, HTTP, MySQL,
+  # FTP, MQTT, SIP…) — vecteur principal de capture de malware (EternalBlue,
+  # WannaCry et autres exploits réseau). Stocke binaires dans dionaea.sqlite.
   dionaea:
     image: dinotools/dionaea:latest
     container_name: forenhive-dionaea
@@ -43,6 +55,11 @@ services:
     networks:
       - honeypot-net
 
+  # ─── HONEYPOT HTTP LLM (Mistral) ──────────────────────────────────────────
+  # Galah simule un serveur web crédible : Mistral 7B (via Ollama) génère à
+  # la volée des réponses HTTP réalistes (headers, body, codes). Détecte les
+  # attaques web sans signature préalable (zero-day web).
+  # Ports : 8080, 8888.
   galah:
     build: ./honeypots/galah/galah-src
     container_name: forenhive-galah
@@ -65,6 +82,11 @@ services:
     depends_on:
       - ollama
 
+  # ─── IDS RÉSEAU PASSIF ────────────────────────────────────────────────────
+  # Zeek analyse tout le trafic en mode passif (network_mode: host) sur
+  # l'interface ZEEK_INTERFACE (défaut: eno12399). Produit des logs riches
+  # (conn, notice, weird, ntlm, http, ssl) consommés par Filebeat.
+  # Nécessite cap_add NET_ADMIN + NET_RAW pour la capture.
   zeek:
     image: zeek/zeek:latest
     container_name: forenhive-zeek
@@ -83,7 +105,13 @@ services:
       zeekctl deploy &&
       tail -f /dev/null"
 
-  # ── PIPELINE ETL ─────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COUCHE C2 — PIPELINE ETL (Filebeat → Logstash → Elasticsearch)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── COLLECTEUR DE LOGS ───────────────────────────────────────────────────
+  # Filebeat tail tous les logs honeypot (montés en read-only) et les
+  # envoie à Logstash sur le port 5044 pour normalisation ECS.
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.13.0
     container_name: forenhive-filebeat
@@ -103,6 +131,10 @@ services:
     depends_on:
       - logstash
 
+  # ─── NORMALISATION & ENRICHISSEMENT ───────────────────────────────────────
+  # Logstash parse les logs bruts (grok), normalise au format ECS, enrichit
+  # avec GeoIP MaxMind, et indexe dans Elasticsearch en indices journaliers
+  # (honeypot-logs-YYYY.MM.dd). Heap par défaut : 512m.
   logstash:
     image: docker.elastic.co/logstash/logstash:8.13.0
     container_name: forenhive-logstash
@@ -120,7 +152,14 @@ services:
     depends_on:
       - elasticsearch
 
-  # ── STOCKAGE ─────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COUCHE C2 (suite) — STOCKAGE DUAL
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── STOCKAGE LOGS + RECHERCHE ────────────────────────────────────────────
+  # Elasticsearch 8.13 mode single-node, sécurité désactivée (réseau interne
+  # backend-net uniquement, port 9200 bindé à 127.0.0.1). Heap 1g par défaut.
+  # Stocke : honeypot-logs-* (ETL) + forenhive-suspect-profiles (mémoire BAU).
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
     container_name: forenhive-elasticsearch
@@ -137,6 +176,12 @@ services:
     networks:
       - backend-net
 
+  # ─── STOCKAGE FORENSIQUE STRUCTURÉ ────────────────────────────────────────
+  # PostgreSQL 15 contient les 4+ tables forensiques métier :
+  #   forensic_sessions, file_analysis, forensic_iocs,
+  #   forensic_chain_of_custody, forensic_coc_batches, suspect_profiles,
+  #   ip_enrichment_cache, ip_risk_scores, users, audit_log…
+  # Réseau backend-net uniquement, pas de port exposé sur l'hôte.
   postgresql:
     image: postgres:15
     container_name: forenhive-postgresql
@@ -150,7 +195,14 @@ services:
     networks:
       - backend-net
 
-  # ── FORENSIC ENGINE ──────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COUCHE C3 — FORENSIC ENGINE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── MOTEUR D'ANALYSE FORENSIQUE ──────────────────────────────────────────
+  # 11 modules Python orchestrés par engine.py. Tourne en cron interne +
+  # expose un mini-serveur HTTP sur :8001 (status/healthcheck).
+  # Lit dionaea-malware + zeek-logs en read-only, écrit dans PG.
   forensic-engine:
     build: ./forensic-engine
     container_name: forenhive-forensic-engine
@@ -184,7 +236,17 @@ services:
       - elasticsearch
       - postgresql
 
-  # ── BACKEND API (FastAPI, async SQLAlchemy + ES) ─────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # COUCHE C4 — BACKEND + FRONTEND + REPORTING
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # ─── API REST FastAPI ─────────────────────────────────────────────────────
+  # Backend FastAPI async (SQLAlchemy + Elasticsearch + Ollama).
+  # 13 routers : auth, chat, attacks, sessions, geo, alerts, profiling,
+  # reports, risk_score, forensics, honeypots, audit.
+  # Healthcheck /health, JWT auth (clé JWT_SECRET), CORS configurable.
+  # Bind-mount sur yara_rules/ pour exposer le vrai compte de règles dans
+  # le rapport PDF (au lieu du hardcoded 10).
   forenhive-backend:
     build: ./backend
     container_name: forenhive-backend
@@ -230,7 +292,11 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── LLM ──────────────────────────────────────────────
+  # ─── LLM LOCAL (Mistral 7B, CPU-only) ─────────────────────────────────────
+  # Ollama sert Mistral 7B Q4_K_M (4.4 Go) sur le port 11434 (réseau interne).
+  # Utilisé par : profiler.py (analyse criminologique), mitre_mapper.py
+  # (narration tactique), galah (réponses HTTP simulées).
+  # CPU-only — pas de GPU sur le R750. Temp=0.3, ctx=8192 (immuable).
   ollama:
     image: ollama/ollama:latest
     container_name: forenhive-ollama
@@ -242,20 +308,27 @@ services:
     networks:
       - backend-net
 
-  # ── FRONTEND (Vite build → nginx SPA) ───────────────
+  # ─── SPA (Vite build → nginx) ─────────────────────────────────────────────
+  # Frontend Vite/React buildé en multi-stage Docker, servi par nginx
+  # sur HTTP:3000 uniquement.
+  # Le SPA est composé de partiels pages/*.html chargés dynamiquement.
   forenhive-frontend:
     build: ./frontend
     container_name: forenhive-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
-      - "3443:443"
     networks:
       - backend-net
     depends_on:
       - forenhive-backend
 
-# ── RÉSEAUX ──────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# RÉSEAUX
+# ═══════════════════════════════════════════════════════════════════════════
+# honeypot-net : ISOLATION — uniquement les honeypots + collecte.
+#                Les attaquants ne peuvent JAMAIS atteindre le backend depuis ce réseau.
+# backend-net  : ETL + stockages + analytique + backend + LLM.
 networks:
   honeypot-net:
     name: honeypot-net
@@ -264,7 +337,12 @@ networks:
     name: backend-net
     driver: bridge
 
-# ── VOLUMES ──────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════
+# Volumes "external" : créés par les stacks initiales (sprint 1/2), réutilisés
+# ici par référence directe au nom Docker. NE PAS supprimer les noms longs
+# (hex) — ce sont les volumes existants persistant les données honeypot.
 volumes:
   cowrie-var:
     external: true

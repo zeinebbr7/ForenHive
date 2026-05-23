@@ -1,18 +1,55 @@
 """
-ForenHive Risk Scoring v2.0.0 — 9-signal model.
+risk_score.py — ForenHive Forensic Engine
+==========================================
+Rôle    : calcul du score de risque d'une session ou d'une IP attaquante.
+Entrée  : enrichissements (geoip, abuseipdb, shodan), événements timeline,
+          matchs YARA/VirusTotal, techniques MITRE détectées.
+Sortie  : objet `ScoreResult` (total 0-100, niveau, ventilation par signal).
+Appelé  : par `engine.py` après l'extraction d'IoCs et le mapping MITRE.
+Deps    : `risk_thresholds` (seuils LOW/MEDIUM/HIGH/CRITICAL).
 
-Signal taxonomy (mapped to FBI BAU criminology framework):
-  WHO  (33): reputation - anonymization - threat_history
-  WHAT (43): intent_volume - compromise_depth - exfiltration - lateral_movement
-  HOW  (24): malware - mitre_sophistication
+═══════════════════════════════════════════════════════════════════════════════
+SYSTÈME DE SCORE DE RISQUE — MODÈLE v2.0.0 À 9 SIGNAUX
+═══════════════════════════════════════════════════════════════════════════════
+Score total max : 100 (somme cappée des 9 signaux).
+Niveaux        : INFO (<LOW) | LOW | MEDIUM | HIGH | CRITICAL
+                 (bornes définies dans risk_thresholds.py)
+
+TAXONOMIE — mappée au cadre criminologique du FBI Behavioral Analysis Unit :
+
+  WHO  (33 pts) — Qui est l'attaquant ?
+    • reputation      (15) — score AbuseIPDB (réputation publique)
+    • anonymization   (10) — Tor/VPN/proxy détectés (intention de cacher)
+    • threat_history  (8)  — récidive sur honeypot, ASN connu malveillant
+
+  WHAT (43 pts) — Que fait-il ?
+    • intent_volume      (10) — vélocité, pages scannées, ciblage admin
+    • compromise_depth   (15) — login réussi, commandes shell exécutées
+    • exfiltration       (8)  — données téléchargées hors du honeypot
+    • lateral_movement   (10) — multi-honeypot, scan interne, SMB enum
+
+  HOW  (24 pts) — Avec quels moyens ?
+    • malware              (15) — match YARA + détections VirusTotal
+    • mitre_sophistication (9)  — diversité des tactiques ATT&CK observées
+
+RÈGLE SPÉCIALE — IPs PRIVÉES (RFC1918) :
+Les services de réputation (AbuseIPDB/Tor/VPN) ne couvrent pas l'espace
+d'adressage privé. Une IP interne malveillante = menace interne critique :
+les signaux comportementaux sont donc traités sans atténuation pour
+refléter la criticité.
+
+HISTORIQUE : modèle précédent à 18 signaux dans risk_score_optimized.py
+(supprimé) ; consolidé en 9 signaux v2.0.0 pour réduire les corrélations
+et améliorer l'interprétabilité (un signal = une dimension orthogonale).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from math import log10, log2
-from typing import Optional
+
 import logging
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from math import log2, log10
 
 from risk_thresholds import risk_level
 
@@ -24,31 +61,76 @@ SCORE_VERSION = "2.0.0"
 _SANCTIONED_CC = {"KP", "IR", "SY", "CU", "VE"}
 _HIGH_THREAT_CC = {"RU", "CN", "BY"}
 _CRITICAL_PORTS = {445, 1433, 3306, 3389, 5432, 27017, 6379, 9200}
-_SCAN_PATHS = ["/admin", "/wp-admin", "/.env", "/phpmyadmin", "/.git",
-               "/config", "/backup", "/.htaccess", "/wp-login.php",
-               "/phpinfo.php", "/.well-known", "/api/", "/swagger"]
-_CRED_PATTERNS = ["/etc/shadow", "/etc/passwd", ".ssh/id_rsa", ".ssh/authorized_keys",
-                  ".bash_history", ".aws/credentials", "env | grep", "printenv",
-                  "cat /root/", "cat /home/", "mimikatz"]
-_DESTRUCTIVE_PATTERNS = ["rm -rf", "iptables -F", "chmod 777", ":(){:|:&};:",
-                         "dd if=/dev/zero", "mkfs.", "shred -"]
-_LATERAL_PATTERNS = ["ssh ", "scp ", "psexec", "wmic ", "nc -e", "ncat -e",
-                     "/usr/bin/ssh", "sshpass"]
+_SCAN_PATHS = [
+    "/admin",
+    "/wp-admin",
+    "/.env",
+    "/phpmyadmin",
+    "/.git",
+    "/config",
+    "/backup",
+    "/.htaccess",
+    "/wp-login.php",
+    "/phpinfo.php",
+    "/.well-known",
+    "/api/",
+    "/swagger",
+]
+_CRED_PATTERNS = [
+    "/etc/shadow",
+    "/etc/passwd",
+    ".ssh/id_rsa",
+    ".ssh/authorized_keys",
+    ".bash_history",
+    ".aws/credentials",
+    "env | grep",
+    "printenv",
+    "cat /root/",
+    "cat /home/",
+    "mimikatz",
+]
+_DESTRUCTIVE_PATTERNS = [
+    "rm -rf",
+    "iptables -F",
+    "chmod 777",
+    ":(){:|:&};:",
+    "dd if=/dev/zero",
+    "mkfs.",
+    "shred -",
+]
+_LATERAL_PATTERNS = [
+    "ssh ",
+    "scp ",
+    "psexec",
+    "wmic ",
+    "nc -e",
+    "ncat -e",
+    "/usr/bin/ssh",
+    "sshpass",
+]
 _TACTIC_OF = {
-    "T1110.001": "credential_access", "T1110.003": "credential_access",
-    "T1078": "initial_access", "T1059.004": "execution",
-    "T1105": "command_and_control", "T1552.001": "credential_access",
-    "T1210": "lateral_movement", "T1190": "initial_access",
-    "T1595.002": "reconnaissance", "T1046": "discovery",
-    "T1021.002": "lateral_movement", "T1486": "impact", "T1496": "impact",
-    "T1071.001": "command_and_control", "T1592": "reconnaissance",
+    "T1110.001": "credential_access",
+    "T1110.003": "credential_access",
+    "T1078": "initial_access",
+    "T1059.004": "execution",
+    "T1105": "command_and_control",
+    "T1552.001": "credential_access",
+    "T1210": "lateral_movement",
+    "T1190": "initial_access",
+    "T1595.002": "reconnaissance",
+    "T1046": "discovery",
+    "T1021.002": "lateral_movement",
+    "T1486": "impact",
+    "T1496": "impact",
+    "T1071.001": "command_and_control",
+    "T1592": "reconnaissance",
 }
 
 _SEV_TO_PTS = {"critical": 6, "high": 4, "medium": 2, "low": 1}
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _clamp(v, lo, hi):
@@ -74,11 +156,11 @@ class SignalDetail:
     points: float
     max_points: int
     label: str
-    category: str       # "who" | "what" | "how"
-    detail: str         # human one-liner
+    category: str  # "who" | "what" | "how"
+    detail: str  # human one-liner
     evidence: dict = field(default_factory=dict)
     skipped: bool = False
-    skip_reason: Optional[str] = None
+    skip_reason: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -91,10 +173,10 @@ class ScoreResult:
     confidence: str
     score_version: str
     scored_at: str
-    scorer_mode: str    # "session" | "ip_aggregate"
+    scorer_mode: str  # "session" | "ip_aggregate"
     signal_breakdown: dict
     active_signals: int
-    sessions_aggregated: Optional[int] = None
+    sessions_aggregated: int | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -103,9 +185,15 @@ class ScoreResult:
 # ── Signal 1: reputation (WHO, max 15) ────────────────────────────────────────
 def _signal_reputation(d: dict) -> SignalDetail:
     if bool(d.get("is_private")):
-        return SignalDetail(0, 15, "reputation", "who",
-                            "private IP — reputation N/A",
-                            skipped=True, skip_reason="private_ip")
+        return SignalDetail(
+            0,
+            15,
+            "reputation",
+            "who",
+            "private IP — reputation N/A",
+            skipped=True,
+            skip_reason="private_ip",
+        )
     abuse = _clamp(_coerce_int(d.get("abuse_score")), 0, 100)
     if abuse >= 90:
         pts, tag = 15, "critical"
@@ -120,26 +208,32 @@ def _signal_reputation(d: dict) -> SignalDetail:
     evidence = {}
     if pts > 0:
         evidence = {
-            "abuse_score":     abuse,
-            "total_reports":   _coerce_int(d.get("abuse_total_reports")),
-            "distinct_users":  _coerce_int(d.get("abuse_distinct_users")),
-            "categories":      list(d.get("abuse_categories") or []),
+            "abuse_score": abuse,
+            "total_reports": _coerce_int(d.get("abuse_total_reports")),
+            "distinct_users": _coerce_int(d.get("abuse_distinct_users")),
+            "categories": list(d.get("abuse_categories") or []),
         }
-    return SignalDetail(pts, 15, "reputation", "who",
-                        f"AbuseIPDB {abuse}/100 — {tag}",
-                        evidence=evidence)
+    return SignalDetail(
+        pts, 15, "reputation", "who", f"AbuseIPDB {abuse}/100 — {tag}", evidence=evidence
+    )
 
 
 # ── Signal 2: anonymization (WHO, max 10) ─────────────────────────────────────
 def _signal_anonymization(d: dict) -> SignalDetail:
     if bool(d.get("is_private")):
-        return SignalDetail(0, 10, "anonymization", "who",
-                            "private IP — anonymization N/A",
-                            skipped=True, skip_reason="private_ip")
-    is_bogon      = bool(d.get("is_bogon"))
-    is_tor        = bool(d.get("is_tor"))
-    is_vpn        = bool(d.get("is_vpn"))
-    is_proxy      = bool(d.get("is_proxy"))
+        return SignalDetail(
+            0,
+            10,
+            "anonymization",
+            "who",
+            "private IP — anonymization N/A",
+            skipped=True,
+            skip_reason="private_ip",
+        )
+    is_bogon = bool(d.get("is_bogon"))
+    is_tor = bool(d.get("is_tor"))
+    is_vpn = bool(d.get("is_vpn"))
+    is_proxy = bool(d.get("is_proxy"))
     is_datacenter = bool(d.get("is_datacenter"))
 
     if is_bogon:
@@ -154,17 +248,15 @@ def _signal_anonymization(d: dict) -> SignalDetail:
         pts, tag = 0, "direct"
 
     evidence = {
-        "is_bogon":      is_bogon,
-        "is_tor":        is_tor,
-        "is_vpn":        is_vpn,
-        "is_proxy":      is_proxy,
+        "is_bogon": is_bogon,
+        "is_tor": is_tor,
+        "is_vpn": is_vpn,
+        "is_proxy": is_proxy,
         "is_datacenter": is_datacenter,
-        "asn":           _coerce_int(d.get("geo_asn")),
-        "org":           str(d.get("geo_org") or ""),
+        "asn": _coerce_int(d.get("geo_asn")),
+        "org": str(d.get("geo_org") or ""),
     }
-    return SignalDetail(pts, 10, "anonymization", "who",
-                        f"anonymization: {tag}",
-                        evidence=evidence)
+    return SignalDetail(pts, 10, "anonymization", "who", f"anonymization: {tag}", evidence=evidence)
 
 
 # ── Signal 3: threat_history (WHO, max 8) ─────────────────────────────────────
@@ -173,7 +265,7 @@ def _signal_threat_history(d: dict) -> SignalDetail:
     reasons = []
 
     prev_seen = bool(d.get("previously_seen"))
-    prev_n    = max(0, _coerce_int(d.get("previous_sessions")))
+    prev_n = max(0, _coerce_int(d.get("previous_sessions")))
     if prev_seen and prev_n > 0:
         rec_pts = min(4, int(2 * log2(1 + prev_n)))
         if rec_pts > 0:
@@ -205,15 +297,14 @@ def _signal_threat_history(d: dict) -> SignalDetail:
     pts = min(8, pts)
     detail = " - ".join(reasons) if reasons else "no prior history"
     evidence = {
-        "previously_seen":   prev_seen,
+        "previously_seen": prev_seen,
         "previous_sessions": prev_n,
-        "is_abuser_listed":  bool(d.get("is_abuser_listed")),
-        "threat_tier":       str(d.get("threat_tier") or ""),
-        "geo_country_code":  cc,
-        "shodan_vulns":      shodan_vulns,
+        "is_abuser_listed": bool(d.get("is_abuser_listed")),
+        "threat_tier": str(d.get("threat_tier") or ""),
+        "geo_country_code": cc,
+        "shodan_vulns": shodan_vulns,
     }
-    return SignalDetail(pts, 8, "threat_history", "who", detail,
-                        evidence=evidence)
+    return SignalDetail(pts, 8, "threat_history", "who", detail, evidence=evidence)
 
 
 # ── Signal 4: intent_volume (WHAT, max 10) ────────────────────────────────────
@@ -227,9 +318,9 @@ def _signal_intent_volume(d: dict) -> SignalDetail:
     vel_bonus = 2 if velocity > 50 else (1 if velocity > 10 else 0)
 
     haystack_parts = []
-    for p in (d.get("http_paths") or []):
+    for p in d.get("http_paths") or []:
         haystack_parts.append(str(p).lower())
-    for c in (d.get("commands") or []):
+    for c in d.get("commands") or []:
         haystack_parts.append(str(c).lower())
     haystack = " ".join(haystack_parts)
     scan_hits = [p for p in _SCAN_PATHS if p in haystack]
@@ -237,27 +328,26 @@ def _signal_intent_volume(d: dict) -> SignalDetail:
 
     pts = min(10, base + vel_bonus + path_bonus)
     evidence = {
-        "login_attempts":  attempts,
+        "login_attempts": attempts,
         "attack_velocity": round(velocity, 2),
-        "honeypot_type":   hp,
-        "scan_paths_hit":  scan_hits,
+        "honeypot_type": hp,
+        "scan_paths_hit": scan_hits,
     }
-    detail = (f"{attempts} attempts @ {round(velocity, 2)}/s"
-              + (f" - {len(scan_hits)} scan paths" if scan_hits else ""))
-    return SignalDetail(pts, 10, "intent_volume", "what", detail,
-                        evidence=evidence)
+    detail = f"{attempts} attempts @ {round(velocity, 2)}/s" + (
+        f" - {len(scan_hits)} scan paths" if scan_hits else ""
+    )
+    return SignalDetail(pts, 10, "intent_volume", "what", detail, evidence=evidence)
 
 
 # ── Signal 5: compromise_depth (WHAT, max 15) ─────────────────────────────────
 def _signal_compromise_depth(d: dict) -> SignalDetail:
-    success    = max(0, _coerce_int(d.get("success_count")))
+    success = max(0, _coerce_int(d.get("success_count")))
     cmds_count = max(0, _coerce_int(d.get("command_count")))
-    cmds_list  = list(d.get("commands") or [])
-    files_in   = max(0, _coerce_int(d.get("file_download_count")))
+    cmds_list = list(d.get("commands") or [])
+    files_in = max(0, _coerce_int(d.get("file_download_count")))
 
     if success == 0 and files_in == 0:
-        return SignalDetail(0, 15, "compromise_depth", "what",
-                            "no successful authentication")
+        return SignalDetail(0, 15, "compromise_depth", "what", "no successful authentication")
 
     auth_pts = int(5 * log2(1 + success)) if success > 0 else 0
     cmd_vol_pts = min(3, cmds_count // 3)
@@ -295,11 +385,11 @@ def _signal_compromise_depth(d: dict) -> SignalDetail:
 
     sample = [str(c) for c in cmds_list[:5]]
     evidence = {
-        "success_count":         success,
-        "command_count":         cmds_count,
-        "command_quality_tags":  quality_tags,
-        "file_download_count":   files_in,
-        "sample_commands":       sample,
+        "success_count": success,
+        "command_count": cmds_count,
+        "command_quality_tags": quality_tags,
+        "file_download_count": files_in,
+        "sample_commands": sample,
     }
     parts = []
     if success > 0:
@@ -311,8 +401,7 @@ def _signal_compromise_depth(d: dict) -> SignalDetail:
     if files_in > 0:
         parts.append(f"{files_in} file(s) ingressed")
     detail = " - ".join(parts) if parts else "compromise observed"
-    return SignalDetail(pts, 15, "compromise_depth", "what", detail,
-                        evidence=evidence)
+    return SignalDetail(pts, 15, "compromise_depth", "what", detail, evidence=evidence)
 
 
 # ── Signal 6: exfiltration (WHAT, max 8) ──────────────────────────────────────
@@ -321,30 +410,38 @@ def _signal_exfiltration(d: dict) -> SignalDetail:
     kb = bytes_out / 1024.0
     pts = min(8, int(2 * log10(1 + kb)))
     if pts == 0:
-        return SignalDetail(0, 8, "exfiltration", "what",
-                            "no data egress observed",
-                            evidence={"exfil_bytes": bytes_out,
-                                      "exfil_kb": round(kb, 1)})
+        return SignalDetail(
+            0,
+            8,
+            "exfiltration",
+            "what",
+            "no data egress observed",
+            evidence={"exfil_bytes": bytes_out, "exfil_kb": round(kb, 1)},
+        )
     if kb < 1024:
         size_str = f"{kb:.1f} KB"
     elif kb < 1024 * 1024:
         size_str = f"{kb / 1024:.1f} MB"
     else:
         size_str = f"{kb / (1024 * 1024):.1f} GB"
-    return SignalDetail(pts, 8, "exfiltration", "what",
-                        f"egress {size_str}",
-                        evidence={"exfil_bytes": bytes_out,
-                                  "exfil_kb": round(kb, 1)})
+    return SignalDetail(
+        pts,
+        8,
+        "exfiltration",
+        "what",
+        f"egress {size_str}",
+        evidence={"exfil_bytes": bytes_out, "exfil_kb": round(kb, 1)},
+    )
 
 
 # ── Signal 7: lateral_movement (WHAT, max 10) ─────────────────────────────────
 def _signal_lateral_movement(d: dict) -> SignalDetail:
-    exploit_cve   = list(d.get("exploit_cve") or [])
-    share_enum    = bool(d.get("smb_share_enum"))
-    epmapper      = max(0, _coerce_int(d.get("epmapper_prescan")))
-    honeypot_hit  = list(set(d.get("honeypot_types_hit") or []))
-    nh            = len(honeypot_hit)
-    dest_port     = _coerce_int(d.get("destination_port"))
+    exploit_cve = list(d.get("exploit_cve") or [])
+    share_enum = bool(d.get("smb_share_enum"))
+    epmapper = max(0, _coerce_int(d.get("epmapper_prescan")))
+    honeypot_hit = list(set(d.get("honeypot_types_hit") or []))
+    nh = len(honeypot_hit)
+    dest_port = _coerce_int(d.get("destination_port"))
 
     pts = 0
     reasons = []
@@ -371,15 +468,14 @@ def _signal_lateral_movement(d: dict) -> SignalDetail:
 
     pts = min(10, pts)
     evidence = {
-        "exploit_cve":        exploit_cve,
-        "smb_share_enum":     share_enum,
-        "epmapper_prescan":   epmapper,
+        "exploit_cve": exploit_cve,
+        "smb_share_enum": share_enum,
+        "epmapper_prescan": epmapper,
         "honeypot_types_hit": honeypot_hit,
-        "destination_port":   crit_port_evidence,
+        "destination_port": crit_port_evidence,
     }
     detail = " - ".join(reasons) if reasons else "no lateral indicators"
-    return SignalDetail(pts, 10, "lateral_movement", "what", detail,
-                        evidence=evidence)
+    return SignalDetail(pts, 10, "lateral_movement", "what", detail, evidence=evidence)
 
 
 # ── Signal 8: malware (HOW, max 12) ───────────────────────────────────────────
@@ -399,13 +495,13 @@ def _signal_malware(d: dict) -> SignalDetail:
 
     yara_pts = 0
     top_rule = ""
-    top_sev  = ""
+    top_sev = ""
     for m in yara_norm:
         sp = _SEV_TO_PTS.get(m["severity"], 1)
         if sp > yara_pts:
             yara_pts = sp
             top_rule = m["rule"]
-            top_sev  = m["severity"]
+            top_sev = m["severity"]
 
     if vt >= 20:
         vt_pts, vt_tag = 6, "very-high"
@@ -426,10 +522,9 @@ def _signal_malware(d: dict) -> SignalDetail:
     evidence = {
         "yara_matches": yara_norm,
         "vt_malicious": vt,
-        "vt_family":    str(d.get("vt_family") or ""),
+        "vt_family": str(d.get("vt_family") or ""),
     }
-    return SignalDetail(pts, 12, "malware", "how", detail,
-                        evidence=evidence)
+    return SignalDetail(pts, 12, "malware", "how", detail, evidence=evidence)
 
 
 # ── Signal 9: mitre_sophistication (HOW, max 12) ──────────────────────────────
@@ -454,29 +549,27 @@ def _signal_mitre_sophistication(d: dict) -> SignalDetail:
     tactic_pts = min(2, max(0, len(tactics) - 1))
 
     pts = min(12, tech_pts + stage_pts + tactic_pts)
-    detail = (f"{len(tech_ids_unique)} technique(s), {len(tactics)} tactic(s), "
-              f"stage {stage}")
+    detail = f"{len(tech_ids_unique)} technique(s), {len(tactics)} tactic(s), stage {stage}"
     evidence = {
         "mitre_techniques": tech_ids_unique,
         "kill_chain_stage": stage,
         "kill_chain_phase": str(d.get("kill_chain_phase") or ""),
         "distinct_tactics": sorted(tactics),
     }
-    return SignalDetail(pts, 12, "mitre_sophistication", "how", detail,
-                        evidence=evidence)
+    return SignalDetail(pts, 12, "mitre_sophistication", "how", detail, evidence=evidence)
 
 
 # ── Orchestrator: per-session scoring ─────────────────────────────────────────
 _SIGNALS = [
-    ("reputation",            _signal_reputation),
-    ("anonymization",         _signal_anonymization),
-    ("threat_history",        _signal_threat_history),
-    ("intent_volume",         _signal_intent_volume),
-    ("compromise_depth",      _signal_compromise_depth),
-    ("exfiltration",          _signal_exfiltration),
-    ("lateral_movement",      _signal_lateral_movement),
-    ("malware",               _signal_malware),
-    ("mitre_sophistication",  _signal_mitre_sophistication),
+    ("reputation", _signal_reputation),
+    ("anonymization", _signal_anonymization),
+    ("threat_history", _signal_threat_history),
+    ("intent_volume", _signal_intent_volume),
+    ("compromise_depth", _signal_compromise_depth),
+    ("exfiltration", _signal_exfiltration),
+    ("lateral_movement", _signal_lateral_movement),
+    ("malware", _signal_malware),
+    ("mitre_sophistication", _signal_mitre_sophistication),
 ]
 
 
@@ -493,8 +586,7 @@ def score_session(session_data: dict) -> ScoreResult:
             sig = fn(session_data)
         except Exception as e:
             log.warning(f"signal {sid} raised: {e}")
-            sig = SignalDetail(0, 0, sid, "?", f"error: {e}",
-                               skipped=True, skip_reason="exception")
+            sig = SignalDetail(0, 0, sid, "?", f"error: {e}", skipped=True, skip_reason="exception")
         breakdown[sid] = sig.to_dict()
         total += sig.points
         if sig.points > 0:
@@ -523,10 +615,12 @@ def score_session(session_data: dict) -> ScoreResult:
 
 # ── Orchestrator: per-IP aggregate scoring ────────────────────────────────────
 def _empty_ip_result() -> ScoreResult:
-    breakdown = {sid: SignalDetail(0, 0, sid, "?", "no sessions",
-                                   skipped=True, skip_reason="empty_aggregate"
-                                   ).to_dict()
-                 for sid, _ in _SIGNALS}
+    breakdown = {
+        sid: SignalDetail(
+            0, 0, sid, "?", "no sessions", skipped=True, skip_reason="empty_aggregate"
+        ).to_dict()
+        for sid, _ in _SIGNALS
+    }
     return ScoreResult(
         risk_score=0,
         risk_level="INFO",
@@ -547,45 +641,48 @@ def score_ip(source_ip: str, sessions: list, enrichment: dict) -> ScoreResult:
 
     enrichment = enrichment if isinstance(enrichment, dict) else {}
     reputation = enrichment.get("reputation") or {}
-    privacy    = enrichment.get("privacy") or {}
-    threat     = enrichment.get("threat_summary") or {}
-    geo        = enrichment.get("geo") or {}
-    infra      = enrichment.get("infrastructure") or {}
+    enrichment.get("privacy") or {}
+    threat = enrichment.get("threat_summary") or {}
+    geo = enrichment.get("geo") or {}
+    infra = enrichment.get("infrastructure") or {}
 
     # WHO fields from enrichment
     super_session = {
-        "is_private":           False,
-        "abuse_score":          reputation.get("abuse_score", 0),
-        "abuse_total_reports":  reputation.get("total_reports", 0),
+        "is_private": False,
+        "abuse_score": reputation.get("abuse_score", 0),
+        "abuse_total_reports": reputation.get("total_reports", 0),
         "abuse_distinct_users": reputation.get("distinct_users", 0),
-        "abuse_categories":     threat.get("attack_categories", []),
-        "is_tor":               threat.get("is_tor", False),
-        "is_vpn":               threat.get("is_vpn", False),
-        "is_proxy":             threat.get("is_proxy", False),
-        "is_datacenter":        threat.get("is_datacenter", False),
-        "is_bogon":             threat.get("is_bogon", False),
-        "is_abuser_listed":     threat.get("is_abuser_listed", False),
-        "threat_tier":          threat.get("tier", ""),
-        "geo_country_code":     geo.get("country_code", "") or reputation.get("country_code", "") or "",
-        "geo_asn":              geo.get("asn", 0),
-        "geo_org":              geo.get("org", ""),
-        "shodan_vulns":         infra.get("vulns", []) or [],
+        "abuse_categories": threat.get("attack_categories", []),
+        "is_tor": threat.get("is_tor", False),
+        "is_vpn": threat.get("is_vpn", False),
+        "is_proxy": threat.get("is_proxy", False),
+        "is_datacenter": threat.get("is_datacenter", False),
+        "is_bogon": threat.get("is_bogon", False),
+        "is_abuser_listed": threat.get("is_abuser_listed", False),
+        "threat_tier": threat.get("tier", ""),
+        "geo_country_code": geo.get("country_code", "") or reputation.get("country_code", "") or "",
+        "geo_asn": geo.get("asn", 0),
+        "geo_org": geo.get("org", ""),
+        "shodan_vulns": infra.get("vulns", []) or [],
     }
 
     # Recidivism
     super_session["previously_seen"] = any(s.get("previously_seen") for s in sessions)
     super_session["previous_sessions"] = max(
-        (_coerce_int(s.get("previous_sessions")) for s in sessions), default=0)
+        (_coerce_int(s.get("previous_sessions")) for s in sessions), default=0
+    )
 
     # WHAT — aggregate volume/behavior
-    super_session["login_attempts"]  = sum(_coerce_int(s.get("login_attempts")) for s in sessions)
+    super_session["login_attempts"] = sum(_coerce_int(s.get("login_attempts")) for s in sessions)
     super_session["attack_velocity"] = max(
-        (_coerce_float(s.get("attack_velocity")) for s in sessions), default=0.0)
-    super_session["success_count"]   = sum(_coerce_int(s.get("success_count")) for s in sessions)
-    super_session["command_count"]   = sum(_coerce_int(s.get("command_count")) for s in sessions)
-    super_session["exfil_bytes"]     = sum(_coerce_int(s.get("exfil_bytes")) for s in sessions)
+        (_coerce_float(s.get("attack_velocity")) for s in sessions), default=0.0
+    )
+    super_session["success_count"] = sum(_coerce_int(s.get("success_count")) for s in sessions)
+    super_session["command_count"] = sum(_coerce_int(s.get("command_count")) for s in sessions)
+    super_session["exfil_bytes"] = sum(_coerce_int(s.get("exfil_bytes")) for s in sessions)
     super_session["file_download_count"] = sum(
-        _coerce_int(s.get("file_download_count")) for s in sessions)
+        _coerce_int(s.get("file_download_count")) for s in sessions
+    )
 
     # Per-session quality tags aggregated (commands not aggregated; quality is per-session).
     all_quality_tags = []
@@ -597,13 +694,16 @@ def score_ip(source_ip: str, sessions: list, enrichment: dict) -> ScoreResult:
     # Honeypot diversity
     hp_types = [s.get("honeypot_type", "") for s in sessions if s.get("honeypot_type")]
     distinct_hp = sorted(set(hp_types))
-    super_session["honeypot_type"] = "multi" if len(distinct_hp) > 1 else (distinct_hp[0] if distinct_hp else "")
+    super_session["honeypot_type"] = (
+        "multi" if len(distinct_hp) > 1 else (distinct_hp[0] if distinct_hp else "")
+    )
     super_session["honeypot_types_hit"] = distinct_hp
 
     # SMB / lateral
-    super_session["smb_share_enum"]   = any(bool(s.get("smb_share_enum")) for s in sessions)
+    super_session["smb_share_enum"] = any(bool(s.get("smb_share_enum")) for s in sessions)
     super_session["epmapper_prescan"] = max(
-        (_coerce_int(s.get("epmapper_prescan")) for s in sessions), default=0)
+        (_coerce_int(s.get("epmapper_prescan")) for s in sessions), default=0
+    )
     cves = []
     for s in sessions:
         cves.extend(list(s.get("exploit_cve") or []))
@@ -612,7 +712,9 @@ def score_ip(source_ip: str, sessions: list, enrichment: dict) -> ScoreResult:
     # Destination port — use the most common critical port if any session hit one
     dest_ports = [_coerce_int(s.get("destination_port")) for s in sessions]
     crit_hits = [p for p in dest_ports if p in _CRITICAL_PORTS]
-    super_session["destination_port"] = crit_hits[0] if crit_hits else (dest_ports[0] if dest_ports else 0)
+    super_session["destination_port"] = (
+        crit_hits[0] if crit_hits else (dest_ports[0] if dest_ports else 0)
+    )
 
     # HOW — malware aggregation
     yara_all = []
@@ -620,7 +722,8 @@ def score_ip(source_ip: str, sessions: list, enrichment: dict) -> ScoreResult:
         yara_all.extend(list(s.get("yara_matches") or []))
     super_session["yara_matches"] = yara_all
     super_session["vt_malicious"] = max(
-        (_coerce_int(s.get("vt_malicious")) for s in sessions), default=0)
+        (_coerce_int(s.get("vt_malicious")) for s in sessions), default=0
+    )
     vt_fam = ""
     for s in sessions:
         f = str(s.get("vt_family") or "")
@@ -632,7 +735,7 @@ def score_ip(source_ip: str, sessions: list, enrichment: dict) -> ScoreResult:
     # HOW — MITRE aggregation
     tech_union = []
     for s in sessions:
-        for t in (s.get("mitre_techniques") or []):
+        for t in s.get("mitre_techniques") or []:
             tech_union.append(t)
     super_session["mitre_techniques"] = tech_union
     # Pick kill_chain_phase from the session with the highest stage

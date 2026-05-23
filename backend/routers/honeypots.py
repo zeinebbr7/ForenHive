@@ -1,7 +1,13 @@
-from typing import Dict, List
+"""
+honeypots.py — Gestion des honeypots (admin)
+Rôle : statut, démarrage/arrêt des conteneurs honeypot (via Docker socket).
+URL    : /api/honeypots/*
+Deps   : Docker SDK (socket /var/run/docker.sock).
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
-
 from models_sql.user import User, UserRole
 from services.auth_service import require_role
 
@@ -32,9 +38,9 @@ def _resolve(name: str) -> str:
 
 
 @router.get("/status")
-async def status(_admin: User = Depends(require_role(UserRole.ADMIN))) -> Dict[str, str]:
+async def status(_admin: User = Depends(require_role(UserRole.ADMIN))) -> dict[str, str]:
     cli = _client()
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for hp, cname in ALLOWED.items():
         try:
             c = cli.containers.get(cname)
@@ -45,7 +51,7 @@ async def status(_admin: User = Depends(require_role(UserRole.ADMIN))) -> Dict[s
 
 
 @router.post("/{name}/start")
-async def start(name: str, admin: User = Depends(require_role(UserRole.ADMIN))) -> Dict[str, str]:
+async def start(name: str, admin: User = Depends(require_role(UserRole.ADMIN))) -> dict[str, str]:
     cname = _resolve(name)
     cli = _client()
     try:
@@ -57,7 +63,7 @@ async def start(name: str, admin: User = Depends(require_role(UserRole.ADMIN))) 
 
 
 @router.post("/{name}/stop")
-async def stop(name: str, admin: User = Depends(require_role(UserRole.ADMIN))) -> Dict[str, str]:
+async def stop(name: str, admin: User = Depends(require_role(UserRole.ADMIN))) -> dict[str, str]:
     cname = _resolve(name)
     cli = _client()
     try:

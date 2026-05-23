@@ -1,260 +1,159 @@
-# ForenHive — Architecture
-**Automated Honeypot-Based Forensic Analysis Platform**
-*PFE 2025/2026 — ISET Radès, RSI | Standard Sharing Software (3S), Charguia, Tunis*
-*Students: Zeineb Benrhouma & Ismail Cherif*
+# Architecture — ForenHive
 
----
-
-## 1. Overview
-
-ForenHive is a full-stack forensic platform that deploys a set of honeypots to attract and capture cyberattacks, processes the generated logs through an ETL pipeline, enriches them with threat intelligence, and exposes the results through a REST API and web dashboard.
-
-**Infrastructure:** Dell PowerEdge R750 · Ubuntu 24.10 · Docker 28.4.0 · IP: 172.16.1.100
-
----
-
-## 2. Layer Architecture
+ForenHive est structuré en **4 couches** strictement isolées par réseaux Docker
+(`honeypot-net` et `backend-net`).
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  C5 — Interface (React)                             │
-│       Web dashboard · Attack map · Reports          │
-└────────────────────┬────────────────────────────────┘
-                     │ HTTP
-┌────────────────────▼────────────────────────────────┐
-│  C4 — Backend (FastAPI)                             │
-│       REST API · Auth (JWT) · Risk scoring          │
-│       YARA · MITRE ATT&CK · PDF reports             │
-└──────────┬──────────────────────┬───────────────────┘
-           │ SQL                  │ HTTP
-┌──────────▼──────────┐  ┌───────▼──────────────────┐
-│  PostgreSQL 15      │  │  Elasticsearch 8.13       │
-│  Users · Auth       │  │  honeypot-logs-YYYY.MM.dd │
-│  Reports · Audit    │  │  ~2.3M events/day         │
-└─────────────────────┘  └───────▲──────────────────┘
-                                 │
-┌────────────────────────────────┴────────────────────┐
-│  C2 — ETL Pipeline                                  │
-│  Filebeat 8.13 → Logstash 8.13 → Elasticsearch     │
-│  ECS normalization · GeoIP enrichment · Daily index │
-└────────────────────┬────────────────────────────────┘
-                     │ log files (shared volumes)
-┌────────────────────▼────────────────────────────────┐
-│  C1 — Honeypots                                     │
-│  Cowrie · Dionaea · Galah · Zeek                    │
-└─────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. Docker Network Topology
-
-Two isolated Docker bridge networks separate honeypot traffic from backend services:
-
-```
-Internet / Host
-     │
-     ├── ports 2222,2223 ──► forenhive-cowrie   ─┐
-     ├── ports 80,443,445,... ► forenhive-dionaea ├── honeypot-net
-     ├── ports 8080,8888 ──► forenhive-galah    ─┤
-     │   (host network)     forenhive-zeek       ─┘
-     │
-     │                      forenhive-galah    ─┐
-     │                      forenhive-filebeat  ├── backend-net
-     │                      forenhive-logstash  │
-     │                      forenhive-es        │
-     │                      forenhive-postgres  │
-     │                      forenhive-ollama   ─┘
-```
-
-- **honeypot-net** — attack surface network. Honeypots exposed here receive attacker traffic.
-- **backend-net** — internal processing network. Never exposed to the internet.
-- **Galah** and **Filebeat** are connected to both networks (Galah needs Ollama; Filebeat needs to reach Logstash).
-
----
-
-## 4. Component Inventory
-
-### 4.1 Honeypots (Sprint 1)
-
-| Container | Image | Ports | Role |
-|---|---|---|---|
-| `forenhive-cowrie` | `cowrie/cowrie:latest` | 2222 (SSH), 2223 (Telnet) | SSH/Telnet honeypot — captures credentials, commands, session recordings |
-| `forenhive-dionaea` | `dinotools/dionaea:latest` | 23,80,135,443,445,1433,1723,1883,3306,11211,27017 | Multi-protocol malware honeypot — SMB, MySQL, MSSQL, HTTP, MQTT, MongoDB |
-| `forenhive-galah` | built from `galah-src` | 8080, 8888 | LLM web honeypot — generates realistic HTML responses via Mistral 7B |
-| `forenhive-zeek` | `zeek/zeek:latest` | host network | Passive network analyzer — conn, SSH, HTTP, DNS, FTP logs |
-
-### 4.2 ETL Pipeline (Sprint 2)
-
-| Container | Image | Port | Role |
-|---|---|---|---|
-| `forenhive-filebeat` | `filebeat:8.13.0` | — | Tail honeypot log files, forward to Logstash via Beats protocol |
-| `forenhive-logstash` | `logstash:8.13.0` | 5044 | ECS normalization, GeoIP enrichment, per-honeypot field mapping |
-| `forenhive-elasticsearch` | `elasticsearch:8.13.0` | 9200 (internal) | Time-series event store, daily rolling indices |
-
-### 4.3 Storage
-
-| Container | Image | Role |
-|---|---|---|
-| `forenhive-elasticsearch` | `elasticsearch:8.13.0` | Attack log storage — `honeypot-logs-YYYY.MM.dd` indices |
-| `forenhive-postgresql` | `postgres:15` | Relational storage — users, auth tokens, forensic reports, audit trail |
-
-### 4.4 LLM
-
-| Container | Image | Role |
-|---|---|---|
-| `forenhive-ollama` | `ollama/ollama:latest` | Serves Mistral 7B Q4_K_M (4.4 GB) for Galah web response generation and Sprint 3 MITRE ATT&CK mapping |
-
-### 4.5 Future (Sprint 3)
-
-| Component | Role |
-|---|---|
-| FastAPI backend | REST API, JWT auth, risk scoring, YARA, MITRE mapping, PDF reports |
-| React frontend | Dashboard, attack map, timeline, report viewer |
-| Nginx | Reverse proxy, SSL termination |
-
----
-
-## 5. Volume Architecture
-
-| Volume | Used by | Contains |
-|---|---|---|
-| `cowrie-var` (external) | Cowrie, Filebeat | Cowrie runtime data, JSON event logs |
-| `dionaea-logs` (external) | Dionaea, Filebeat | Dionaea plain-text logs |
-| `dionaea-malware` (external) | Dionaea | Captured malware samples |
-| `zeek-logs` (external) | Zeek, Filebeat | Rotated daily Zeek log archives |
-| `zeek-spool` | Zeek, Filebeat | Live Zeek spool (symlink target — must be shared at same absolute path) |
-| `galah-logs` | Galah, Filebeat | `event_log.json`, `cache.db` |
-| `elasticsearch-data` | Elasticsearch | All indexed documents |
-| `postgresql-data` | PostgreSQL | Relational database files |
-| `ollama-models` (external) | Ollama | Mistral 7B model weights (4.4 GB) |
-
-> **Note on `zeek-spool`:** Zeek's `logs/current` is a symlink pointing to the absolute path `/usr/local/zeek/spool/zeek`. This volume must be mounted at the same path in both Zeek and Filebeat containers so the symlink resolves correctly from Filebeat.
-
----
-
-## 6. Data Flow
-
-```
-[Attacker]
-    │
-    ├─SSH/Telnet──► Cowrie ──── cowrie.json ──────────────────────────┐
-    ├─SMB/SQL/...─► Dionaea ─── dionaea.log ──────────────────────────┤
-    ├─HTTP/HTTPS──► Galah ───── event_log.json ───────────────────────┤
-    └─(all proto)─► Zeek ────── conn/ssh/http.log ───────────────────►│
-                         (passive capture)                            │
-                                                                      │
-                                                              Filebeat (tail)
-                                                                      │
-                                                                      ▼
-                                                              Logstash (filter)
-                                                            ┌─────────────────┐
-                                                            │ ECS rename      │
-                                                            │ GeoIP enrich    │
-                                                            │ Timestamp fix   │
-                                                            │ Category tag    │
-                                                            │ Debug drop      │
-                                                            └────────┬────────┘
-                                                                     │
-                                                                     ▼
-                                                           Elasticsearch
-                                                      honeypot-logs-YYYY.MM.dd
+┌──────────────────────────────────────────────────────────────┐
+│  C1 — HONEYPOTS               (honeypot-net, isolé)          │
+│                                                              │
+│   Cowrie ──┐                                                 │
+│   Dionaea ─┤── logs ──► Filebeat                             │
+│   Galah ───┘                                                 │
+│   Zeek (host network, capture passive)                       │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  C2 — ETL & STOCKAGE         (backend-net)                   │
+│                                                              │
+│   Filebeat ──► Logstash ──► Elasticsearch                    │
+│                  │              │                            │
+│                  │              ├─► honeypot-logs-YYYY.MM.dd │
+│                  │              └─► forenhive-suspect-...    │
+│                  │                                           │
+│                  └─► GeoIP MaxMind enrich                    │
+│                                                              │
+│   PostgreSQL ◄─── stockage forensique structuré              │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  C3 — FORENSIC ENGINE        (cron interne 5 min)            │
+│                                                              │
+│   engine.py orchestre 10 modules en chaîne :                 │
+│   enricher → yara → VT → smb → timeline → ioc → mitre →      │
+│   risk_score → profiler → chain_of_custody                   │
+│                                                              │
+│   Ollama (Mistral 7B Q4_K_M) consommé par : profiler,        │
+│   mitre_mapper (narration uniquement), galah                 │
+└──────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│  C4 — BACKEND + SPA + REPORTING                              │
+│                                                              │
+│   FastAPI :8000 (13 routers) ◄─── JWT Bearer                 │
+│        │                                                     │
+│        ├─ services : ES, PG, Ollama, Twilio, report_*        │
+│        └─ /api/reports/forensic/{sid}/generate ──► PDF       │
+│                                                              │
+│   nginx :3000 ──► SPA (Vite build, partiels HTML)            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 7. Honeypot Design
+## Flux de données
 
-### Cowrie — SSH/Telnet Deception
-- **Persona:** `db-prod` running `SSH-2.0-OpenSSH_8.9p1`
-- **Auth:** UserDB with 14 weak credentials (root, mongodb, dbadmin, ubuntu)
-- **Captures:** login attempts, shell commands, file uploads/downloads (with SHA-256)
-- **Output:** JSON per event (`cowrie.login.success`, `cowrie.command.input`, `cowrie.session.closed`, etc.)
+### Capture → indexation (C1 → C2)
 
-### Dionaea — Multi-Protocol Malware Trap
-- **Persona:** Windows Server 2019 (SMB), SQL Server 2019 (MSSQL)
-- **Protocols:** 11 services — SMB 445, MSSQL 1433, MySQL 3306, HTTP 80, MQTT 1883, MongoDB 27017, Memcache 11211, PPTP 1723, FTP 23, HTTPS 443, RPC 135
-- **Captures:** exploit attempts, malware binaries (stored in `dionaea-malware` volume)
-- **SMB identity:** `WIN-SERVER2019` in `WORKGROUP`, shares `ADMIN$`, `C$`, `IPC$`
+1. Un attaquant interagit avec un honeypot.
+2. Le honeypot écrit dans son log local (volume Docker).
+3. **Filebeat** tail le log et l'envoie à Logstash sur `:5044`.
+4. **Logstash** :
+   - parse (grok / json filter),
+   - normalise au format **ECS** (Elastic Common Schema),
+   - enrichit avec **GeoIP MaxMind** (pays, ville, lat/lon, ASN),
+   - indexe dans `honeypot-logs-YYYY.MM.dd` (Elasticsearch).
 
-### Galah — LLM Web Deception
-- **Ports:** 8080, 8888 (HTTP)
-- **Backend:** Ollama + Mistral 7B via `http://forenhive-ollama:11434`
-- **Behavior:** Generates realistic HTML responses matching the requested URL (login pages, admin panels, 404 pages, etc.)
-- **Cache:** SQLite (`cache.db`) — repeated requests served instantly (~1s vs 40-80s for LLM)
-- **Output:** JSON per HTTP request with full request/response metadata and source tag (`llm`/`cache`)
+### Indexation → analyse (C2 → C3)
 
-### Zeek — Passive Network Visibility
-- **Mode:** `network_mode: host` with `NET_ADMIN` + `NET_RAW` capabilities
-- **Interface:** `eno12399` (injected via `sed` on `node.cfg` at startup)
-- **Logs:** `conn.log`, `ssh.log`, `http.log`, `dns.log`, `ssl.log`, `dhcp.log`
-- **Output:** JSON format via `policy/tuning/json-logs`
+5. Toutes les 5 min, `engine.py` interroge ES sur la fenêtre récente
+   (`--hours 24` par défaut).
+6. Pour chaque IP source nouvelle ou session non analysée :
+   - enrichissement multi-source (GeoIP local + AbuseIPDB + Shodan…),
+   - scan YARA sur les payloads Dionaea,
+   - lookup VirusTotal (si quota),
+   - corrélation SMB (Dionaea + Zeek NTLM),
+   - construction d'une timeline ms-précision,
+   - extraction d'IoCs,
+   - mapping MITRE ATT&CK (déterministe + narration Mistral),
+   - calcul du risk score 9 signaux,
+   - génération du profil criminologique BAU (Mistral),
+   - scellement SHA-256 + RFC 3161 (chaîne de custody).
+7. Persistance atomique en PostgreSQL (4+ tables) + ES (profils).
 
----
+### Analyse → consultation (C3 → C4)
 
-## 8. Environment Variables
-
-| Variable | Default | Used by |
-|---|---|---|
-| `POSTGRES_USER` | `forenhive` | PostgreSQL, Backend |
-| `POSTGRES_PASSWORD` | *(required)* | PostgreSQL, Backend |
-| `POSTGRES_DB` | `forenhive` | PostgreSQL, Backend |
-| `ES_HOST` | `elasticsearch` | Backend |
-| `ES_PORT` | `9200` | Backend |
-| `OLLAMA_HOST` | `forenhive-ollama` | Galah |
-| `OLLAMA_PORT` | `11434` | Galah |
-| `OLLAMA_MODEL` | `mistral` | Galah |
-| `SECRET_KEY` | *(required)* | Backend JWT |
-| `ABUSEIPDB_API_KEY` | — | Sprint 3 enrichment |
-| `VIRUSTOTAL_API_KEY` | — | Sprint 3 enrichment |
+8. Le backend FastAPI (`:8000`) expose les données via 13 routers REST.
+9. La SPA (`:3000`) consomme l'API avec JWT Bearer
+   (clé localStorage `forenhive.token`).
+10. Sur demande utilisateur, `POST /api/reports/forensic/{sid}/generate`
+    rend un PDF WeasyPrint à partir des templates Jinja2
+    `forenhive_rapport_v2.html` (EN) ou `_v2_fr.html` (FR).
 
 ---
 
-## 9. Sprint Roadmap
+## Réseaux Docker
 
-| Sprint | Scope | Status |
-|---|---|---|
-| Sprint 1 | Honeypots — Cowrie, Dionaea, Galah, Zeek | ✅ Complete |
-| Sprint 2 | ETL Pipeline — Filebeat, Logstash, Elasticsearch | ✅ Complete |
-| Sprint 3 | Forensic Engine — enrichment, YARA, MITRE, risk scoring, API, UI | 🔄 Planned |
+| Réseau | Contenu | Isolation |
+|--------|---------|-----------|
+| `honeypot-net` | Cowrie, Dionaea, Galah, Filebeat | les attaquants ne peuvent pas atteindre le backend depuis ce réseau |
+| `backend-net` | Logstash, ES, PG, Ollama, forensic-engine, backend, frontend, Galah | trafic interne uniquement |
+| `host network` | Zeek | nécessaire pour capture passive sur `eno12399` |
+
+Galah est sur les **deux** réseaux car il a besoin :
+- d'exposer HTTP côté honeypot pour piéger les attaquants,
+- de joindre Ollama côté backend pour générer ses réponses LLM.
 
 ---
 
-## 10. Repository Structure
+## Stockage
 
-```
-forenhive/
-├── docker-compose.yml          # Full stack orchestration
-├── .env                        # Runtime secrets (not committed)
-├── .env.example                # Variable template
-├── Makefile                    # up / down / logs / status / rebuild-galah
-│
-├── honeypots/
-│   ├── cowrie/
-│   │   ├── cowrie.cfg          # Hostname, auth class, SSH/Telnet config
-│   │   └── userdb.txt          # Accepted credentials (14 entries)
-│   ├── dionaea/
-│   │   ├── smb.yaml            # Windows Server 2019 SMB identity
-│   │   └── mssql.yaml          # SQL Server 2019 version string
-│   ├── galah/galah-src/
-│   │   ├── Dockerfile          # Multi-stage Go build → debian:bookworm-slim
-│   │   ├── config/
-│   │   │   ├── config.yaml     # LLM system prompt + ports
-│   │   │   └── rules.yaml      # Static response rules (disabled)
-│   │   └── cmd/ internal/ pkg/ # Go source code
-│   └── zeek/
-│       └── local.zeek          # Protocol modules + JSON output policy
-│
-├── pipeline/
-│   ├── filebeat/
-│   │   └── filebeat.yml        # 4 inputs, Logstash output
-│   └── logstash/
-│       ├── logstash.yml        # Workers, batch size
-│       └── pipelines/
-│           └── main.conf       # ECS normalization pipeline
-│
-└── docs/
-    ├── architecture.md         # This file
-    ├── sprint1_audit.md        # Sprint 1 audit report
-    └── sprint2_audit.md        # Sprint 2 audit report
-```
+### Elasticsearch — données chronologiques
+
+- `honeypot-logs-YYYY.MM.dd` — un index par jour (ETL).
+- `forenhive-suspect-profiles` — profils BAU (mémoire de cas).
+- `forenhive-smb-analysis` — corrélation SMB (Dionaea + Zeek NTLM).
+
+### PostgreSQL — données forensiques structurées
+
+| Table | Rôle |
+|-------|------|
+| `forensic_sessions` | sessions d'attaque agrégées par IP/session_id |
+| `forensic_timeline_events` | timeline ms-précision multi-honeypot |
+| `forensic_iocs` | IoCs extraits (URL, hash, CVE, …) |
+| `forensic_chain_of_custody` | scellements SHA-256 + ancrages TSA |
+| `forensic_coc_batches` | requêtes TSA (Merkle root anchors) |
+| `suspect_profiles` | profils BAU générés par Mistral |
+| `file_analysis` | matchs YARA + détections VT |
+| `ip_enrichment_cache` | cache enrichissement IP (TTL 24h) |
+| `ip_risk_scores` | scores de risque + ventilation par signal |
+| `users`, `audit_log` | auth + journal d'audit backend |
+
+---
+
+## Choix techniques structurants
+
+- **CPU-only LLM** : Mistral 7B Q4_K_M tourne sur CPU du R750 (~3-5 s par
+  appel court, ~30 s pour profil complet). Pas de dépendance GPU.
+- **Pas de LLM externe** : pas d'OpenAI, pas de Claude — exigence
+  "souveraineté des données forensiques" (le contenu d'une session ne
+  quitte pas l'infrastructure).
+- **PostgreSQL + Elasticsearch** : duo standard du forensique numérique
+  (PG pour la véracité structurée, ES pour la recherche full-text et les
+  agrégations time-series).
+- **WeasyPrint** : rendu PDF déterministe à partir de HTML/CSS (vs LaTeX
+  ou alternatives). Templates Jinja2 avec `StrictUndefined` pour détecter
+  immédiatement tout champ manquant.
+- **SPA vanilla** (HTML/JS + Vite) : pas de framework lourd, partiels
+  HTML chargés dynamiquement. Choix justifié par la simplicité de
+  maintenance et le faible besoin d'état côté client.
+
+---
+
+*Pour les détails du Forensic Engine (modules, signaux, Suspect Profiler) :
+voir [`forensic-engine.md`](forensic-engine.md).
+Pour les endpoints REST : voir [`api.md`](api.md).
+Pour le déploiement : voir [`deployment.md`](deployment.md).*

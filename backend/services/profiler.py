@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 
 from models.report import AttackerProfile
+
 from services.alert_engine import RiskScorer
 from services.elasticsearch import get_es
 from services.enrichment import get_enrichment
@@ -20,25 +21,21 @@ async def build_profile(ip: str) -> AttackerProfile:
         b = aggs.get(bucket_name, {}).get("buckets", [])
         return b[0]["key"] if b else None
 
-    def _list(bucket_name: str, limit: int = 10) -> List[str]:
+    def _list(bucket_name: str, limit: int = 10) -> list[str]:
         return [b["key"] for b in aggs.get(bucket_name, {}).get("buckets", [])][:limit]
 
     first_ts = aggs.get("first_seen", {}).get("value")
     last_ts = aggs.get("last_seen", {}).get("value")
-    first_seen = (
-        datetime.fromtimestamp(first_ts / 1000, tz=timezone.utc) if first_ts else None
-    )
-    last_seen = (
-        datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc) if last_ts else None
-    )
+    first_seen = datetime.fromtimestamp(first_ts / 1000, tz=UTC) if first_ts else None
+    last_seen = datetime.fromtimestamp(last_ts / 1000, tz=UTC) if last_ts else None
 
-    sessions: Dict[str, Dict[str, Any]] = {}
-    commands_all: List[str] = []
-    usernames_all: List[str] = []
-    yara_matches: List[str] = []
-    ioc_hashes: List[str] = []
-    mitre: List[str] = []
-    downloads: List[str] = []
+    sessions: dict[str, dict[str, Any]] = {}
+    commands_all: list[str] = []
+    usernames_all: list[str] = []
+    yara_matches: list[str] = []
+    ioc_hashes: list[str] = []
+    mitre: list[str] = []
+    downloads: list[str] = []
     dest_ports: set = set()
 
     for e in events:
@@ -62,7 +59,9 @@ async def build_profile(ip: str) -> AttackerProfile:
             sha = (f.get("hash") or {}).get("sha256") if isinstance(f.get("hash"), dict) else None
             if sha:
                 ioc_hashes.append(sha)
-        for t in (e.get("mitre") or {}).get("technique", []) if isinstance(e.get("mitre"), dict) else []:
+        for t in (
+            (e.get("mitre") or {}).get("technique", []) if isinstance(e.get("mitre"), dict) else []
+        ):
             if isinstance(t, dict) and t.get("id"):
                 mitre.append(t["id"])
         dp = (e.get("destination") or {}).get("port")
@@ -90,7 +89,8 @@ async def build_profile(ip: str) -> AttackerProfile:
     risk_score, _breakdown = RiskScorer.score(
         {
             "failed_auth_count": sum(
-                1 for e in events
+                1
+                for e in events
                 if e.get("eventid") == "cowrie.login.failed"
                 or (e.get("event") or {}).get("id") == "cowrie.login.failed"
             ),
@@ -103,7 +103,10 @@ async def build_profile(ip: str) -> AttackerProfile:
             "payload": " ".join(top_commands),
             "commands": top_commands,
             "http_path": next(
-                (e.get("url", {}).get("path") if isinstance(e.get("url"), dict) else None for e in events),
+                (
+                    e.get("url", {}).get("path") if isinstance(e.get("url"), dict) else None
+                    for e in events
+                ),
                 None,
             ),
             "unique_dest_ports": len(dest_ports),

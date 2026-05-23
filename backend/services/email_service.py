@@ -5,11 +5,10 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from typing import Any
 
 from config import get_settings
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 log = logging.getLogger(__name__)
 
@@ -25,15 +24,13 @@ class EmailService:
             enable_async=False,
         )
 
-    def render(self, template: str, context: Dict[str, Any]) -> str:
+    def render(self, template: str, context: dict[str, Any]) -> str:
         tmpl = self.env.get_template(template)
         return tmpl.render(**context)
 
     def _smtp_send(self, msg: EmailMessage) -> None:
         context = ssl.create_default_context()
-        with smtplib.SMTP(
-            self.settings.smtp_host, self.settings.smtp_port, timeout=20
-        ) as server:
+        with smtplib.SMTP(self.settings.smtp_host, self.settings.smtp_port, timeout=20) as server:
             server.ehlo()
             if self.settings.smtp_starttls:
                 server.starttls(context=context)
@@ -44,10 +41,10 @@ class EmailService:
 
     def send_alert(
         self,
-        recipients: List[str],
+        recipients: list[str],
         subject: str,
-        context: Dict[str, Any],
-        attachments: Optional[List[Dict[str, Any]]] = None,
+        context: dict[str, Any],
+        attachments: list[dict[str, Any]] | None = None,
     ) -> None:
         if not recipients:
             raise ValueError("no recipients configured")
@@ -70,7 +67,7 @@ class EmailService:
             )
         self._smtp_send(msg)
 
-    def send_test(self, recipients: List[str]) -> None:
+    def send_test(self, recipients: list[str]) -> None:
         subject = "[FORENHIVE ALERT] TEST — Alert Pipeline Healthy"
         context = {
             "is_test": True,
@@ -92,7 +89,7 @@ class EmailService:
         self.send_alert(recipients, subject, context)
 
     @staticmethod
-    def _plain_fallback(ctx: Dict[str, Any]) -> str:
+    def _plain_fallback(ctx: dict[str, Any]) -> str:
         mitre = ", ".join(ctx.get("mitre_tags") or []) or "—"
         lines = [
             f"ForenHive Alert — {ctx.get('severity', 'N/A')}",
@@ -101,11 +98,12 @@ class EmailService:
             nc = (ctx.get("network_class") or "").replace("_", " ")
             lines += [
                 f"*** INSIDER THREAT — ATTACK FROM INSIDE THE NETWORK ({nc}) ***",
-                f"NOTE: Source IP is an internal RFC1918 address. Immediate containment required.",
+                "NOTE: Source IP is an internal RFC1918 address. Immediate containment required.",
             ]
         lines += [
             f"Threat     : {ctx.get('threat_type')}",
-            f"Source IP  : {ctx.get('source_ip')}" + (f" ({ctx.get('country')})" if ctx.get("country") else ""),
+            f"Source IP  : {ctx.get('source_ip')}"
+            + (f" ({ctx.get('country')})" if ctx.get("country") else ""),
             f"Honeypot   : {ctx.get('honeypot')}",
             f"Risk score : {ctx.get('risk_score')}/100",
             f"Attempts   : {ctx.get('attempts')}",
@@ -117,7 +115,7 @@ class EmailService:
         return "\n".join(lines)
 
 
-_svc: Optional[EmailService] = None
+_svc: EmailService | None = None
 
 
 def get_email() -> EmailService:

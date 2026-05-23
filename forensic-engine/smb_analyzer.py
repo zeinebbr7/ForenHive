@@ -1,17 +1,32 @@
 #!/usr/bin/env python3
 """
-ForenHive SMB Forensic Analyzer
-================================
-Extracts and correlates SMB honeypot evidence from:
-  - Dionaea SQLite  (/opt/dionaea/var/lib/dionaea/dionaea.sqlite)
-  - Zeek NTLM logs  (/usr/local/zeek/logs/**/ntlm*.log.gz)
+smb_analyzer.py — ForenHive Forensic Engine
+============================================
+Rôle    : extraction et corrélation des preuves SMB/NTLM (attaques Windows).
+Entrée  : Dionaea SQLite (/opt/dionaea/var/lib/dionaea/dionaea.sqlite)
+          + Zeek NTLM logs (/usr/local/zeek/logs/**/ntlm*.log.gz).
+Sortie  : 1 "suspect profile" par IP source + index ES `forenhive-smb-analysis`.
+Appelé  : par `engine.py` (phase analyse SMB) ; aussi en CLI standalone.
+Deps    : `enricher.IPEnricher` (GeoIP + AbuseIPDB + Shodan), Elasticsearch.
 
-Produces one "suspect profile" per source IP, enriches each with
-IPEnricher (GeoIP + AbuseIPDB + Shodan InternetDB), and indexes
-results to Elasticsearch index "forenhive-smb-analysis".
+═══════════════════════════════════════════════════════════════════════════════
+ANALYSEUR SMB — DÉTECTION D'ATTAQUES RÉSEAU WINDOWS
+═══════════════════════════════════════════════════════════════════════════════
+SOURCES DE DONNÉES CROISÉES :
+  1. Dionaea SQLite : connexions, tentatives d'exploitation, payloads
+     capturés. Tables : `connections` + `downloads`.
+  2. Zeek NTLM logs : authentifications Windows (NTLM v1/v2) capturées
+     par l'IDS réseau. Champs clés : `auth_success`, `user`, `domain`.
 
-Usage (inside forensic-engine container):
+DÉTECTIONS CLÉS (contribution au risk score) :
+  • EternalBlue (CVE-2017-0144) : exploit SMBv1, signature réseau
+    spécifique. Vecteur ransomware WannaCry/NotPetya. → +40 pts CRITIQUE
+  • Énumération SMB : scan de partages, sessions null, reconnaissance. → +30
+  • EPMapper : énumération des services via port 135 (MS-RPC).        → +15
+
+USAGE CLI :
     python smb_analyzer.py [--days N] [--no-enrich] [--no-es]
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import argparse
@@ -22,12 +37,11 @@ import os
 import sqlite3
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from elasticsearch import Elasticsearch
-
 import config
+from elasticsearch import Elasticsearch
 from enricher import IPEnricher
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -39,18 +53,17 @@ logging.basicConfig(
 )
 log = logging.getLogger("smb_analyzer")
 
+
 def _ts_to_iso(epoch: float) -> str:
     """Convert Unix timestamp to tz-aware ISO 8601 UTC string."""
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-DIONAEA_DB   = os.environ.get(
-    "DIONAEA_DB", "/opt/dionaea/var/lib/dionaea/dionaea.sqlite"
-)
-ZEEK_LOGS    = os.environ.get("ZEEK_LOGS_DIR", "/usr/local/zeek/logs")
-ES_INDEX     = "forenhive-smb-analysis"
+DIONAEA_DB = os.environ.get("DIONAEA_DB", "/opt/dionaea/var/lib/dionaea/dionaea.sqlite")
+ZEEK_LOGS = os.environ.get("ZEEK_LOGS_DIR", "/usr/local/zeek/logs")
+ES_INDEX = "forenhive-smb-analysis"
 
 # UUID → service name (covers all UUIDs in the Dionaea registry)
 DCERPC_UUID_MAP = {
@@ -72,17 +85,18 @@ DCERPC_UUID_MAP = {
 
 # SRVSVC opnum → (name, CVE/MS advisory)
 SRVSVC_OPS = {
-    14: ("NetShareAdd",           ""),
-    15: ("NetShareEnum",          ""),
-    16: ("NetrShareGetInfo",      ""),
-    21: ("NetServerGetInfo",      ""),
-    28: ("NetrRemoteTOD",         ""),
-    31: ("NetPathCanonicalize",   "MS08-067"),
-    32: ("NetPathCompare",        "MS08-067"),
-    34: ("NetNameCanonicalize",   ""),
+    14: ("NetShareAdd", ""),
+    15: ("NetShareEnum", ""),
+    16: ("NetrShareGetInfo", ""),
+    21: ("NetServerGetInfo", ""),
+    28: ("NetrRemoteTOD", ""),
+    31: ("NetPathCanonicalize", "MS08-067"),
+    32: ("NetPathCompare", "MS08-067"),
+    34: ("NetNameCanonicalize", ""),
 }
 
 # ── Step 1 — Dionaea SQLite extraction ─────────────────────────────────────────
+
 
 def extract_dionaea(db_path: str) -> dict:
     """
@@ -99,7 +113,7 @@ def extract_dionaea(db_path: str) -> dict:
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    cur  = conn.cursor()
+    cur = conn.cursor()
 
     # Load full DCE/RPC service registry from Dionaea itself
     uuid_to_service = dict(DCERPC_UUID_MAP)
@@ -116,13 +130,15 @@ def extract_dionaea(db_path: str) -> dict:
     for r in cur.fetchall():
         opnum_registry[(r[0].lower(), r[1])] = (r[2], r[3])
 
-    data = defaultdict(lambda: {
-        "connections":      [],
-        "dcerpc_binds":     [],
-        "dcerpc_requests":  [],
-        "downloads":        [],
-        "epmapper_count":   0,
-    })
+    data = defaultdict(
+        lambda: {
+            "connections": [],
+            "dcerpc_binds": [],
+            "dcerpc_requests": [],
+            "downloads": [],
+            "epmapper_count": 0,
+        }
+    )
 
     # SMB connections
     cur.execute("""
@@ -133,11 +149,15 @@ def extract_dionaea(db_path: str) -> dict:
     """)
     for r in cur.fetchall():
         ip = r["remote_host"]
-        data[ip]["connections"].append({
-            "connection_id": r["connection"],
-            "ts":            datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
-            "remote_port":   r["remote_port"],
-        })
+        data[ip]["connections"].append(
+            {
+                "connection_id": r["connection"],
+                "ts": datetime.fromtimestamp(
+                    r["connection_timestamp"], tz=UTC
+                ).isoformat(),
+                "remote_port": r["remote_port"],
+            }
+        )
 
     # DCE/RPC binds over SMB
     cur.execute("""
@@ -149,19 +169,23 @@ def extract_dionaea(db_path: str) -> dict:
     """)
     seen_binds = set()
     for r in cur.fetchall():
-        ip   = r["remote_host"]
+        ip = r["remote_host"]
         uuid = r["dcerpcbind_uuid"].lower()
-        key  = (ip, uuid)
+        key = (ip, uuid)
         if key in seen_binds:
             continue
         seen_binds.add(key)
-        svc  = uuid_to_service.get(uuid, uuid)
-        data[ip]["dcerpc_binds"].append({
-            "uuid":            r["dcerpcbind_uuid"],
-            "service":         svc,
-            "transfersyntax":  r["dcerpcbind_transfersyntax"],
-            "ts":              datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
-        })
+        svc = uuid_to_service.get(uuid, uuid)
+        data[ip]["dcerpc_binds"].append(
+            {
+                "uuid": r["dcerpcbind_uuid"],
+                "service": svc,
+                "transfersyntax": r["dcerpcbind_transfersyntax"],
+                "ts": datetime.fromtimestamp(
+                    r["connection_timestamp"], tz=UTC
+                ).isoformat(),
+            }
+        )
 
     # DCE/RPC requests over SMB
     cur.execute("""
@@ -172,19 +196,23 @@ def extract_dionaea(db_path: str) -> dict:
         WHERE  c.connection_protocol = 'smbd'
     """)
     for r in cur.fetchall():
-        ip    = r["remote_host"]
-        uuid  = r["dcerpcrequest_uuid"].lower()
+        ip = r["remote_host"]
+        uuid = r["dcerpcrequest_uuid"].lower()
         opnum = r["dcerpcrequest_opnum"]
-        svc   = uuid_to_service.get(uuid, uuid)
+        svc = uuid_to_service.get(uuid, uuid)
         op_name, advisory = opnum_registry.get((uuid, opnum), (f"opnum_{opnum}", ""))
-        data[ip]["dcerpc_requests"].append({
-            "uuid":     r["dcerpcrequest_uuid"],
-            "service":  svc,
-            "opnum":    opnum,
-            "op_name":  op_name,
-            "advisory": advisory,
-            "ts":       datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
-        })
+        data[ip]["dcerpc_requests"].append(
+            {
+                "uuid": r["dcerpcrequest_uuid"],
+                "service": svc,
+                "opnum": opnum,
+                "op_name": op_name,
+                "advisory": advisory,
+                "ts": datetime.fromtimestamp(
+                    r["connection_timestamp"], tz=UTC
+                ).isoformat(),
+            }
+        )
 
     # File downloads via SMB
     cur.execute("""
@@ -195,10 +223,14 @@ def extract_dionaea(db_path: str) -> dict:
     """)
     for r in cur.fetchall():
         ip = r["remote_host"]
-        data[ip]["downloads"].append({
-            "md5": r["download_md5_hash"],
-            "ts":  datetime.fromtimestamp(r["connection_timestamp"], tz=timezone.utc).isoformat(),
-        })
+        data[ip]["downloads"].append(
+            {
+                "md5": r["download_md5_hash"],
+                "ts": datetime.fromtimestamp(
+                    r["connection_timestamp"], tz=UTC
+                ).isoformat(),
+            }
+        )
 
     # Epmapper (port 135) — same attacker probing RPC endpoint mapper before SMB
     cur.execute("""
@@ -213,11 +245,14 @@ def extract_dionaea(db_path: str) -> dict:
             data[ip]["epmapper_count"] = r["cnt"]
 
     conn.close()
-    log.info(f"Dionaea: {len(data)} unique source IPs across {sum(len(v['connections']) for v in data.values())} SMB connections")
+    log.info(
+        f"Dionaea: {len(data)} unique source IPs across {sum(len(v['connections']) for v in data.values())} SMB connections"
+    )
     return dict(data)
 
 
 # ── Step 2 — Zeek NTLM log parsing ────────────────────────────────────────────
+
 
 def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
     """
@@ -229,13 +264,15 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
       attempts   int
       records    list of raw dicts
     """
-    ntlm = defaultdict(lambda: {
-        "usernames": set(),
-        "hostnames": set(),
-        "domains":   set(),
-        "attempts":  0,
-        "records":   [],
-    })
+    ntlm = defaultdict(
+        lambda: {
+            "usernames": set(),
+            "hostnames": set(),
+            "domains": set(),
+            "attempts": 0,
+            "records": [],
+        }
+    )
 
     logs_path = Path(logs_dir)
     if not logs_path.exists():
@@ -254,7 +291,7 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
             if str(fpath).endswith(".gz"):
                 fh = gzip.open(fpath, "rt", encoding="utf-8", errors="replace")
             else:
-                fh = open(fpath, "r", encoding="utf-8", errors="replace")
+                fh = open(fpath, encoding="utf-8", errors="replace")
 
             with fh:
                 for line in fh:
@@ -276,7 +313,7 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
 
                     username = rec.get("username", "")
                     hostname = rec.get("hostname", "")
-                    domain   = rec.get("domainname", "")
+                    domain = rec.get("domainname", "")
 
                     if username:
                         d["usernames"].add(username)
@@ -285,14 +322,16 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
                     if domain:
                         d["domains"].add(domain)
 
-                    d["records"].append({
-                        "ts":         rec.get("ts", 0),
-                        "username":   username,
-                        "hostname":   hostname,
-                        "domain":     domain,
-                        "src_port":   rec.get("id.orig_p"),
-                        "dst_ip":     rec.get("id.resp_h", ""),
-                    })
+                    d["records"].append(
+                        {
+                            "ts": rec.get("ts", 0),
+                            "username": username,
+                            "hostname": hostname,
+                            "domain": domain,
+                            "src_port": rec.get("id.orig_p"),
+                            "dst_ip": rec.get("id.resp_h", ""),
+                        }
+                    )
         except Exception as e:
             log.warning(f"Failed to parse {fpath}: {e}")
 
@@ -300,23 +339,26 @@ def extract_zeek_ntlm(logs_dir: str, target_ips: set) -> dict:
     for ip, d in ntlm.items():
         d["usernames"] = sorted(d["usernames"])
         d["hostnames"] = sorted(d["hostnames"])
-        d["domains"]   = sorted(d["domains"])
+        d["domains"] = sorted(d["domains"])
 
-    log.info(f"Zeek NTLM: {total_records} records → {len(ntlm)} unique source IPs (from {len(files)} files)")
+    log.info(
+        f"Zeek NTLM: {total_records} records → {len(ntlm)} unique source IPs (from {len(files)} files)"
+    )
     return dict(ntlm)
 
 
 # ── Step 3 — Risk scoring ──────────────────────────────────────────────────────
 
+
 def _compute_risk(smb: dict, ntlm: dict, enrichment: dict) -> tuple[int, list]:
     """Returns (score 0-100, threat_indicators list)."""
-    score      = 0
+    score = 0
     indicators = []
 
     conn_count = len(smb.get("connections", []))
-    reqs       = smb.get("dcerpc_requests", [])
-    downloads  = smb.get("downloads", [])
-    epmapper   = smb.get("epmapper_count", 0)
+    reqs = smb.get("dcerpc_requests", [])
+    downloads = smb.get("downloads", [])
+    epmapper = smb.get("epmapper_count", 0)
 
     # Connection volume
     if conn_count >= 50:
@@ -335,26 +377,32 @@ def _compute_risk(smb: dict, ntlm: dict, enrichment: dict) -> tuple[int, list]:
     ms_vulns = [r for r in reqs if r.get("advisory")]
     if ms_vulns:
         score += 40
-        vulns = list({r['advisory'] for r in ms_vulns})
+        vulns = list({r["advisory"] for r in ms_vulns})
         indicators.append(f"Exploit probe targeting: {', '.join(vulns)}")
 
     # File drops via SMB
     if downloads:
         score += 20
         hashes = list({d["md5"] for d in downloads})
-        indicators.append(f"File transfer via SMB: {len(downloads)} transfers, {len(hashes)} unique MD5(s): {', '.join(hashes)}")
+        indicators.append(
+            f"File transfer via SMB: {len(downloads)} transfers, {len(hashes)} unique MD5(s): {', '.join(hashes)}"
+        )
 
     # epmapper pre-scan (Metasploit pattern: scan 135 then 445)
     if epmapper > 0:
         score += 15
-        indicators.append(f"RPC endpoint mapper pre-scan (port 135): {epmapper} connections — typical Metasploit/Impacket pattern")
+        indicators.append(
+            f"RPC endpoint mapper pre-scan (port 135): {epmapper} connections — typical Metasploit/Impacket pattern"
+        )
 
     # NTLM auth attempts
     if ntlm:
         attempts = ntlm.get("attempts", 0)
         if attempts > 0:
             score += min(10, attempts * 2)
-            indicators.append(f"NTLM authentication: {attempts} attempt(s), username(s): {ntlm.get('usernames', [])}")
+            indicators.append(
+                f"NTLM authentication: {attempts} attempt(s), username(s): {ntlm.get('usernames', [])}"
+            )
 
     # Reputation from enrichment
     rep = (enrichment or {}).get("reputation", {})
@@ -391,24 +439,27 @@ def _compute_risk(smb: dict, ntlm: dict, enrichment: dict) -> tuple[int, list]:
 
 # ── Step 4 — Suspect profile builder ──────────────────────────────────────────
 
+
 def build_profile(ip: str, smb: dict, ntlm: dict, enrichment: dict) -> dict:
-    conns     = smb.get("connections", [])
-    reqs      = smb.get("dcerpc_requests", [])
+    conns = smb.get("connections", [])
+    reqs = smb.get("dcerpc_requests", [])
     downloads = smb.get("downloads", [])
 
     # Summarize DCE/RPC operations
     dcerpc_ops = []
-    seen_ops   = set()
+    seen_ops = set()
     for r in reqs:
         key = (r["uuid"], r["opnum"])
         if key not in seen_ops:
             seen_ops.add(key)
-            dcerpc_ops.append({
-                "service":  r["service"],
-                "opnum":    r["opnum"],
-                "op_name":  r["op_name"],
-                "advisory": r["advisory"],
-            })
+            dcerpc_ops.append(
+                {
+                    "service": r["service"],
+                    "opnum": r["opnum"],
+                    "op_name": r["op_name"],
+                    "advisory": r["advisory"],
+                }
+            )
 
     # Unique download hashes
     download_hashes = list({d["md5"] for d in downloads})
@@ -416,10 +467,11 @@ def build_profile(ip: str, smb: dict, ntlm: dict, enrichment: dict) -> dict:
     # Timeline boundaries
     timestamps = [c["ts"] for c in conns]
     first_seen = min(timestamps) if timestamps else None
-    last_seen  = max(timestamps) if timestamps else None
+    last_seen = max(timestamps) if timestamps else None
 
     # Classify the source
     import ipaddress
+
     try:
         is_private = ipaddress.ip_address(ip).is_private
     except ValueError:
@@ -429,36 +481,32 @@ def build_profile(ip: str, smb: dict, ntlm: dict, enrichment: dict) -> dict:
     risk_score, risk_level, indicators = _compute_risk(smb, ntlm, enrichment)
 
     profile = {
-        "source_ip":       ip,
-        "classification":  classification,
-        "first_seen":      first_seen,
-        "last_seen":       last_seen,
-        "analysis_ts":     datetime.now(timezone.utc).isoformat(),
-
+        "source_ip": ip,
+        "classification": classification,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "analysis_ts": datetime.now(UTC).isoformat(),
         "smb_activity": {
-            "connection_count":  len(conns),
-            "epmapper_prescan":  smb.get("epmapper_count", 0),
-            "share_enumerated":  any(r["op_name"] == "NetShareEnum" for r in reqs),
+            "connection_count": len(conns),
+            "epmapper_prescan": smb.get("epmapper_count", 0),
+            "share_enumerated": any(r["op_name"] == "NetShareEnum" for r in reqs),
             "dcerpc_services_bound": list({b["service"] for b in smb.get("dcerpc_binds", [])}),
             "dcerpc_operations": dcerpc_ops,
             "file_transfers": {
-                "count":       len(downloads),
+                "count": len(downloads),
                 "unique_md5s": download_hashes,
             },
         },
-
         "ntlm_auth": {
-            "attempts":  ntlm.get("attempts", 0) if ntlm else 0,
+            "attempts": ntlm.get("attempts", 0) if ntlm else 0,
             "usernames": ntlm.get("usernames", []) if ntlm else [],
             "hostnames": ntlm.get("hostnames", []) if ntlm else [],
-            "domains":   ntlm.get("domains",   []) if ntlm else [],
+            "domains": ntlm.get("domains", []) if ntlm else [],
         },
-
         "enrichment": enrichment,
-
         "risk": {
-            "score":      risk_score,
-            "level":      risk_level,
+            "score": risk_score,
+            "level": risk_level,
             "indicators": indicators,
         },
     }
@@ -467,6 +515,7 @@ def build_profile(ip: str, smb: dict, ntlm: dict, enrichment: dict) -> dict:
 
 # ── Step 5 — Elasticsearch indexing ───────────────────────────────────────────
 
+
 def index_profiles(es: Elasticsearch, profiles: list):
     from elasticsearch.helpers import bulk
 
@@ -474,7 +523,7 @@ def index_profiles(es: Elasticsearch, profiles: list):
         for p in profiles:
             yield {
                 "_index": ES_INDEX,
-                "_id":    p["source_ip"],
+                "_id": p["source_ip"],
                 "_source": p,
             }
 
@@ -488,36 +537,37 @@ def index_profiles(es: Elasticsearch, profiles: list):
 
 RISK_COLOR = {
     "CRITICAL": "\033[91m",  # red
-    "HIGH":     "\033[93m",  # yellow
-    "MEDIUM":   "\033[94m",  # blue
-    "LOW":      "\033[92m",  # green
+    "HIGH": "\033[93m",  # yellow
+    "MEDIUM": "\033[94m",  # blue
+    "LOW": "\033[92m",  # green
 }
 RESET = "\033[0m"
+
 
 def print_report(profiles: list):
     print()
     print("=" * 72)
     print("  ForenHive — SMB Forensic Analysis Report")
-    print(f"  Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"  Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("=" * 72)
     print(f"  Total suspect profiles: {len(profiles)}")
     print()
 
     # Sort by risk score descending
     for p in sorted(profiles, key=lambda x: x["risk"]["score"], reverse=True):
-        ip         = p["source_ip"]
-        risk       = p["risk"]
-        smb        = p["smb_activity"]
-        ntlm       = p["ntlm_auth"]
-        enrich     = p.get("enrichment") or {}
-        geo        = enrich.get("geo", {})
-        rep        = enrich.get("reputation", {})
-        infra      = enrich.get("infrastructure", {})
-        clr        = RISK_COLOR.get(risk["level"], "")
+        ip = p["source_ip"]
+        risk = p["risk"]
+        smb = p["smb_activity"]
+        ntlm = p["ntlm_auth"]
+        enrich = p.get("enrichment") or {}
+        geo = enrich.get("geo", {})
+        rep = enrich.get("reputation", {})
+        infra = enrich.get("infrastructure", {})
+        clr = RISK_COLOR.get(risk["level"], "")
 
-        print(f"  {clr}{'─'*68}{RESET}")
+        print(f"  {clr}{'─' * 68}{RESET}")
         print(f"  {clr}  [{risk['level']:8s}  {risk['score']:3d}/100]  {ip}{RESET}")
-        print(f"  {'─'*68}")
+        print(f"  {'─' * 68}")
         print(f"    Classification : {p['classification']}")
         print(f"    First seen     : {p['first_seen']}")
         print(f"    Last seen      : {p['last_seen']}")
@@ -530,7 +580,9 @@ def print_report(profiles: list):
             if asn:
                 print(f"    ASN            : {asn}")
         if rep:
-            print(f"    AbuseIPDB      : {rep.get('abuse_score', 0)}/100  ({rep.get('total_reports', 0)} reports)")
+            print(
+                f"    AbuseIPDB      : {rep.get('abuse_score', 0)}/100  ({rep.get('total_reports', 0)} reports)"
+            )
         if infra.get("open_ports"):
             print(f"    Open ports     : {infra['open_ports']}")
         if infra.get("vulns"):
@@ -543,11 +595,16 @@ def print_report(profiles: list):
         if smb.get("dcerpc_services_bound"):
             print(f"    DCE/RPC bound  : {', '.join(smb['dcerpc_services_bound'])}")
         if smb.get("dcerpc_operations"):
-            ops = [f"{o['op_name']} ({o['service']})" + (f" ← {o['advisory']}" if o.get("advisory") else "")
-                   for o in smb["dcerpc_operations"]]
+            ops = [
+                f"{o['op_name']} ({o['service']})"
+                + (f" ← {o['advisory']}" if o.get("advisory") else "")
+                for o in smb["dcerpc_operations"]
+            ]
             print(f"    Operations     : {', '.join(ops)}")
         if smb["file_transfers"]["count"]:
-            print(f"    File transfers : {smb['file_transfers']['count']}  MD5: {', '.join(smb['file_transfers']['unique_md5s'])}")
+            print(
+                f"    File transfers : {smb['file_transfers']['count']}  MD5: {', '.join(smb['file_transfers']['unique_md5s'])}"
+            )
 
         # NTLM
         if ntlm["attempts"]:
@@ -558,7 +615,7 @@ def print_report(profiles: list):
 
         # Threat indicators
         if risk["indicators"]:
-            print(f"    Threat indicators:")
+            print("    Threat indicators:")
             for ind in risk["indicators"]:
                 print(f"      • {ind}")
         print()
@@ -566,14 +623,14 @@ def print_report(profiles: list):
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="ForenHive SMB Forensic Analyzer")
-    parser.add_argument("--no-enrich", action="store_true",
-                        help="Skip IP enrichment (faster, offline)")
-    parser.add_argument("--no-es",     action="store_true",
-                        help="Skip Elasticsearch indexing")
-    parser.add_argument("--json-out",  metavar="FILE",
-                        help="Write full JSON report to FILE")
+    parser.add_argument(
+        "--no-enrich", action="store_true", help="Skip IP enrichment (faster, offline)"
+    )
+    parser.add_argument("--no-es", action="store_true", help="Skip Elasticsearch indexing")
+    parser.add_argument("--json-out", metavar="FILE", help="Write full JSON report to FILE")
     args = parser.parse_args()
 
     # ── 1. Extract Dionaea data ────────────────────────────────────────────────
@@ -603,10 +660,10 @@ def main():
     # ── 4. Build suspect profiles ─────────────────────────────────────────────
     profiles = []
     for ip in sorted(all_ips):
-        smb_info  = dionaea_data[ip]
+        smb_info = dionaea_data[ip]
         ntlm_info = ntlm_data.get(ip, {})
-        enrich    = enrichments.get(ip, {})
-        profile   = build_profile(ip, smb_info, ntlm_info, enrich)
+        enrich = enrichments.get(ip, {})
+        profile = build_profile(ip, smb_info, ntlm_info, enrich)
         profiles.append(profile)
 
     # ── 5. Index to Elasticsearch ─────────────────────────────────────────────
@@ -633,10 +690,12 @@ def main():
 
     # Summary stats
     critical = sum(1 for p in profiles if p["risk"]["level"] == "CRITICAL")
-    high     = sum(1 for p in profiles if p["risk"]["level"] == "HIGH")
-    medium   = sum(1 for p in profiles if p["risk"]["level"] == "MEDIUM")
-    low      = sum(1 for p in profiles if p["risk"]["level"] == "LOW")
-    log.info(f"Done. Profiles: {len(profiles)} total — CRITICAL:{critical} HIGH:{high} MEDIUM:{medium} LOW:{low}")
+    high = sum(1 for p in profiles if p["risk"]["level"] == "HIGH")
+    medium = sum(1 for p in profiles if p["risk"]["level"] == "MEDIUM")
+    low = sum(1 for p in profiles if p["risk"]["level"] == "LOW")
+    log.info(
+        f"Done. Profiles: {len(profiles)} total — CRITICAL:{critical} HIGH:{high} MEDIUM:{medium} LOW:{low}"
+    )
 
 
 if __name__ == "__main__":

@@ -1,28 +1,66 @@
 """
-ForenHive Forensic Engine — Attacker Profiler (Phase 5)
+profiler.py — ForenHive Forensic Engine
+========================================
+Rôle    : génération d'un profil criminologique structuré d'un attaquant.
+Entrée  : agrégation des sorties Phases 1-4 (enrichment, YARA, VT, risk
+          score, MITRE, timeline) pour une session ou une IP.
+Sortie  : JSON structuré (sophistication, confidence, objective, traits,
+          organized_score, detective_narrative) indexé en ES + PG.
+Appelé  : par `engine.py` en avant-dernière étape (avant CoC).
+Deps    : Ollama (Mistral 7B Q4_K_M, temp=0.3, ctx=8192), Elasticsearch
+          (mémoire de cas similaires), PostgreSQL (`suspect_profiles`).
 
-LLM-powered behavioral analysis using criminal profiling methodology (FBI BAU concepts).
-Consumes all Phase 1-4 outputs (enrichment, YARA, VT, risk scores, MITRE, timeline) to
-generate structured suspect profiles via Ollama/Mistral, with memory system for
-similarity-based case comparison.
+═══════════════════════════════════════════════════════════════════════════════
+SUSPECT PROFILER — CRIMINOLOGIE ASSISTÉE PAR LLM
+═══════════════════════════════════════════════════════════════════════════════
+Méthode inspirée du FBI Behavioral Analysis Unit (BAU), adaptée au cyber.
+Références académiques : Ressler & Douglas (1988), Turvey BEA, Canter (2004),
+Zatyko & Bay (2014).
 
-Each profile is indexed to both Elasticsearch (forenhive-suspect-profiles) and PostgreSQL
-(suspect_profiles table) for forensic queries and evidence chain binding.
+PROMPT EN 4 SECTIONS (≈ 2600 tokens de contexte) :
+  Section 1 — System Role (~200 tok) : positionnement en analyste BAU.
+  Section 2 — Criminology Framework (~400 tok) : 9+1 concepts mappés cyber
+              (organized/disorganized, MO→MITRE, signature behavior, Locard,
+              staging, escalation→Kill Chain, victimologie, profilage géo,
+              déduction/induction + détection de déguisement).
+  Section 3 — Session Evidence XML (~1200 tok) : données forensiques brutes.
+  Section 4 — ES Reference Cases (~800 tok) : top 5 profils similaires.
+
+MÉMOIRE ELASTICSEARCH (index `forenhive-suspect-profiles`) :
+Analogie FBI ViCAP — base de cas pour comparaison inter-profils. Matching :
+  • ≥ 2 techniques MITRE en commun, OU
+  • même famille malware (YARA), OU
+  • même ASN.
+Top 5 cas injectés en Section 4 comme "Reference Case Files".
+Bootstrap : les 20-50 premiers profils générés sans mémoire (cold start
+attendu, pas une régression).
+
+RÉGLAGES OLLAMA (immuables — JAMAIS modifier sans validation forensique) :
+  temp=0.3   : reproductibilité maximale (profil ≠ créativité).
+  ctx=8192   : fenêtre suffisante pour les 4 sections + sortie JSON.
+
+OUTPUT JSON STRUCTURÉ :
+  {
+    "sophistication": "low|medium|high|advanced",
+    "confidence": 0-100,
+    "objective": "...",
+    "behavioral_traits": [...],
+    "organized_score": 0.0-1.0,
+    "detective_narrative": "..."
+  }
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import json
 import logging
-import os
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import UTC, datetime
 
+import config
 import psycopg2
 import psycopg2.extras
 import requests
 from elasticsearch import Elasticsearch, NotFoundError
-
-import config
 
 log = logging.getLogger("profiler")
 
@@ -67,7 +105,8 @@ KILL_CHAIN_PHASES = [
 # POSTGRESQL QUERIES
 # ─────────────────────────────────────────────────────────────────────────────
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     """Return a pooled PostgreSQL connection (auto-released on .close())."""
@@ -198,6 +237,7 @@ def _store_profile_pg(source_ip: str, profile: dict, risk_score: int) -> bool:
 # ELASTICSEARCH QUERIES
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _query_smb_profile(es: Elasticsearch, source_ip: str) -> dict:
     """Query SMB analysis profile from forenhive-smb-analysis index."""
     try:
@@ -226,7 +266,9 @@ def _query_similar_profiles(
         should_clauses.append({"term": {"enrichment.geo.asn": asn}})
     if country:
         should_clauses.append({"term": {"enrichment.geo.country_code.keyword": country}})
-    should_clauses.append({"range": {"risk_score": {"gte": risk_score - 15, "lte": risk_score + 15}}})
+    should_clauses.append(
+        {"range": {"risk_score": {"gte": risk_score - 15, "lte": risk_score + 15}}}
+    )
 
     query = {
         "size": MEMORY_MAX_CASES,
@@ -276,7 +318,7 @@ def _store_profile_es(es: Elasticsearch, profile: dict, source_ip: str) -> bool:
         doc = {
             **profile,
             "source_ip": source_ip,
-            "@timestamp": datetime.now(timezone.utc).isoformat(),
+            "@timestamp": datetime.now(UTC).isoformat(),
         }
         es.index(
             index=ES_PROFILES_INDEX,
@@ -293,6 +335,7 @@ def _store_profile_es(es: Elasticsearch, profile: dict, source_ip: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 # PROMPT BUILDERS
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _build_section1_system_role() -> str:
     """System role: FBI behavioral profiler persona."""
@@ -419,7 +462,9 @@ def _build_section3_evidence(
     if smb_data:
         section += "  <SMB_ACTIVITY>\n"
         section += f"    <share_enumeration>{smb_data.get('share_enumerated', False)}</share_enumeration>\n"
-        section += f"    <epmapper_prescan>{smb_data.get('epmapper_prescan', 0)}</epmapper_prescan>\n"
+        section += (
+            f"    <epmapper_prescan>{smb_data.get('epmapper_prescan', 0)}</epmapper_prescan>\n"
+        )
         ops = smb_data.get("dcerpc_operations", [])
         if ops:
             section += f"    <exploit_attempts>{len(ops)}</exploit_attempts>\n"
@@ -456,7 +501,8 @@ def _build_section4_reference_cases(cases: list) -> str:
 # OLLAMA INTEGRATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _call_ollama(prompt: str) -> Optional[str]:
+
+def _call_ollama(prompt: str) -> str | None:
     """Call Ollama/Mistral for profile generation."""
     try:
         resp = requests.post(
@@ -483,7 +529,7 @@ def _call_ollama(prompt: str) -> Optional[str]:
         return None
 
 
-def _parse_json_response(response: str) -> Optional[dict]:
+def _parse_json_response(response: str) -> dict | None:
     """Extract and parse JSON from Ollama response."""
     if not response:
         return None
@@ -509,6 +555,7 @@ def _parse_json_response(response: str) -> Optional[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # ATTACKER PROFILER
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AttackerProfiler:
     """LLM-powered attacker behavioral profiler."""

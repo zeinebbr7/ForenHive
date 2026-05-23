@@ -1,11 +1,17 @@
+"""
+alerts.py — Alertes & notifications
+Rôle : config et historique des alertes (email/SMS/WhatsApp via Twilio).
+URL    : /api/alerts/*
+Deps   : services.alert_engine, Twilio, SMTP.
+Auth   : Bearer token (forenhive.token) requis (sauf chat public).
+Codes  : 200 OK | 401 non auth | 403 interdit | 404 absent | 422 valid | 500 engine.
+"""
+
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
 from config import get_settings
+from fastapi import APIRouter, HTTPException, Query, Request
 from models.alert import (
     AlertConfig,
     AlertConfigUpdate,
@@ -15,6 +21,8 @@ from models.alert import (
 )
 from services.alert_engine import get_alert_engine
 from services.email_service import get_email
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 log = logging.getLogger(__name__)

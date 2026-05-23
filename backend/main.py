@@ -4,30 +4,41 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict
+from typing import Any
 
+import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
-
+from config import get_settings
+from db import dispose as dispose_db
+from db import get_sessionmaker as _gsm
+from db import init_db
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
-import httpx
-from sqlalchemy import text as _text
-
-from config import get_settings
-from db import dispose as dispose_db, init_db, get_sessionmaker as _gsm
-from routers import alerts, attacks, audit, auth, chat, forensics, geo, honeypots, profiling, reports, risk_score, sessions
-from services import forensic_runner
-from services import audit_service
+from routers import (
+    alerts,
+    attacks,
+    audit,
+    auth,
+    chat,
+    forensics,
+    geo,
+    honeypots,
+    profiling,
+    reports,
+    risk_score,
+    sessions,
+)
+from services import audit_service, forensic_runner
 from services.alert_watcher import get_watcher
 from services.auth_service import bootstrap_admin, get_current_user
 from services.elasticsearch import get_es
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from sqlalchemy import text as _text
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,14 +131,22 @@ async def request_middleware(request: Request, call_next):
         duration = (time.perf_counter() - start) * 1000
         log.exception(
             "req_id=%s method=%s path=%s duration_ms=%.1f error=%s",
-            req_id, request.method, request.url.path, duration, exc,
+            req_id,
+            request.method,
+            request.url.path,
+            duration,
+            exc,
         )
         raise
     duration = (time.perf_counter() - start) * 1000
     response.headers["X-Request-ID"] = req_id
     log.info(
         "req_id=%s method=%s path=%s status=%s duration_ms=%.1f",
-        req_id, request.method, request.url.path, response.status_code, duration,
+        req_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration,
     )
 
     # Async audit fire-and-forget (POST/PUT/PATCH/DELETE on /api/*)
@@ -160,13 +179,17 @@ def _problem(
     detail: Any = None,
     type_: str = "about:blank",
     instance: str | None = None,
-    extra: Dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> JSONResponse:
     body = {
         "type": type_,
         "title": title,
         "status": status_code,
-        "detail": detail if isinstance(detail, str) else str(detail) if detail is not None else title,
+        "detail": detail
+        if isinstance(detail, str)
+        else str(detail)
+        if detail is not None
+        else title,
     }
     if instance:
         body["instance"] = instance
@@ -209,7 +232,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 # ---------- health (public) ----------
 @app.get("/health", tags=["meta"])
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     es_ok = await get_es().ping()
 
     pg_ok = False
@@ -242,7 +265,7 @@ async def health() -> Dict[str, Any]:
 # /api/auth is public (login + refresh). Everything else requires a bearer token
 # unless DISABLE_AUTH=true is set (useful for local dev).
 app.include_router(auth.router)
-app.include_router(chat.router)   # /api/chat — public (auth checked client-side via token)
+app.include_router(chat.router)  # /api/chat — public (auth checked client-side via token)
 
 _protected_deps = [] if settings.disable_auth else [Depends(get_current_user)]
 
@@ -260,6 +283,7 @@ app.include_router(audit.router)  # audit has its own admin guard
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host=settings.app_host,

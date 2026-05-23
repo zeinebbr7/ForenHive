@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
-
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 
 from db import session_scope
 from models_sql.audit import AuditLog
 from models_sql.user import User
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
@@ -16,15 +15,15 @@ log = logging.getLogger(__name__)
 async def record(
     *,
     action: str,
-    actor: Optional[User] = None,
-    target_type: Optional[str] = None,
-    target_id: Optional[str] = None,
-    method: Optional[str] = None,
-    path: Optional[str] = None,
-    status_code: Optional[int] = None,
-    ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    actor: User | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    method: str | None = None,
+    path: str | None = None,
+    status_code: int | None = None,
+    ip: str | None = None,
+    user_agent: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     try:
         async with session_scope() as db:
@@ -51,9 +50,9 @@ async def record(
 async def list_recent(
     db: AsyncSession,
     limit: int = 100,
-    actor_email: Optional[str] = None,
-    action: Optional[str] = None,
-) -> Tuple[int, List[AuditLog]]:
+    actor_email: str | None = None,
+    action: str | None = None,
+) -> tuple[int, list[AuditLog]]:
     q = select(AuditLog)
     c = select(func.count(AuditLog.id))
     if actor_email:

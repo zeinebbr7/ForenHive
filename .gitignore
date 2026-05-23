@@ -60,10 +60,17 @@ nginx/ssl/
 *.crt
 *.csr
 
-# Malware samples — ne jamais pusher
+# ── Échantillons de malware (jamais pousser) ─
 malware-samples/
 *.exe
 *.dll
 *.bin
-# Données locales
-.env
+
+# ── Outillage dev (ruff, mypy) ───────────────
+.ruff_cache/
+.mypy_cache/
+
+# ── Artefacts de build divers ────────────────
+package-lock.json
+!frontend/package-lock.json
+!backend/package-lock.json

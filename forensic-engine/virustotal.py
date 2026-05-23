@@ -1,19 +1,40 @@
 """
-ForenHive Forensic Engine — VirusTotal SHA-256 Lookup
-Looks up file hashes against VirusTotal v3 API.
-Results are merged into the file_analysis table in PostgreSQL.
+virustotal.py — ForenHive Forensic Engine
+==========================================
+Rôle    : lookup des hashes SHA-256 contre la base VirusTotal API v3.
+Entrée  : hashes des fichiers capturés (Dionaea, Cowrie downloads).
+Sortie  : table PG `file_analysis` (détections multi-AV + métadonnées).
+Appelé  : par `engine.py` après `yara_scanner.py`.
+Deps    : VirusTotal API v3 (clé via VT_API_KEY env), `quota_tracker.py`.
+
+═══════════════════════════════════════════════════════════════════════════════
+CLIENT VIRUSTOTAL API v3
+═══════════════════════════════════════════════════════════════════════════════
+Soumet les hashes SHA-256 des fichiers capturés à l'API VirusTotal.
+Résultat : nombre d'antivirus détectant le fichier comme malveillant +
+liste détaillée (top engines, family name).
+
+GESTION DU QUOTA (`quota_tracker.py`) :
+L'API publique limite à ~500 requêtes/jour. Un flag de quota épuisé
+évite les appels inutiles jusqu'à la fenêtre suivante (UTC midnight).
+Retry avec backoff exponentiel sur erreur 429 (rate limit).
+
+CONTRIBUTION AU RISK SCORE :
+Si détections VirusTotal > seuil (config VT_MIN_DETECTIONS) → signal
+`malware` augmenté de +15 points (en complément du score YARA).
+
+DÉSACTIVATION AUTOMATIQUE :
+Si VT_API_KEY absent du .env, le module est skippé silencieusement
+(pas de crash, juste un log info au démarrage).
+═══════════════════════════════════════════════════════════════════════════════
 """
 
 import json
 import logging
-import os
 import time
-from typing import Optional
-
-import psycopg2
-import requests
 
 import config
+import requests
 from quota_tracker import get_tracker
 
 log = logging.getLogger("virustotal")
@@ -21,18 +42,18 @@ log = logging.getLogger("virustotal")
 VT_BASE = "https://www.virustotal.com/api/v3"
 
 
-import db_pool
+import db_pool  # noqa: E402  (import tardif intentionnel — db_pool initialisé après config)
+
 
 def _pg_conn():
     return db_pool.pooled_conn()
 
 
 class VirusTotalScanner:
-
     def __init__(self):
         self._last_request = 0.0
-        self._network_dead = False       # set True on first DNS failure — skip all subsequent calls
-        self._rate_limit_retries = 0     # global counter across all hashes in this run
+        self._network_dead = False  # set True on first DNS failure — skip all subsequent calls
+        self._rate_limit_retries = 0  # global counter across all hashes in this run
         self._tracker = get_tracker()
 
     def _rate_limit(self):
@@ -49,13 +70,13 @@ class VirusTotalScanner:
                     cur.execute(
                         "SELECT 1 FROM file_analysis WHERE sha256=%s "
                         "AND virustotal_result IS NOT NULL",
-                        (sha256,)
+                        (sha256,),
                     )
                     return cur.fetchone() is not None
         except Exception:
             return False
 
-    def lookup_hash(self, sha256: str) -> Optional[dict]:
+    def lookup_hash(self, sha256: str) -> dict | None:
         """
         Look up a SHA-256 hash on VirusTotal.
         Returns a normalized dict, or None if the hash is unknown or unreachable.
@@ -80,15 +101,20 @@ class VirusTotalScanner:
 
         try:
             resp = requests.get(
-                f"{VT_BASE}/files/{sha256}",
-                headers={"x-apikey": config.VIRUSTOTAL_KEY},
-                timeout=15
+                f"{VT_BASE}/files/{sha256}", headers={"x-apikey": config.VIRUSTOTAL_KEY}, timeout=15
             )
         except Exception as e:
             err = str(e)
             # DNS / network unreachable — mark dead and stop all future calls
-            if any(kw in err for kw in ("NameResolutionError", "Failed to resolve",
-                                        "ConnectionError", "Network is unreachable")):
+            if any(
+                kw in err
+                for kw in (
+                    "NameResolutionError",
+                    "Failed to resolve",
+                    "ConnectionError",
+                    "Network is unreachable",
+                )
+            ):
                 log.warning(f"VT network unreachable ({err[:80]}) — disabling VT for this run")
                 self._network_dead = True
             else:
@@ -102,10 +128,7 @@ class VirusTotalScanner:
         if resp.status_code == 429:
             # Free tier is 4 req/day — on first 429 we treat the quota as dead
             # for the rest of the UTC day instead of burning long backoffs.
-            self._tracker.mark_exhausted(
-                "virustotal",
-                reason=f"HTTP 429 on {sha256[:16]}..."
-            )
+            self._tracker.mark_exhausted("virustotal", reason=f"HTTP 429 on {sha256[:16]}...")
             return {"vt_available": False, "reason": "quota_exhausted"}
 
         if resp.status_code != 200:
@@ -114,10 +137,10 @@ class VirusTotalScanner:
 
         data = resp.json().get("data", {}).get("attributes", {})
         last_analysis = data.get("last_analysis_stats", {})
-        malicious  = last_analysis.get("malicious", 0)
+        malicious = last_analysis.get("malicious", 0)
         suspicious = last_analysis.get("suspicious", 0)
         undetected = last_analysis.get("undetected", 0)
-        total      = malicious + suspicious + undetected + last_analysis.get("harmless", 0)
+        total = malicious + suspicious + undetected + last_analysis.get("harmless", 0)
 
         # Extract family from popular threat classification
         family = ""
@@ -127,16 +150,16 @@ class VirusTotalScanner:
             family = label.split(".")[0] if label else ""
 
         result = {
-            "sha256":           sha256,
-            "detection_ratio":  f"{malicious}/{total}" if total else "0/0",
-            "malicious":        malicious,
-            "suspicious":       suspicious,
-            "undetected":       undetected,
-            "family":           family,
-            "tags":             data.get("tags", []),
-            "first_seen":       data.get("first_submission_date", ""),
-            "last_seen":        data.get("last_analysis_date", ""),
-            "names":            data.get("names", [])[:5],
+            "sha256": sha256,
+            "detection_ratio": f"{malicious}/{total}" if total else "0/0",
+            "malicious": malicious,
+            "suspicious": suspicious,
+            "undetected": undetected,
+            "family": family,
+            "tags": data.get("tags", []),
+            "first_seen": data.get("first_submission_date", ""),
+            "last_seen": data.get("last_analysis_date", ""),
+            "names": data.get("names", [])[:5],
         }
 
         log.info(
@@ -159,7 +182,7 @@ class VirusTotalScanner:
                             SET virustotal_result = EXCLUDED.virustotal_result,
                                 analyzed_at       = NOW()
                         """,
-                        (sha256, json.dumps(vt_result))
+                        (sha256, json.dumps(vt_result)),
                     )
                 conn.commit()
         except Exception as e:
