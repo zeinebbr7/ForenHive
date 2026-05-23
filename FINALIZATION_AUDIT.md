@@ -401,3 +401,167 @@ $ ls backend/tests/
 
 **STOP — j'attends vos décisions ligne par ligne avant toute suppression / déplacement.**
 
+---
+
+# RAPPORT FINAL — Phases 1 → 6 (exécution autonome)
+
+> Branche : `chore/finalization-cleanup` — 8 commits sur `main`.
+> Mode : exécution autonome complète sans interruption (mission « MISSION FINALE »).
+
+## Métriques globales
+
+| Métrique | Valeur |
+|----------|--------|
+| Commits sur la branche | 8 |
+| Fichiers touchés | 71 |
+| Lignes ajoutées | +5 751 |
+| Lignes supprimées | -3 213 |
+| Caches Python dé-trackés | 27 |
+| Modules engine documentés (français) | 11 / 11 |
+| Routers backend documentés (français) | 12 / 12 |
+| Fichiers docs/ créés ou réécrits | 6 |
+| Validation `ruff check .` | All checks passed |
+| Validation `docker compose config` | ✅ valide |
+
+## Phase 1 — Nettoyage conservatif (commit `c28f74f`)
+
+- Archivage : `chatbot/` → `archive/chatbot/` (aucun import depuis prod).
+- Renommage : `backend/tests/test_risk_score.py` →
+  `test_risk_score_integration.py` (clarifie le rôle vs suite unitaire engine).
+- Suppression disque : `__pycache__/`, `.pytest_cache/`, `frontend/dist/`,
+  `package-lock.json` racine (vide).
+- `.gitignore` consolidé : doublon `.env` supprimé, ajout `.ruff_cache`,
+  `.mypy_cache`, `package-lock.json` racine.
+
+**Décisions conservatives prises sans demander :**
+- `geoip/` racine **CONSERVÉ** : référencé par `docker-compose.yml` comme
+  source de volumes (logstash + forensic-engine).
+- Duplicates `forensic-engine/GeoLite2-*.mmdb` **CONSERVÉS** pour
+  exécution Python locale hors Docker (+67 Mo acceptable).
+- `.env` **NON DÉTRACKÉ** : nécessite rotation secrets en parallèle
+  → reste un point ouvert (voir « Points ouverts » plus bas).
+- `forensic-engine/db/__pycache__/` **non supprimé** sur disque
+  (permission denied, appartient au user root du conteneur).
+
+## Phase 2 — Outillage & formatage (commits `ba7f025`, `3d85bad`)
+
+- **2-A** — `pyproject.toml` + `requirements-dev.txt` : ruff dev-only,
+  `select=["E","F","I","UP"]`, `ignore=["E501"]`, exclusion `archive/`
+  et `honeypots/galah/galah-src/`.
+- **2-B** — `ruff format .` : **45 fichiers reformatés**.
+  `ruff check --fix --unsafe-fixes` : **588 issues auto-corrigées**
+  (imports triés, types modernisés `Dict→dict`, `Optional→| None`,
+  f-strings, syntaxe py311).
+- **2-C** — Nettoyage manuel : no-op. Tous les `print()` détectés sont
+  dans des CLI standalone légitimes (`verify_coc.py`, `profiler.py`
+  mode CLI, `smb_analyzer.py` mode CLI). Aucun `except:` nu. Constantes
+  déjà centralisées (`risk_thresholds.py`, `config.py`).
+- **2-D** — Frontend JS : no-op. Aucun `console.log/debug` dans `.js/.jsx`
+  (déjà propre). Seul reste un `console.log` dans `honeypots.html:51` —
+  laissé en l'état (partiel HTML, règle absolue de non-modification).
+  Prettier non installé → skip.
+
+**Décisions conservatives :**
+- 8 `# noqa: E402` ajoutés sur les imports `db_pool` / `risk_thresholds`
+  tardifs (initialisation après config). Pas de réorganisation des
+  imports car cela pourrait casser l'ordre d'initialisation.
+- Pas de création de `forensic_engine/utils.py` (gain marginal vs
+  risque de cassure pour déplacer `_pg_conn()`).
+- Pas de prettier installé → frontend JS non reformaté.
+
+## Phase 3 — Documentation française (commits `a1bf07c`, `1eba611`)
+
+- **Modules engine** (11) : docstring complet avec format
+  Rôle / Entrée / Sortie / Appelé / Deps + section technique détaillée.
+- **Routers backend** (12) : docstring de module Rôle / URL / Deps /
+  Auth / Codes.
+- **SPA `app.js`** : en-tête français sur le loader dynamique de
+  partiels, la clé immuable `forenhive.token`, l'autorisation par rôle.
+- **`docker-compose.yml`** : commentaires de section français au-dessus
+  de chaque service, regroupés par couche C1/C2/C3/C4. Aucune valeur
+  modifiée (zéro changement fonctionnel).
+
+**Corrections appliquées :**
+- Le commentaire mission mentionnait « 18 signaux » pour `risk_score.py`
+  → corrigé à **9 signaux v2.0.0** (modèle réel du code).
+- Le commentaire mission mentionnait `forensic_engine/` (underscore) →
+  utilisé le vrai chemin `forensic-engine/` (tiret).
+
+## Phase 4 — Documentation projet (commit `3592417`)
+
+- **`README.md`** : réécrit en français, aligné 4 couches / 4 sprints
+  (corrige l'ancien 5/5 hérité de l'archi v2).
+- **`docs/architecture.md`** : refonte complète, diagramme texte 4 couches,
+  flux C1→C4, réseaux Docker, stockage dual.
+- **`docs/deployment.md`** *(nouveau)* : prérequis R750, séquence de
+  démarrage, variables d'env critiques, ports, debug, workflow git.
+- **`docs/forensic-engine.md`** *(nouveau)* : 11 modules, 9 signaux v2.0.0
+  (tableau WHO/WHAT/HOW), Suspect Profiler BAU (4 sections + mémoire ES),
+  MITRE hybride, CoC SHA-256/RFC 3161 ISO 27037.
+- **`docs/api.md`** *(nouveau)* : tous les endpoints des 12 routers.
+- **`docs/CHANGELOG.md`** *(nouveau)* : historique S1→S4 + phase finalisation.
+- **`.env.example`** : enrichi (CORS, bootstrap admin, alias historiques,
+  Shodan, Twilio, TSA freetsa.org, ENGINE_INTERVAL_MINUTES).
+
+## Phase 5 — Non-régression
+
+| Check | Résultat |
+|-------|----------|
+| 5-A : import sanity des 11 modules engine | ✅ 11/11 |
+| 5-B : `docker compose config` | ✅ valide |
+| 5-C : référence orpheline `chatbot` | ✅ aucune |
+| 5-C : référence orpheline `risk_score_optimized` | ✅ aucune (sauf mention historique dans docstring `risk_score.py`) |
+| 5-C : référence orpheline `Yara.jsx` / `yara.html` | ✅ aucune |
+| 5-D : token `forenhive.token` cohérent | ✅ `app.js`, `api.js`, `hive-chat.js` |
+| 5-E : `print()` debug en prod | ✅ tous légitimes (CLI standalone) |
+| Bonus : `ruff check .` | ✅ All checks passed |
+| Bonus : import sanity backend (config, db) | ✅ OK |
+
+## Points ouverts pour review humaine
+
+1. **🚨 `.env` versionné en git** — nécessite rotation de tous les secrets
+   (DB password, JWT secret, API keys VT/AbuseIPDB/Shodan/Twilio) PUIS
+   `git rm --cached .env` + commit. Hors scope du cleanup code, mais
+   **bloquant sécurité avant push public**.
+2. **Chaîne legacy `/api/reports/generate` + `report.html`** — vivante
+   côté backend mais **non consommée par la SPA**. Conservée par défaut
+   (suspecte usage externe SIEM/STIX). À confirmer pour PR finale.
+3. **`forensic-engine/db/__pycache__/`** — non supprimé sur disque
+   (permission denied user Docker root). Impact nul (gitignored), mais
+   nettoyable via `sudo rm -rf` si gêne.
+4. **Branches mortes** (`pzyy`, `ismail`, `ismail2`, `zinoba`,
+   `audit/report-pipeline-2026-05-22`) à supprimer post-merge.
+5. **Backend `routers/risk_score.py` vs `forensic-engine/risk_score.py`**
+   — noms similaires mais rôles distincts (endpoint API vs scoreur).
+   Conserver les deux ; renommage non effectué (risque cassure).
+6. **`models/__init__.py`, `services/__init__.py`** — fichiers vides
+   `__init__.py` couverts par `[tool.ruff.lint.per-file-ignores]`
+   (F401 OK pour ré-exports).
+
+## Historique git (branche)
+
+```
+3592417 docs: README + docs/ complets
+1eba611 docs(backend): docstring français pour les 12 routers FastAPI
+a1bf07c docs(engine+spa+compose): docstrings français exhaustifs
+3d85bad refactor: formatage ruff — style, imports, syntaxe Python
+ba7f025 chore: ajouter ruff comme outil de formatage dev-only
+c28f74f chore: Phase 1 — nettoyage conservatif
+00667f4 docs: ajoute FINALIZATION_AUDIT.md (Phase 0 + Phase 1 inventaire)
+                                                       ← branchée ici
+56a68a2 feat: finalize platform — état projet complet  ← main avancée
+0d35fc1 Merge audit/report-pipeline-2026-05-22 into main
+```
+
+## Livraison
+
+Branche `chore/finalization-cleanup` prête pour PR vers `main`.
+Push à effectuer manuellement (credentials git non disponibles ici) :
+
+```bash
+git push origin chore/finalization-cleanup
+gh pr create --title "Finalisation pré-soutenance — ForenHive" \
+  --body "$(cat docs/CHANGELOG.md | head -30)"
+```
+
+
