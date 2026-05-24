@@ -987,6 +987,12 @@ async def _build_forensic_context(session_id: str) -> dict:
                         # Similar past cases: same primary_objective, closest risk_score.
                         sp_obj = sp_profile.get("primary_objective") or ""
                         sp_score = int(sp_row["risk_score"] or 0)
+                        # Expose the per-IP score so the report's headline
+                        # number matches the platform's Profiling view (which
+                        # also reads from suspect_profiles). Otherwise the
+                        # report would display only the single session's score
+                        # while the platform shows the max across the IP.
+                        profile_dict["suspect_profile_risk_score"] = sp_score
                         try:
                             sim_rows = (
                                 (
@@ -1322,31 +1328,22 @@ async def _build_forensic_context(session_id: str) -> dict:
     if source_ip:
         try:
             async with session_scope() as db:
-                _tl_sql = text("""
-                    SELECT ts, honeypot_type, event_category, event_action,
-                           destination_port, protocol, summary
-                    FROM forensic_timeline_events
-                    WHERE session_id = :sid
-                    ORDER BY ts ASC
-                    LIMIT 200
-                """)
-                tl_res = await db.execute(_tl_sql, {"sid": session_id})
+                # Always pull the full per-IP timeline so the report reflects
+                # the attacker's complete activity (e.g. brute-force IPs that
+                # span dozens of sessions in a few seconds — the single-session
+                # view shows only ~5 events out of hundreds).
+                tl_res = await db.execute(
+                    text("""
+                        SELECT ts, honeypot_type, event_category, event_action,
+                               destination_port, protocol, summary, session_id
+                        FROM forensic_timeline_events
+                        WHERE source_ip = :ip
+                        ORDER BY ts ASC
+                        LIMIT 2000
+                    """),
+                    {"ip": source_ip},
+                )
                 tl_rows = list(tl_res.mappings())
-                # Unified reports (per-IP) and sessions whose own row count
-                # is zero get the source_ip view.
-                if not tl_rows and (is_unified or True):
-                    tl_res = await db.execute(
-                        text("""
-                            SELECT ts, honeypot_type, event_category, event_action,
-                                   destination_port, protocol, summary
-                            FROM forensic_timeline_events
-                            WHERE source_ip = :ip
-                            ORDER BY ts ASC
-                            LIMIT 200
-                        """),
-                        {"ip": source_ip},
-                    )
-                    tl_rows = list(tl_res.mappings())
                 for r in tl_rows:
                     cat = r["event_category"] or ""
                     act = r["event_action"] or ""
@@ -1555,11 +1552,48 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    # Always prefer forensic_sessions.signal_breakdown (snapshot at engine run time
-    # for this specific session). Only fall back to ip_risk_scores if the per-session
-    # breakdown is missing — ip_risk_scores is a sliding 24h window and changes as
-    # new sessions from the same IP arrive, causing the displayed score to drift.
+    # The platform headline is the IP's MAX session score (mirrors the
+    # Profiling page). To keep the headline coherent with the breakdown,
+    # we surface the breakdown of the session that actually achieved that
+    # max — not the breakdown of the session the user happens to be viewing.
+    # Otherwise the visible signals sum to a different number than the
+    # headline (e.g. headline 34, signals summing to 24).
     sb = pg_row.get("signal_breakdown") or {}
+    session_score = int(pg_row["risk_score"]) if pg_row.get("risk_score") is not None else None
+    max_sess_score: int | None = None
+    if source_ip:
+        try:
+            async with session_scope() as db:
+                top = await db.execute(
+                    text("""
+                        SELECT risk_score, signal_breakdown
+                        FROM forensic_sessions
+                        WHERE source_ip = :ip
+                          AND risk_score IS NOT NULL
+                        ORDER BY risk_score DESC
+                        LIMIT 1
+                    """),
+                    {"ip": source_ip},
+                )
+                top_row = top.mappings().fetchone()
+                if top_row and top_row["risk_score"] is not None:
+                    max_sess_score = int(top_row["risk_score"])
+                    top_sb = top_row["signal_breakdown"] or {}
+                    if isinstance(top_sb, str):
+                        try:
+                            top_sb = json.loads(top_sb)
+                        except Exception:
+                            top_sb = {}
+                    # Adopt the top session's breakdown only if it's richer
+                    # (or equal) than the current session's — never demote.
+                    if isinstance(top_sb, dict) and top_sb and (
+                        session_score is None or max_sess_score > session_score
+                    ):
+                        sb = top_sb
+        except Exception:
+            pass
+
+    # ip_risk_scores fallback (only if no per-session breakdown at all)
     irs_risk_score: int | None = None
     if not sb and source_ip:
         try:
@@ -1572,12 +1606,6 @@ async def _build_forensic_context(session_id: str) -> dict:
                 )
                 irs_row = irs.mappings().fetchone()
                 cand = irs_row["signal_breakdown"] if irs_row else None
-                # The unified per-IP scorer runs on a sliding lookback window. Once an
-                # IP's sessions age out of that window, score_ip() returns an empty
-                # result (every signal skipped="empty_aggregate", score 0) which then
-                # overwrites ip_risk_scores. Only adopt the unified breakdown/score if
-                # it actually has at least one active (non-skipped) signal — otherwise
-                # keep the permanent per-session score from forensic_sessions.
                 if isinstance(cand, dict) and any(
                     isinstance(v, dict) and not v.get("skipped") for v in cand.values()
                 ):
@@ -1591,11 +1619,12 @@ async def _build_forensic_context(session_id: str) -> dict:
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
 
-    # Pick the highest meaningful score: the unified per-IP score when it carries a
-    # real (non-empty) breakdown, and never below the permanent per-session score
-    # stored in forensic_sessions (which survives the unified scorer's lookback window).
-    session_score = int(pg_row["risk_score"]) if pg_row.get("risk_score") is not None else None
-    score_candidates = [s for s in (irs_risk_score, session_score) if s is not None]
+    # Pick the highest meaningful score across every authoritative source for
+    # this IP, so the report headline matches the Profiling page exactly.
+    sp_score = profile_dict.get("suspect_profile_risk_score")
+    score_candidates = [
+        s for s in (irs_risk_score, session_score, max_sess_score, sp_score) if s is not None
+    ]
     if score_candidates:
         risk_score = max(score_candidates)
     else:

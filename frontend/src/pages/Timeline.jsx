@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, PieChart, Pie, Cell,
 } from 'recharts';
 import api from '../api';
@@ -99,88 +99,150 @@ function ChartsPanel({ history, byHp, bySev, total, paused }) {
   }));
   const sevTotal = Object.values(bySev).reduce((a, b) => a + b, 0) || 1;
 
+  const lastTick = history.length ? history[history.length - 1].total : 0;
+  const peakTick = history.reduce((m, h) => Math.max(m, h.total), 0);
+  const avgTick  = history.length
+    ? Math.round(history.reduce((s, h) => s + h.total, 0) / history.length)
+    : 0;
+
   return (
     <div className="tl-grid">
-      {/* Sparkline */}
-      <div className="tl-chart-card">
-        <div className="tl-chart-title">Live Activity</div>
-        <div className="tl-chart-sub">
-          New events per 5-second tick · last {MAX_TICKS} refreshes
-        </div>
-        <div className="tl-pulse">
-          <div
-            className="tl-pulse-dot"
-            style={{ animationPlayState: paused ? 'paused' : 'running' }}
-          />
-          <span className="tl-pulse-txt">
-            {paused
-              ? 'paused'
-              : history.length
-                ? history[history.length - 1].total + ' events in last tick'
-                : 'waiting…'}
-          </span>
-        </div>
-        {history.length === 0 ? (
-          <div style={{ color: 'var(--text3)', fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', paddingTop: 8 }}>
-            Waiting for first tick…
+      {/* Live Activity area chart */}
+      <div className="tl-chart-card tl-live">
+        <div className="tl-chart-head">
+          <div>
+            <div className="tl-chart-title">Live Activity</div>
+            <div className="tl-chart-sub">
+              Events per 5 s · last {MAX_TICKS} ticks
+            </div>
           </div>
+          <div className="tl-pulse-pill" data-paused={paused ? '1' : '0'}>
+            <span
+              className="tl-pulse-dot"
+              style={{ animationPlayState: paused ? 'paused' : 'running' }}
+            />
+            <span className="tl-pulse-txt">
+              {paused ? 'PAUSED' : history.length ? `${lastTick} now` : 'waiting…'}
+            </span>
+          </div>
+        </div>
+
+        <div className="tl-kpis">
+          <div className="tl-kpi">
+            <div className="tl-kpi-val">{lastTick}</div>
+            <div className="tl-kpi-lbl">last tick</div>
+          </div>
+          <div className="tl-kpi">
+            <div className="tl-kpi-val">{peakTick}</div>
+            <div className="tl-kpi-lbl">peak</div>
+          </div>
+          <div className="tl-kpi">
+            <div className="tl-kpi-val">{avgTick}</div>
+            <div className="tl-kpi-lbl">avg</div>
+          </div>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="tl-wait">Waiting for first tick…</div>
         ) : (
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={history} margin={{ top: 2, right: 6, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-              <XAxis dataKey="t" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-              {HP_KEYS.map((hp, idx) => (
-                <Bar
+          <ResponsiveContainer width="100%" height={150}>
+            <AreaChart data={history} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
+              <defs>
+                {HP_KEYS.map(hp => (
+                  <linearGradient key={hp} id={`grad-${hp}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"  stopColor={HP_COLORS[hp]} stopOpacity={0.55} />
+                    <stop offset="100%" stopColor={HP_COLORS[hp]} stopOpacity={0.05} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis dataKey="t" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={28} />
+              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} width={32} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: 'rgba(255,255,255,0.12)', strokeWidth: 1 }} />
+              {HP_KEYS.map(hp => (
+                <Area
                   key={hp}
+                  type="monotone"
                   dataKey={hp}
                   stackId="a"
-                  fill={(HP_COLORS[hp] || '#888') + 'cc'}
-                  stroke={HP_COLORS[hp] || '#888'}
-                  strokeWidth={1}
+                  stroke={HP_COLORS[hp]}
+                  strokeWidth={1.5}
+                  fill={`url(#grad-${hp})`}
                   name={(SOURCE_META[hp] || { label: hp }).label}
-                  radius={idx === HP_KEYS.length - 1 ? [2, 2, 0, 0] : [0, 0, 0, 0]}
+                  isAnimationActive={false}
                 />
               ))}
-            </BarChart>
+            </AreaChart>
           </ResponsiveContainer>
         )}
+
+        <div className="tl-mini-legend">
+          {HP_KEYS.map(hp => (
+            <span key={hp} className="tl-mini-legend-item">
+              <span className="tl-mini-dot" style={{ background: HP_COLORS[hp] }} />
+              {(SOURCE_META[hp] || { label: hp }).label}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Source split donut */}
-      <div className="tl-chart-card">
-        <div className="tl-chart-title">Source Split</div>
-        <div className="tl-chart-sub">Current batch by sensor</div>
-        {total === 0 ? (
-          <div style={{ color: 'var(--text3)', fontFamily: "'JetBrains Mono', monospace", fontSize: '11px' }}>
-            No events yet.
+      <div className="tl-chart-card tl-split">
+        <div className="tl-chart-head">
+          <div>
+            <div className="tl-chart-title">Source Split</div>
+            <div className="tl-chart-sub">Current batch by sensor</div>
           </div>
+          <div className="tl-split-total">
+            <span className="tl-split-total-val">{total}</span>
+            <span className="tl-split-total-lbl">events</span>
+          </div>
+        </div>
+
+        {total === 0 ? (
+          <div className="tl-wait">No events yet.</div>
         ) : (
-          <div className="tl-split-wrap" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
-            <PieChart width={120} height={120}>
-              <Pie
-                data={hpData}
-                dataKey="count"
-                nameKey="name"
-                cx={56}
-                cy={56}
-                innerRadius={34}
-                outerRadius={52}
-                paddingAngle={2}
-              >
-                {hpData.map((e, i) => (
-                  <Cell key={i} fill={(HP_COLORS[e.hp] || '#888') + 'cc'} stroke={HP_COLORS[e.hp] || '#888'} strokeWidth={1} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-            </PieChart>
+          <div className="tl-split-body">
+            <div className="tl-donut-wrap">
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie
+                    data={hpData}
+                    dataKey="count"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={48}
+                    outerRadius={70}
+                    paddingAngle={3}
+                    stroke="none"
+                  >
+                    {hpData.map((e, i) => (
+                      <Cell key={i} fill={HP_COLORS[e.hp] || '#888'} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="tl-donut-center">
+                <div className="tl-donut-center-val">{hpData.length}</div>
+                <div className="tl-donut-center-lbl">sources</div>
+              </div>
+            </div>
             <div className="tl-legend">
               {hpData.map((e, i) => (
                 <div key={i} className="tl-legend-row">
-                  <span className="tl-legend-dot" style={{ background: HP_COLORS[e.hp] || '#888' }} />
-                  <span className="tl-legend-label">{e.name}</span>
-                  <span className="tl-legend-val">{e.pct}%</span>
+                  <div className="tl-legend-head">
+                    <span className="tl-legend-dot" style={{ background: HP_COLORS[e.hp] || '#888' }} />
+                    <span className="tl-legend-label">{e.name}</span>
+                    <span className="tl-legend-val">{e.pct}%</span>
+                  </div>
+                  <div className="tl-legend-bar">
+                    <div
+                      className="tl-legend-bar-fill"
+                      style={{ width: `${e.pct}%`, background: HP_COLORS[e.hp] || '#888' }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

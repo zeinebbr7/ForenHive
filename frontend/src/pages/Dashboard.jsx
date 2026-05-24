@@ -35,6 +35,9 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const REFRESH_INTERVAL = 30000;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,10 +92,15 @@ export default function Dashboard() {
       setError(e.message || 'Failed to load');
     } finally {
       setLoading(false);
+      setLastUpdated(new Date());
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, REFRESH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [load]);
 
   const handleEventClick = useCallback(async (ev) => {
     try {
@@ -156,11 +164,14 @@ export default function Dashboard() {
           <div className="section-tag" style={{ marginBottom: 8 }}>Overview</div>
           <h2 className="page-title">Dash<span>board</span></h2>
           <div className="page-sub">
-            Real-time monitoring · <span>{kpis.srcCount}</span> active sources.
+            Real-time monitoring · <span>{kpis.srcCount}</span> active sources
+            {lastUpdated && <> · updated {lastUpdated.toLocaleTimeString()}</>}
           </div>
         </div>
         <div className="page-actions">
-          <button className="btn btn-gh btn-sm" onClick={load} disabled={loading}>Refresh</button>
+          <button className="btn btn-gh btn-sm" onClick={load} disabled={loading}>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
         </div>
       </div>
 

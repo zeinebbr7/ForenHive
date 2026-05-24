@@ -1,497 +1,297 @@
 # ForenHive — Sprint 3 Audit
-**Forensic Engine: Enrichment · YARA · VirusTotal · Hybrid MITRE Mapper · 18-Signal Risk Scorer**
-*Branch: zeineb | Initial: 2026-04-04 · Overhaul: 2026-04-12*
+**Forensic Engine : Enrichissement · YARA/VT · Timeline · IoC · MITRE · Score · Profiler · Chain of Custody**
+*Branche : main · Date : 2026-05-24*
 
 ---
 
-## 1. Architecture Overview
+## 1. Périmètre du Sprint 3
 
-Sprint 3 implements the forensic analysis layer that consumes normalized events from Sprint 2 (Elasticsearch) and produces enriched forensic intelligence stored in PostgreSQL.
+Sprint 3 implémente la couche **analyse forensique** entre l'ETL (Sprint 2) et le backend (Sprint 4). Tout est packagé dans un conteneur Docker unique `forenhive-forensic-engine`.
 
-```
-Elasticsearch ──┐
-                ├──► forensic-engine ──► PostgreSQL
-Dionaea files ──┘    (C3 layer)          (forensic results)
-```
+Le moteur enchaîne **9 phases analytiques** dans un ordre strict :
 
-**Stack:** Python 3.11 · psycopg2 2.9.9 · elasticsearch-py 8.13.0 · geoip2 4.8.0 · yara-python 4.5.0 · shodan 1.31.0 · ipwhois 1.2.0
-**HTTP API:** FastAPI on port 8001 — backend calls forensic-engine via `FORENSIC_ENGINE_URL=http://forensic-engine:8001`
+- **P1 — Enrichissement IP** (GeoIP, AbuseIPDB, IPLocate, Shodan, WHOIS, PTR).
+- **P2 — Analyse SMB/NTLM** (corrélation Dionaea SQLite + Zeek NTLM).
+- **P3 — Scan YARA** (10 jeux de règles) puis lookup VirusTotal v3.
+- **P4 — Scoring** (modèle v2.0.0 à 9 signaux, score 0–100, WHO/WHAT/HOW).
+- **P5 — Timeline** unifiée multi-honeypot (précision milliseconde).
+- **P6 — Extraction d'IoC** (10 types, format compatible STIX 2.1).
+- **P7 — Mapping MITRE ATT&CK** hybride (15 techniques déterministes + narration LLM).
+- **P8 — Chain of Custody** (SHA-256 + hash chain + Merkle + RFC 3161 freetsa.org).
+- **P9 — Profilage criminologique** (Mistral 7B, framework FBI BAU).
 
----
-
-## 2. Components Implemented
-
-### 2.1 PostgreSQL Schema
-
-**File:** `forensic-engine/db/schema.sql`
-**Init script:** `forensic-engine/db/init_db.py`
-
-Four tables created:
-
-| Table | Primary Key | Purpose |
-|---|---|---|
-| `ip_enrichment_cache` | `ip VARCHAR(45)` | 24h TTL cache for all external API results |
-| `file_analysis` | `sha256 VARCHAR(64)` | YARA matches + VirusTotal results per file |
-| `forensic_sessions` | `session_id VARCHAR(100)` | One row per attacker session, risk score 0-100 |
-| `suspect_profiles` | `id SERIAL` | LLM-generated attacker profiles (Sprint 3 extension) |
-
-**Indexes:** `forensic_sessions` indexed on `source_ip`, `risk_score DESC`, `honeypot_type`, `started_at DESC` for fast dashboard queries.
-
-**4 columns added to `forensic_sessions` (2026-04-12):**
-```sql
-kill_chain_phase    VARCHAR(50),   -- e.g. "lateral_movement"
-kill_chain_stage    INTEGER,       -- 1-8 (Cyber Kill Chain position)
-primary_technique   VARCHAR(20),   -- e.g. "T1021.002"
-forensic_narrative  TEXT           -- 2-sentence forensic summary
-```
-Total: 13 columns. Migration block for existing deployments:
-```bash
-docker exec forenhive-postgresql psql -U forenhive -d forenhive -c \
-  "ALTER TABLE forensic_sessions ADD COLUMN IF NOT EXISTS kill_chain_phase VARCHAR(50);"
-# (repeat for kill_chain_stage, primary_technique, forensic_narrative)
-```
-
-**Init command:**
-```bash
-docker compose run --rm forensic-engine python db/init_db.py
-```
+**Hors périmètre Sprint 3** : API REST FastAPI (Sprint 4), UI React (Sprint 5), Nginx, scheduler externe.
 
 ---
 
-### 2.2 Configuration (`config.py`)
+## 2. Vue d'ensemble — composants Sprint 3
 
-Single source of truth for all environment variables. Reads from `.env` at project root (for local runs) or from Docker env injection.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ES_HOST` / `ES_PORT` | `forenhive-elasticsearch:9200` | Elasticsearch endpoint |
-| `PG_HOST` / `PG_PORT` / `PG_DB` | `forenhive-postgresql:5432/forenhive` | PostgreSQL connection |
-| `OLLAMA_HOST` / `OLLAMA_MODEL` | `forenhive-ollama:11434 / mistral` | LLM endpoint |
-| `ABUSEIPDB_KEY` | — | AbuseIPDB v2 API key |
-| `VIRUSTOTAL_KEY` | — | VirusTotal v3 API key |
-| `SHODAN_KEY` | — | Shodan API key |
-| `GEOIP_CITY_DB` / `GEOIP_ASN_DB` | `/app/GeoLite2-*.mmdb` | MaxMind offline databases (host: `./geoip/`) |
-| `DIONAEA_BINARIES_PATH` | `/opt/dionaea/var/lib/dionaea/binaries` | Malware capture directory |
-| `YARA_RULES_DIR` | `./yara_rules` | YARA rules directory |
-| `ENRICHMENT_CACHE_TTL_HOURS` | `24` | IP cache TTL |
-| `PRIVATE_VPN_RANGES` | `10.212.0.0/16` | Comma-separated CIDRs treated as internal VPN (overridable) |
-| `ENGINE_INTERVAL_MINUTES` | `1440` | Run interval in minutes (1 day); set via docker-compose env |
-
----
-
-### 2.3 IP Enricher (`enricher.py`)
-
-**Class:** `IPEnricher`
-
-Five-stage pipeline per IP, with PostgreSQL caching:
-
-| Stage | Source | Fields produced | Rate limit |
+| Composant | Type | Statut | Sortie principale |
 |---|---|---|---|
-| GeoIP | MaxMind GeoLite2-City + ASN (offline) | `country`, `city`, `lat`, `lon`, `asn`, `org` | None |
-| Privacy | IPLocate API (free, no key) | `is_tor`, `is_vpn`, `is_proxy`, `is_hosting` | None |
-| Reputation | AbuseIPDB v2 | `abuse_score`, `total_reports`, `isp`, `is_tor` | 1000/day |
-| Infrastructure | Shodan | `open_ports`, `vulns`, `hostnames`, `os`, `tags` | 1 req/sec |
-| Whois | RDAP (ipwhois) | `network`, `org`, `cidr` | None |
+| `forenhive-forensic-engine` | Conteneur Docker | Up 36h | 11 modules Python orchestrés |
+| `forenhive-postgresql` | Conteneur Docker | Up 4j | 9 tables forensiques (schema.sql) |
+| `forenhive-ollama` | Conteneur Docker | Up 4j | Mistral 7B Q4_K_M (4.4 Go), Phi-3 mini (2.2 Go) |
+| `forenhive-elasticsearch` | Conteneur Docker | Up 4j | Index `forenhive-suspect-profiles` + `forenhive-smb-analysis` |
+| YARA rules | 10 fichiers `.yar` | OK | Ransomware, Mirai, Emotet, WannaCry, RAT, shells, crypto-miners |
+| MaxMind GeoLite2 | 2 BDD offline | OK | City + ASN, bind-mountées |
 
-**Private IP handling:** RFC 1918 addresses (`10.x`, `172.16-31.x`, `192.168.x`) are detected via `ipaddress.ip_address().is_private` and returned immediately without any external calls.
+---
 
-**Cache logic:**
-- `check_cache(ip)` → returns cached dict if `expires_at > NOW()`
-- `save_cache(ip, data)` → upserts with `expires_at = NOW() + 24h`
-- Shodan is called **after** cache check, eliminating redundant API calls
+## 3. Détail des modules
 
-**Batch method:** `enrich_from_es(es_client, hours_back)` — queries ES for `distinct source.ip` using a terms aggregation (up to 10 000 IPs), then enriches each.
+### 3.1 — `engine.py` (orchestrateur)
 
-**Private IP classification *(added 2026-04-12)*:** `_classify_private_ip(ip)` maps RFC 1918 ranges to risk levels:
+- **Rôle** : point d'entrée CLI, enchaîne les 9 phases dans `run_full_analysis(hours_back)`.
+- **Lignes** : 1 580.
+- **Build** : `forensic-engine/Dockerfile` → image basée sur `python:3.11-slim`.
+- **Port exposé** : `8001/tcp` (mini-HTTP status/healthcheck via `server.py`).
+- **Cron interne** : `ENGINE_INTERVAL_MINUTES=5` (relance toutes les 5 min).
+- **Réseau** : `backend-net` uniquement (zéro accès `honeypot-net`).
+- **Dépendances dur** : Elasticsearch, PostgreSQL.
+- **Dépendances soft** : Ollama, AbuseIPDB, Shodan, VirusTotal, freetsa.org, Twilio.
 
-| IP range | network_class | private_risk_level |
+**CLI principaux** :
+- `python engine.py` — analyse complète (24 h glissantes).
+- `python engine.py --hours 48` — fenêtre étendue.
+- `python engine.py --enrich-only | --yara-only | --score-only | --timeline-only | --ioc-only | --coc-only | --profile-only` — exécution par phase.
+- `python engine.py --init-db` — bootstrap schéma PG.
+
+### 3.2 — `enricher.py` (Phase 1)
+
+- **Source** : ES `honeypot-logs-*` → IPs distinctes sur la fenêtre.
+- **Pipeline** : MaxMind (offline) → IPLocate → AbuseIPDB → Shodan InternetDB → RDAP/WHOIS → PTR.
+- **Cache** : PG `ip_enrichment_cache`, TTL **24 h**.
+- **Parallélisme** : 5 workers (`ENRICH_PARALLEL_WORKERS=5`).
+- **Cas IPs privées** (RFC 1918) : court-circuit des APIs publiques, marquage `is_private=true` → scoring bascule en mode comportemental pur.
+- **Quota tracker** : table PG `api_quota_status` (persistance inter-runs).
+
+### 3.3 — `smb_analyzer.py` (Phase 2)
+
+- **Sources croisées** : Dionaea SQLite (`dionaea.sqlite`, tables `connections` + `downloads`) + Zeek NTLM logs (`ntlm*.log.gz`).
+- **Détections clés** : EternalBlue (CVE-2017-0144, +40 pts), énumération SMB (+30 pts), EPMapper port 135 (+15 pts).
+- **Sortie** : index ES `forenhive-smb-analysis` (1 doc par IP source).
+- **Volume read-only** : `/opt/dionaea/var/lib/dionaea` bind-monté.
+
+### 3.4 — `yara_scanner.py` + `virustotal.py` (Phase 3)
+
+- **YARA** : compile une fois `forensic-engine/yara_rules/*.yar`, scanne les binaires Dionaea, hash SHA-256, persistance dans PG `file_analysis`.
+- **Tiers de sévérité** : `critical` +30 pts, `high` +20 pts, `medium` +10 pts.
+- **VirusTotal v3** : lookup `/files/{sha256}`, free tier **4 req/jour**, auto-pace 0.25 s/req, abort sur erreur réseau.
+- **Rate-limit géré** : `quota_tracker` PG, `reset_at = next UTC midnight` sur HTTP 429.
+
+### 3.5 — `timeline_builder.py` (Phase 5)
+
+- **Source** : ES scroll par lots de 1 000 documents sur la fenêtre.
+- **Normalizers** : `_norm_cowrie`, `_norm_dionaea`, `_norm_galah`, `_norm_zeek` → schéma unifié.
+- **Précision** : milliseconde (ISO 8601 + ms).
+- **Clé d'idempotence** : `es_doc_id UNIQUE` → rejouer sur fenêtre chevauchante ne duplique pas.
+- **Cible** : PG `forensic_timeline_events` (~788 000 lignes en prod, voir §6).
+
+### 3.6 — `ioc_extractor.py` (Phase 6)
+
+- **Source** : PG `forensic_timeline_events` (champs `summary`, `raw` JSONB).
+- **Types extraits** (10) : `url`, `domain`, `ipv4_external`, `sha256`, `md5`, `cve`, `email`, `file_path`, `cmdline`, `user_agent`, `http_path`.
+- **Régex pré-compilées** module-level (fast path).
+- **Déduplication** : `UNIQUE (ioc_type, ioc_value, source_ip)` + compteur `occurrences` cumulatif.
+- **Cible** : PG `forensic_iocs` (export STIX 2.1 ready).
+
+### 3.7 — `mitre_mapper.py` (Phase 7)
+
+- **Approche hybride** :
+  - **Niveau 1 — déterministe** : 15 IDs ATT&CK validés, `confidence = 1.0`, latence ≈ 0 ms.
+  - **Niveau 2 — narration LLM** : Mistral 7B génère **uniquement** une phrase ≤ 80 tokens, **jamais d'IDs**.
+- **Catalogue** : T1110.001, T1110.003, T1078, T1059.004, T1105, T1552.001, T1210, T1190, T1595.002, T1046, T1021.002, T1486, T1496, T1071.001, T1592.
+- **Kill chain phases** : reconnaissance → weaponization → delivery → exploitation → installation → command_and_control → actions_on_objectives.
+- **Fallback** : si Ollama injoignable, narration générique → pas de crash.
+
+### 3.8 — `risk_score.py` (Phase 4 — modèle v2.0.0)
+
+- **Score 0–100** sommé sur **9 signaux orthogonaux**, mappés au cadre FBI BAU :
+  - **WHO (33 pts)** : `reputation` (15), `anonymization` (10), `threat_history` (8).
+  - **WHAT (43 pts)** : `intent_volume` (10), `compromise_depth` (15), `exfiltration` (8), `lateral_movement` (10).
+  - **HOW (24 pts)** : `malware` (15), `mitre_sophistication` (9).
+- **Niveaux** : INFO < LOW < MEDIUM < HIGH < CRITICAL (seuils dans `risk_thresholds.py`).
+- **Versioning** : colonne `score_version` (`1.0.0` legacy, `2.0.0` actuel).
+- **Scope dual** : `score_session(session)` (par session) + `score_ip(ip, sessions, enrichment)` (agrégé par IP — Phase 9).
+
+### 3.9 — `chain_of_custody.py` (Phase 8)
+
+- **Triple couche d'intégrité** :
+  1. **SHA-256 par enregistrement** sur JSON canonique (clés triées, colonnes load-bearing seules).
+  2. **Hash chain append-only** : `prev_hash` = hash de l'enregistrement précédent.
+  3. **Merkle root + RFC 3161** : racine binaire de toutes les sessions du batch, soumise à `freetsa.org`, réponse signée stockée en `BYTEA`.
+- **Détection d'altération** : O(n) via `verify_coc.py`, exit code ≠ 0 sur divergence.
+- **Idempotence** : `session_id UNIQUE` ; resealing automatique si `updated_at > sealed_at` (re-scoring détecté).
+- **Conformité** : ISO/IEC 27037 (acquisition/préservation des preuves numériques).
+
+### 3.10 — `profiler.py` (Phase 9)
+
+- **Méthode** : criminologie FBI Behavioral Analysis Unit (BAU) adaptée au cyber.
+- **Prompt 4 sections** (~2 600 tokens) :
+  1. **System Role** — persona analyste BAU, contrat JSON-only.
+  2. **Criminology Framework** — règles organized/disorganized, sophistication tiers, 9 objectifs primaires.
+  3. **Session Evidence** — XML structuré (metadata, enrichment, MITRE, timeline, SMB, risk score).
+  4. **Reference Cases** — top 5 profils similaires depuis ES `forenhive-suspect-profiles` (ViCAP-like).
+- **Settings Ollama immuables** : `temperature=0.3`, `num_ctx=8192`, `timeout=300 s`.
+- **Sortie JSON** : `sophistication`, `confidence`, `primary_objective`, `secondary_objective`, `behavioral_traits[]`, `organized_score`, `disguise_used`, `disguise_type`, `escalation_detected`, `mitre_techniques[]`, `dominant_tactic`, `kill_chain_phase`, `signature_indicators[]`, `similar_past_cases`, `risk_score`, `detective_narrative`.
+- **Stockage dual** : PG `suspect_profiles` (UNIQUE `source_ip`) + ES `forenhive-suspect-profiles/_doc/profile-{ip}`.
+- **Fail-safe** : 2 retries Ollama → profil minimal `confidence=0.0`.
+
+### 3.11 — `verify_coc.py` (vérificateur indépendant)
+
+- **Rôle** : audit tiers de la chaîne de custody.
+- **Vérifie** : recalcul SHA-256 par session, intégrité hash chain, recalcul Merkle root, décodage TSR RFC 3161.
+- **Dépendances minimales** (exécutable hors engine, sans `engine.py`).
+
+---
+
+## 4. Schéma PostgreSQL (9 tables)
+
+Fichier : [forensic-engine/db/schema.sql](../forensic-engine/db/schema.sql) — initialisé par `db/init_db.py`.
+
+| Table | Clé primaire | Rôle |
 |---|---|---|
-| `127.x.x.x` | loopback | **ignore** (skipped entirely) |
-| `172.17–19.x` | docker_bridge | **ignore** (skipped entirely) |
-| `PRIVATE_VPN_RANGES` (default `10.212.0.0/16`) | vpn_tunnel | investigate |
-| `10.0.0.0/8`, `172.16.0.0/12` | corporate_internal | investigate |
-| `192.168.0.0/16` | corporate_internal | monitor |
-
-Engine skips scoring for IPs with `private_risk_level == "ignore"`. For all other private IPs `enrich()` returns `{ip, private, network_class, is_docker, private_risk_level}` without external API calls.
-
-**Output structure:**
-```json
-{
-  "ip": "185.220.101.5",
-  "geo": {"country": "Germany", "city": "Frankfurt", "lat": 50.11, "lon": 8.68, "asn": 24940, "org": "Hetzner"},
-  "privacy": {"is_tor": true, "is_vpn": false, "is_proxy": false, "is_hosting": true},
-  "reputation": {"abuse_score": 100, "total_reports": 5432, "isp": "Hetzner Online GmbH", "is_tor": true},
-  "infrastructure": {"open_ports": [22, 80, 443], "vulns": [], "hostnames": []},
-  "whois": {"network": "Hetzner-...", "org": "Hetzner Online GmbH", "cidr": "185.220.96.0/19"},
-  "enriched_at": "2026-04-04T10:00:00+00:00"
-}
-```
+| `ip_enrichment_cache` | `ip` | Cache GeoIP/abuse/privacy, TTL 24 h |
+| `file_analysis` | `sha256` | YARA matches + verdict VT par binaire |
+| `forensic_sessions` | `session_id` | 1 ligne par session attaquant (scored + MITRE) |
+| `forensic_timeline_events` | `id`, UNIQUE `es_doc_id` | Stream événementiel unifié (cross-honeypot) |
+| `forensic_iocs` | UNIQUE `(ioc_type, ioc_value, source_ip)` | IoCs dédoublonnés + compteurs |
+| `forensic_chain_of_custody` | UNIQUE `session_id` | Hash chain SHA-256 |
+| `forensic_coc_batches` | `id` | Merkle root + TSR RFC 3161 |
+| `suspect_profiles` | UNIQUE `source_ip` | Profil LLM (JSONB) |
+| `api_quota_status` | `api_name` | État rate-limit persistant inter-runs |
+| `ip_risk_scores` | `source_ip` | Score unifié par IP (Phase 9, multi-honeypot) |
 
 ---
 
-### 2.4 YARA Scanner (`yara_scanner.py`)
+## 5. Intégrations externes
 
-**Class:** `YARAScanner`
+| Service | Type | Endpoint | Usage | Quota |
+|---|---|---|---|---|
+| **Ollama** | LLM local (interne) | `http://forenhive-ollama:11434` | Profiler + MITRE narrative | CPU-only, gratuit |
+| **AbuseIPDB** | API REST (clé) | `https://api.abuseipdb.com/api/v2/check` | Réputation IP | 1 000 req/jour free |
+| **IPLocate** | API REST (no-auth) | `https://www.iplocate.io/api/lookup` | Tor/VPN/proxy flags | gratuit |
+| **Shodan InternetDB** | API REST (no-auth) | `https://internetdb.shodan.io/{ip}` | Ports, CVEs, tags | gratuit |
+| **VirusTotal v3** | API REST (clé) | `https://www.virustotal.com/api/v3/files/{sha256}` | Verdict antivirus | 4 req/jour free |
+| **freetsa.org** | TSA RFC 3161 | `https://freetsa.org/tsr` | Horodatage signé | gratuit |
+| **Twilio** | Notifications | `api.twilio.com` (SDK) | Alertes WhatsApp HIGH/CRITICAL | facturé |
+| **MaxMind GeoLite2** | Base offline | `/app/GeoLite2-City.mmdb` + `GeoLite2-ASN.mmdb` | Géoloc + ASN | gratuit |
 
-Compiles all `*.yar` files in `yara_rules/` at startup using `yara.compile(filepaths=...)`. Scans every file in the Dionaea binaries volume.
-
-**YARA rules created (6 files):**
-
-| Rule file | Rules inside | Targets |
-|---|---|---|
-| `mirai.yar` | `Mirai_Botnet` | ELF binaries with Mirai C2/string artifacts |
-| `wannacry.yar` | `WannaCry_Ransomware` | WannaCry strings + EternalBlue SMB marker |
-| `emotet.yar` | `Emotet_Loader` | PowerShell dropper patterns + VBA macro artifacts |
-| `generic_shell.yar` | `Generic_Reverse_Shell`, `Webshell_Generic` | `/dev/tcp/`, PHP shells, meterpreter, `eval(base64` |
-| `crypto_miner.yar` | `CryptoMiner_XMRig`, `CryptoMiner_Generic` | Stratum protocol, XMR wallet regex, XMRig strings |
-| `credential_stealer.yar` | `Credential_Stealer`, `SSH_Brute_Tool` | `/etc/shadow`, mimikatz, browser credential paths |
-
-**Per-file result:**
-```json
-{
-  "filepath": "/opt/dionaea/var/lib/dionaea/binaries/abc123",
-  "sha256": "e3b0c44298fc1c149afb...",
-  "matched": true,
-  "matches": [
-    {"rule": "Mirai_Botnet", "namespace": "mirai", "meta": {"severity": "critical"}, "strings": [...]}
-  ]
-}
-```
-
-**PostgreSQL persistence:** Every scanned file is written to `file_analysis(sha256, yara_matches)`, even if no rules matched (clean record).
+**Toutes les intégrations API publiques sont fail-soft** : `quota_tracker` PG enregistre l'épuisement et **skippe** les calls inutiles jusqu'au `reset_at`.
 
 ---
 
-### 2.5 VirusTotal Scanner (`virustotal.py`)
+## 6. État live (snapshot 2026-05-24)
 
-**Class:** `VirusTotalScanner`
+**Conteneurs** : 13/13 up.
 
-Uses VirusTotal v3 REST API (`GET /files/{sha256}`).
+**PostgreSQL** — `forenhive` DB :
 
-**Rate limiting:** 0.25s between requests (4 req/sec, free tier).
+| Table | Rows |
+|---|---:|
+| `forensic_sessions` | 54 |
+| `forensic_timeline_events` | 788 040 |
+| `forensic_iocs` | 1 210 |
+| `forensic_chain_of_custody` | 54 (100 % sealed) |
+| `forensic_coc_batches` | 4 916 |
+| `suspect_profiles` | 14 |
+| `ip_enrichment_cache` | 11 |
+| `file_analysis` | 12 |
+| `ip_risk_scores` | 4 |
 
-**HTTP responses handled:**
-- `200` → parse and normalize result
-- `404` → hash unknown to VT (new/rare malware), returns `None`
-- `429` → rate limit hit, backs off 60s and retries
+**Elasticsearch** — indices Sprint 3 :
 
-**Output structure:**
-```json
-{
-  "sha256": "abc123...",
-  "detection_ratio": "45/75",
-  "malicious": 45,
-  "suspicious": 2,
-  "undetected": 28,
-  "family": "Mirai",
-  "tags": ["botnet", "elf", "mirai"],
-  "first_seen": 1705276800,
-  "last_seen": 1743120000,
-  "names": ["mirai.arm7", "botnet.linux"]
-}
-```
+- `forenhive-suspect-profiles` : 4 docs (57.9 KB)
+- `forenhive-smb-analysis` : 12 docs (25 KB)
+- `forenhive-profiles` : 27 docs (68.5 KB)
+- `honeypot-logs-2026.05.22` : 59 492 docs (21.4 MB)
+- `honeypot-logs-2026.05.23` : 24 214 docs (15.8 MB)
 
-**PostgreSQL persistence:** Upserts into `file_analysis(sha256, virustotal_result)`. Compatible with YARA writes — both merge into the same row via `ON CONFLICT DO UPDATE`.
+**Ollama** :
+- `mistral:latest` — 7.2 B · Q4_K_M · 4.4 GB.
+- `phi3:mini` — 3.8 B · Q4 · 2.2 GB.
 
 ---
 
-### 2.6 Risk Score Calculator (`risk_score.py`) *(rewritten 2026-04-12)*
+## 7. Fichiers livrables — chemins exacts
 
-**Function:** `calculate_risk_score(session_data: dict) → dict` *(was `→ int` before overhaul)*
-
-Deterministic weighted scoring — 18 signals, fully auditable, no ML.
-
-| # | Signal | Source | Max pts |
-|---|---|---|---|
-| 1 | AbuseIPDB confidence score | AbuseIPDB | 40 |
-| 2 | AbuseIPDB total reports | AbuseIPDB | 10 |
-| 3 | Login volume (tiered: >10 / >50 / >200) | Cowrie/Dionaea | 25 |
-| 4 | Login success / actual compromise | Cowrie | 25 |
-| 5 | Shell commands executed | Cowrie | 10 |
-| 6 | File download (exfil_bytes > 0) | Cowrie/Dionaea | 15 |
-| 7 | YARA match — malware family (severity-tiered) | YARA | 30 |
-| 8 | VirusTotal malicious count | VirusTotal | 30 |
-| 9 | Tor exit node | IPLocate | 15 |
-| 10 | VPN / proxy / hosting | IPLocate | 5 |
-| 11 | Critical port targeted | Port | 10 |
-| 12 | Shodan vulns on attacker IP (botnet zombie) | Shodan | 10 |
-| 13 | Exploit CVE probe (EternalBlue etc.) | Dionaea/SMB | 40 |
-| 14 | SMB share enumeration | Dionaea | 30 |
-| 15 | EPMapper prescan | Dionaea | 15 |
-| 16 | Multi-honeypot correlation (IP on >1 honeypot) | Cross-source | 10 |
-| 17 | Attack velocity (>2 attempts/second) | Time metrics | 5 |
-| 18 | Recidivism (previously seen in PostgreSQL) | PostgreSQL | 10 |
-
-**Private IPs:** reputation signals (1, 2, 9–12) are skipped; behavioral signals are weighted ×2. Loopback and Docker bridge addresses (`127.x`, `172.17-19.x`) are skipped entirely.
-**Score cap:** `min(raw_score, 100)`.
-
-**Return dict (13 keys):**
-
-| Key | Content |
+| Catégorie | Chemin (depuis racine repo) |
 |---|---|
-| `score` | 0–100 composite score |
-| `level` | CRITICAL / HIGH / MEDIUM / LOW / INFO |
-| `confidence` | 0.3–1.0 data quality factor |
-| `signal_breakdown` | Per-signal points + explanation text (for charts) |
-| `attack_types` | Classified categories (brute_force, malware, lateral_movement…) |
-| `mitre_techniques` | Deterministic ATT&CK technique objects |
-| `lateral_movement` | Bool — True if SMB + credential access detected |
-| `data_quality` | Available sources + warnings |
-| `notes` | Terse technical flags |
-| `narrative` | Human-readable paragraph (for reports) |
-| `recommended_actions` | SOC playbook steps |
-| `iocs` | IP, hashes, commands, malware families |
-| `attribution` | Geo, ASN, attacker profile |
-
-**Risk levels:**
-
-| Score | Level |
-|---|---|
-| 80–100 | CRITICAL |
-| 60–79 | HIGH |
-| 40–59 | MEDIUM |
-| 20–39 | LOW |
-| 0–19 | INFO |
+| Orchestrateur | [forensic-engine/engine.py](../forensic-engine/engine.py) |
+| Config env loader | [forensic-engine/config.py](../forensic-engine/config.py) |
+| Schéma SQL | [forensic-engine/db/schema.sql](../forensic-engine/db/schema.sql) |
+| Bootstrap DB | [forensic-engine/db/init_db.py](../forensic-engine/db/init_db.py) |
+| Pool de connexions | [forensic-engine/db_pool.py](../forensic-engine/db_pool.py) |
+| Enrichissement | [forensic-engine/enricher.py](../forensic-engine/enricher.py) |
+| YARA | [forensic-engine/yara_scanner.py](../forensic-engine/yara_scanner.py) |
+| VirusTotal | [forensic-engine/virustotal.py](../forensic-engine/virustotal.py) |
+| SMB/NTLM | [forensic-engine/smb_analyzer.py](../forensic-engine/smb_analyzer.py) |
+| Timeline | [forensic-engine/timeline_builder.py](../forensic-engine/timeline_builder.py) |
+| IoC extractor | [forensic-engine/ioc_extractor.py](../forensic-engine/ioc_extractor.py) |
+| MITRE mapper | [forensic-engine/mitre_mapper.py](../forensic-engine/mitre_mapper.py) |
+| Risk score v2.0.0 | [forensic-engine/risk_score.py](../forensic-engine/risk_score.py) |
+| Seuils de risque | [forensic-engine/risk_thresholds.py](../forensic-engine/risk_thresholds.py) |
+| Chain of custody | [forensic-engine/chain_of_custody.py](../forensic-engine/chain_of_custody.py) |
+| Vérificateur CoC | [forensic-engine/verify_coc.py](../forensic-engine/verify_coc.py) |
+| Profiler LLM | [forensic-engine/profiler.py](../forensic-engine/profiler.py) |
+| Quota tracker | [forensic-engine/quota_tracker.py](../forensic-engine/quota_tracker.py) |
+| Mini-HTTP serveur | [forensic-engine/server.py](../forensic-engine/server.py) |
+| Dockerfile | [forensic-engine/Dockerfile](../forensic-engine/Dockerfile) |
+| Requirements | [forensic-engine/requirements.txt](../forensic-engine/requirements.txt) |
+| Règles YARA | [forensic-engine/yara_rules/](../forensic-engine/yara_rules/) (10 fichiers) |
+| GeoIP MaxMind | `geoip/GeoLite2-City.mmdb` + `geoip/GeoLite2-ASN.mmdb` (bind-mount) |
+| Compose | [docker-compose.yml](../docker-compose.yml) — service `forensic-engine` |
+| Tests | [forensic-engine/tests/test_risk_score.py](../forensic-engine/tests/test_risk_score.py) |
 
 ---
 
-### 2.7 MITRE ATT&CK Mapper (`mitre_mapper.py`) *(added 2026-04-12)*
+## 8. Conformité Sprint 3 — objectifs vs livrés
 
-**Class:** `MitreMapper` — hybrid approach: deterministic technique IDs + Mistral 7B narrative only.
-
-**Design:** Full-LLM approach (`ollama_mitre.py`, kept for reference) was abandoned because Mistral 7B invented invalid technique IDs under few-shot prompting. New approach:
-
-| Component | Method | Confidence |
+| Critère initial | Statut | Évidence |
 |---|---|---|
-| Technique IDs | Deterministic rule engine | 1.0 (zero hallucination) |
-| Kill chain phase | Derived from technique metadata | 1.0 |
-| Forensic narrative | Mistral 7B via Ollama (80 tokens) | Graceful fallback on timeout |
+| Enrichissement IP automatisé (GeoIP + réputation) | OK | `enricher.py`, 11 IPs en cache |
+| Détection malware (YARA + VT) | OK | 10 jeux YARA, 12 fichiers analysés |
+| Mapping MITRE ATT&CK | OK | 15 techniques déterministes, 0 hallucination |
+| Score de risque numérique 0–100 | OK | Modèle v2.0.0 à 9 signaux, 54 sessions scorées |
+| Timeline forensique ms-précision | OK | 788 040 événements indexés |
+| Extraction d'IoC dédupliqués | OK | 1 210 IoCs, 10 types |
+| Profil criminologique de l'attaquant | OK | 14 profils générés (BAU framework) |
+| Chain of custody cryptographique | OK | 54/54 sessions scellées, 4 916 batches Merkle |
+| Horodatage RFC 3161 par tiers | OK | freetsa.org, TSR signés en BYTEA |
+| Vérification indépendante | OK | `verify_coc.py`, exit 0/1 |
 
-**15 validated ATT&CK Enterprise technique IDs:**
+**Sprint 3 — Statut : COMPLET.**
 
-| ID | Name | Tactic | Kill Chain Stage |
-|---|---|---|---|
-| T1110.001 | Brute Force: Password Guessing | Credential Access | exploitation |
-| T1110.003 | Brute Force: Password Spraying | Credential Access | exploitation |
-| T1078 | Valid Accounts | Initial Access | exploitation |
-| T1059.004 | Unix Shell | Execution | installation |
-| T1105 | Ingress Tool Transfer | C2 | command_and_control |
-| T1552.001 | Credentials In Files | Credential Access | actions_on_objectives |
-| T1210 | Exploitation of Remote Services | Lateral Movement | exploitation |
-| T1190 | Exploit Public-Facing Application | Initial Access | delivery |
-| T1595.002 | Active Scanning: Vulnerability Scanning | Reconnaissance | reconnaissance |
-| T1046 | Network Service Discovery | Discovery | reconnaissance |
-| T1021.002 | SMB/Windows Admin Shares | Lateral Movement | lateral_movement |
-| T1486 | Data Encrypted for Impact | Impact | actions_on_objectives |
-| T1496 | Resource Hijacking | Impact | actions_on_objectives |
-| T1071.001 | Application Layer Protocol: Web | C2 | command_and_control |
-| T1592 | Gather Victim Host Information | Reconnaissance | reconnaissance |
+---
 
-**Deterministic rule logic per honeypot:**
+## 9. Décisions d'adaptation prises pendant le sprint
 
-| Honeypot | Condition | Technique mapped |
+- **Modèle de score consolidé 18 → 9 signaux** (`v2.0.0`) pour réduire les corrélations et améliorer l'interprétabilité. Migration in-place avec colonne `score_version` ; les anciennes lignes restent filtrables à `1.0.0`.
+- **MITRE — séparation détection/narration**. L'approche v1 (`ollama_mitre.py`, supprimé) laissait Mistral inventer les IDs → hallucinations. v2 : règles déterministes pour les IDs, LLM uniquement pour la phrase de contexte.
+- **Profiler — `OLLAMA_TIMEOUT_SEC=300`** (au lieu de 120) après mesure empirique sur Mistral 7B CPU (~115–200 s/profil).
+- **Re-sealing automatique** quand une session est re-scorée (`updated_at > sealed_at`) : suppression de l'ancien sceau, ré-insertion en queue de chaîne → la chaîne reste append-only.
+- **Quota tracker persistant en PG** au lieu d'in-memory : survit aux redémarrages, évite de brûler les retries après épuisement quotidien.
+
+---
+
+## 10. Ce qui n'est PAS fait (et pourquoi)
+
+| Item | Statut | Justification |
 |---|---|---|
-| cowrie | login_attempts > 1 | T1110.001 |
-| cowrie | login_attempts > 100 | T1110.003 |
-| cowrie | success_count > 0 | T1078 |
-| cowrie | command_count > 0 | T1059.004 |
-| cowrie | exfil_bytes > 0 | T1105 |
-| cowrie | credential file in commands | T1552.001 |
-| cowrie | XMRig / CryptoMiner YARA | T1496 |
-| cowrie | WannaCry / LockBit YARA | T1486 |
-| dionaea | port 445 (SMB) | T1021.002 + T1210 |
-| dionaea | port 3306/1433/27017/5432/6379 (DB) | T1190 |
-| dionaea | Mirai YARA | T1105 |
-| dionaea | Emotet YARA | T1071.001 |
-| galah | always | T1190 |
-| galah | scan paths (/wp-admin, /.env, …) | T1595.002 |
-| zeek | always | T1046 + T1592 |
-
-**Performance:** ~30 s/session (80-token narrative) vs ~60 s previously (512-token full JSON). Ollama timeout 60 s; on timeout, narrative falls back to a deterministic template — technique IDs are unaffected.
-
-**`map_session()` return:**
-```python
-{
-  "technique_ids":        ["T1110.001", "T1078"],
-  "techniques":           [{"id", "name", "tactic", "url"}, ...],
-  "primary_technique":    "T1110.001",
-  "kill_chain_phase":     "installation",
-  "kill_chain_label":     "Installation",
-  "kill_chain_stage":     5,          # 1-8; stage ≥ 5 → kill_chain_completed = True
-  "kill_chain_completed": True,
-  "forensic_narrative":   "Attacker performed ...",
-  "llm_used":             True,       # True only when Ollama returned non-empty text
-  "mapping_source":       "deterministic + llm_narrative",
-  "confidence":           1.0,
-}
-```
+| Honeypots exposés en IP publique | Non | Décision projet — Sprint 1 reste en réseau interne, traffic synthétique Kali |
+| Export STIX 2.1 effectif (fichier `.json`) | Partiel | Schéma compatible déclaré, mais pas de route export — sera ajouté côté backend Sprint 4 |
+| Push MISP | Non | Hors périmètre Sprint 3 |
+| Modèle Llama 3 / Mixtral | Non | Mistral 7B suffisant ; matériel R750 CPU-only |
+| Tests d'intégration end-to-end | Partiel | Uniquement `test_risk_score.py` — couverture insuffisante |
+| Suppression code legacy (`ollama_mitre.py`, `mitre_llm.py`) | OK | Effectuée à la finalisation (cf. FINALIZATION_AUDIT) |
 
 ---
 
-### 2.8 Engine Orchestrator (`engine.py`) *(major rewrite 2026-04-12)*
+## 11. Conclusion
 
-**Class:** `ForensicEngine`
-
-Coordinates all components in sequence — now queries all three honeypots:
-
-```
-run_full_analysis(hours_back=24)
-  ├── run_enrichment()        → ES terms agg → IPEnricher.enrich_from_es()
-  ├── run_yara_scan()         → YARAScanner.scan_dionaea_downloads()
-  │                              └── VirusTotalScanner.lookup_hash() for each match
-  ├── run_vt_from_es()        → ES file.hash.sha256 agg → VirusTotalScanner.lookup_batch()
-  └── run_session_scoring()
-        ├── _query_cowrie_sessions()   → login count, success/failed, commands, bytes
-        ├── _query_dionaea_sessions()  → by source IP + destination port
-        ├── _query_galah_sessions()    → HTTP events, top-20 paths per IP
-        ├── _query_cowrie_commands()   → up to 50 shell commands per session
-        └── per session:
-              calculate_risk_score(session_data)
-              MitreMapper.map_session(session_data)
-              _save_session() → PostgreSQL (13 columns)
-```
-
-**`_save_session()` — 4 new columns added (2026-04-12):**
-```sql
-kill_chain_phase, kill_chain_stage, primary_technique, forensic_narrative
-```
-
-**CLI flags:**
-```
-python engine.py                 # full analysis, last 24h
-python engine.py --hours 48      # custom lookback
-python engine.py --enrich-only   # enrichment only
-python engine.py --yara-only     # YARA + VT only
-python engine.py --score-only    # scoring only (skips enrichment + YARA)
-python engine.py --init-db       # schema init then exit
-```
+Le Sprint 3 transforme le flux brut de logs honeypot en preuves forensiques structurées, scorées, mappées MITRE, scellées cryptographiquement et profilées par LLM. Le moteur tourne en cron interne (5 min), reste idempotent, et survit aux pannes APIs externes (fail-soft systématique). Le travail restant relève d'**intégration** (exposition par le backend Sprint 4) et non d'analyse.
 
 ---
 
-### 2.9 Docker Container *(updated 2026-04-12)*
-
-**Dockerfile:** `forensic-engine/Dockerfile`
-- Base: `python:3.11-slim`
-- System deps: `gcc`, `libssl-dev`, `libmagic1` (required by `yara-python`)
-- Runs as root inside container (needed for Dionaea volume read)
-- Exposes port 8001 — backend calls this via `FORENSIC_ENGINE_URL`
-
-**docker-compose.yml (current state):**
-
-```yaml
-forensic-engine:
-  build: ./forensic-engine
-  container_name: forenhive-forensic-engine
-  restart: unless-stopped
-  ports:
-    - "8001:8001"
-  volumes:
-    - dionaea-malware:/opt/dionaea/var/lib/dionaea:ro
-    - zeek-logs:/usr/local/zeek/logs:ro
-    - ./forensic-engine/yara_rules:/app/yara_rules:ro
-    - ./geoip/GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro
-    - ./geoip/GeoLite2-ASN.mmdb:/app/GeoLite2-ASN.mmdb:ro
-  networks:
-    - backend-net
-  env_file:
-    - .env
-  environment:
-    - ENGINE_INTERVAL_MINUTES=1440
-    - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-    - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-    - TWILIO_WA_NUMBER=${TWILIO_WA_NUMBER}
-    - DEST_WA=${DEST_WA}
-  depends_on:
-    - elasticsearch
-    - postgresql
-```
-
-**Changes from initial design:**
-- GeoIP files moved from `/etc/logstash/` to `./geoip/` project directory
-- `zeek-logs` volume added (Zeek conn/ssh/http log access for session scoring)
-- Port 8001 exposed — backend's `forensic_runner.py` triggers runs via HTTP
-- `ENGINE_INTERVAL_MINUTES=1440` — daily schedule; APScheduler in the backend also triggers every 6 h
-- Twilio env vars added for WhatsApp alert notifications
-
----
-
-## 3. File Structure
-
-```
-forensic-engine/
-├── __init__.py
-├── engine.py               ← main orchestrator (Cowrie + Dionaea + Galah)
-├── enricher.py             ← IP enrichment (5 sources + PG cache + private IP classification)
-├── yara_scanner.py         ← YARA scan + PG persistence
-├── virustotal.py           ← VT v3 API + quota handling + PG persistence
-├── risk_score.py           ← 18-signal scorer, returns 13-key dict
-├── mitre_mapper.py         ← hybrid MITRE mapper (deterministic IDs + LLM narrative)
-├── ollama_mitre.py         ← superseded full-LLM approach (kept for reference)
-├── config.py               ← env vars (+ PRIVATE_VPN_RANGES)
-├── Dockerfile
-├── requirements.txt
-├── db/
-│   ├── schema.sql          ← 4 PostgreSQL tables + 4 new columns (kill chain)
-│   └── init_db.py          ← schema init with PG readiness wait
-└── yara_rules/
-    ├── mirai.yar
-    ├── wannacry.yar
-    ├── emotet.yar
-    ├── generic_shell.yar
-    ├── crypto_miner.yar
-    └── credential_stealer.yar
-```
-
----
-
-## 4. Design Decisions
-
-| Decision | Rationale |
-|---|---|
-| Single `forensic-engine/` directory (not inside `backend/`) | Keeps forensic logic decoupled from the FastAPI layer. Runs independently on its own schedule; backend triggers it via HTTP. |
-| PostgreSQL cache for enrichment | Avoids redundant API calls on re-runs. AbuseIPDB free tier is 1000/day — without cache, repeated runs exhaust quota in hours. |
-| YARA rules compiled at startup, not per-scan | Compilation is expensive (~100 ms for 6 files). Single compile → many scans is far faster. |
-| `ON CONFLICT DO UPDATE` for both YARA and VT | YARA scan and VT lookup write to the same `file_analysis` row. Upsert ensures the most recent result wins without race conditions. |
-| Hybrid MITRE (deterministic IDs + LLM narrative) | Full-LLM approach (`ollama_mitre.py`) invented invalid technique IDs under Mistral 7B. Deterministic rules give 100% accurate IDs; LLM is limited to 80-token narrative only. |
-| 18-signal risk scorer returns dict (not int) | Backend needs the breakdown dict for per-signal charts, IOC lists, and SOC recommendations — returning only an int would require re-scoring for display. |
-| `kill_chain_completed = stage >= 5` | Stage 5+ means attacker achieved persistence or beyond — useful threshold for alerting. |
-| Private IP classification (ignore vs investigate) | Docker bridge IPs (`172.17-19.x`) are internal routing noise — scoring them would waste AbuseIPDB quota. Lab Kali (`10.212.x`) is interesting for behavioral signals. |
-| GeoIP files moved to `./geoip/` | Both Logstash and forensic-engine need the mmdb files; single project-root location avoids duplication and `/etc/logstash/` host dependency. |
-| Single forensic-engine run at a time | Two concurrent containers compete for Ollama CPU → MITRE narrative timeouts. APScheduler in the backend serializes triggers. |
-
----
-
-## 5. Known Limitations
-
-| Item | Description | Impact |
-|---|---|---|
-| No real attacker traffic yet | Server not internet-facing — all IPs are RFC 1918 (Kali), so enrichment returns private classification | No real enrichment data until internet deployment |
-| AbuseIPDB 1000/day free limit | With many unique IPs, quota exhausts quickly | 24 h PostgreSQL cache mitigates this; upgrade to paid plan for production |
-| Shodan free tier | Only 1 lookup/second, no vulnerability data on free plan | `infrastructure.vulns` will be empty on free tier |
-| Mistral 7B CPU inference latency | Sometimes >60 s for MITRE narrative on CPU-only server (no GPU) | Narrative falls back to deterministic template; technique IDs unaffected |
-| PostgreSQL password reset on container recreate | Docker volume behavior resets user auth | Run `ALTER USER forenhive PASSWORD 'forenhive2026'` after each recreate |
-| Dionaea binary path | `scan_dionaea_downloads()` only iterates flat directory; nested subdirs not scanned | Minor — Dionaea typically stores binaries flat |
-| `suspect_profiles` table | Table created, no population logic in forensic-engine | Sprint 4 backend `profiler.py` populates this via Groq/Ollama |
-| `kill_chain_phase` NULL for rows scored before 2026-04-12 migration | Old rows have NULL in new columns | Backfilled on next `ON CONFLICT DO UPDATE` run |
-
----
-
-## 6. Sprint 3 Status: COMPLETE ✅
-
-| Component | File | Status |
-|---|---|---|
-| PostgreSQL schema (4 tables + 4 kill-chain columns) | `db/schema.sql` + `db/init_db.py` | ✅ Complete |
-| Configuration (+ `PRIVATE_VPN_RANGES`) | `config.py` | ✅ Complete |
-| IP Enrichment + private IP classification | `enricher.py` | ✅ Complete |
-| YARA rules (6) | `yara_rules/*.yar` | ✅ Complete |
-| YARA scanner | `yara_scanner.py` | ✅ Complete |
-| VirusTotal lookup + quota handling | `virustotal.py` | ✅ Complete |
-| Risk scoring (18 signals, 13-key dict) | `risk_score.py` | ✅ Complete (rewritten 2026-04-12) |
-| Hybrid MITRE ATT&CK mapper | `mitre_mapper.py` | ✅ Complete (added 2026-04-12) |
-| Engine orchestrator (Cowrie + Dionaea + Galah) | `engine.py` | ✅ Complete (rewritten 2026-04-12) |
-| Docker container (port 8001) | `Dockerfile` + `requirements.txt` | ✅ Complete |
-| docker-compose integration | `docker-compose.yml` | ✅ Complete |
-| Forensic timeline | — | → Sprint 4 backend (`/api/forensics/timeline`) |
-| SHA-256 + RFC 3161 custody | — | → Sprint 4 backend (`services/chain_custody.py`) |
-| FastAPI backend (C4) | `backend/` | → Sprint 4 ✅ |
-| React frontend (C5) | `frontend/` | → Sprint 5 🔲 |
+**Auteur audit** : Claude Code (Opus 4.7)
+**Vérification** : comptages PG/ES live au 2026-05-24, lecture intégrale de 18 modules Python + schéma SQL + Dockerfile + docker-compose.yml.

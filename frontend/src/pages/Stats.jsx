@@ -93,6 +93,23 @@ async function load() {
     count:x.count, fill:HP[x.honeypot]||'#50a0ff',
   }));
 
+  // Build a normalized health.services map so HealthPanel can render real
+  // statuses. The /health backend endpoint only reports infra (es/pg/ollama)
+  // — we infer honeypot/logstash/forensic_engine health from data flow:
+  //   honeypot up   ⇔ events present in the geo split
+  //   logstash up   ⇔ any honeypot has events (data is flowing through it)
+  //   forensic up   ⇔ profiling stats has profiled IPs
+  const hpCounts = Object.fromEntries(splitRaw.map(x => [x.honeypot, x.count]));
+  const dataFlowing = splitRaw.some(x => x.count > 0);
+  const services = {
+    elasticsearch:   health?.elasticsearch ? 'up' : 'down',
+    forensic_engine: (profiling?.total ?? 0) > 0 ? 'up' : 'unknown',
+    cowrie:          (hpCounts.cowrie  || 0) > 0 ? 'up' : 'unknown',
+    dionaea:         (hpCounts.dionaea || 0) > 0 ? 'up' : 'unknown',
+    galah:           (hpCounts.galah   || 0) > 0 ? 'up' : 'unknown',
+    logstash:        dataFlowing ? 'up' : 'unknown',
+  };
+
   return {
     grandTotal, hpActive,
     lastHourCount:   lastHour?.count||0,
@@ -102,7 +119,7 @@ async function load() {
     areaData, sourceData, sevData, ipsData, portsData,
     items, sev,
     sessions:   sessions?.items||sessions?.sessions||[],
-    health:     health||{status:'unknown'},
+    health:     { ...(health||{status:'unknown'}), services },
     alertItems: alerts?.items||alerts?.history||[],
   };
 }
@@ -452,9 +469,13 @@ const SVCS=[
   {name:'Logstash',        k:'logstash',        color:'#2dd4bf'},
 ];
 function svcSt(h,k){
-  const v=h?.[k]||h?.services?.[k]||h?.components?.[k];
-  if(!v) return 'unknown';
-  return (typeof v==='string'?v:v.status)||'unknown';
+  // services/components map wins over the flat key — the flat /health fields
+  // are booleans (elasticsearch: true) and need to be coerced to 'up'/'down'.
+  const v = h?.services?.[k] ?? h?.components?.[k] ?? h?.[k];
+  if (v === true)  return 'up';
+  if (v === false) return 'down';
+  if (!v) return 'unknown';
+  return (typeof v === 'string' ? v : v.status) || 'unknown';
 }
 
 function HealthPanel({health}) {

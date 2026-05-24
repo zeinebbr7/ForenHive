@@ -206,7 +206,7 @@ class AlertEngine:
                 "critical"
                 if risk_score >= 70
                 else "high"
-                if risk_score >= 45
+                if risk_score >= 60
                 else "medium"
                 if risk_score >= 25
                 else "low"

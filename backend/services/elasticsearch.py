@@ -483,6 +483,48 @@ class ESClient:
             )
         return out
 
+    async def stats_for_ips(self, ips: list[str]) -> dict[str, dict[str, Any]]:
+        """Per-IP summary stats (event_count, honeypots, first/last seen).
+
+        Restricted to the given IP set so caller (e.g. PG-backed profile list)
+        can enrich its rows without pulling Zeek background traffic from
+        unrelated IPs into the listing.
+        """
+        if not ips:
+            return {}
+        body = {
+            "size": 0,
+            "query": {"terms": {"source.ip.keyword": ips}},
+            "aggs": {
+                "ips": {
+                    "terms": {"field": "source.ip.keyword", "size": len(ips), "include": ips},
+                    "aggs": {
+                        "honeypots": {"terms": {"field": "honeypot.type.keyword", "size": 5}},
+                        "country": {"terms": {"field": "source.geo.country_iso_code", "size": 1}},
+                        "first_seen": {"min": {"field": "@timestamp"}},
+                        "last_seen": {"max": {"field": "@timestamp"}},
+                    },
+                }
+            },
+        }
+        resp = await self.client.search(
+            index=self.settings.honeypot_indices,
+            body=body,
+            ignore_unavailable=True,
+            allow_no_indices=True,
+        )
+        out: dict[str, dict[str, Any]] = {}
+        for b in resp["aggregations"]["ips"]["buckets"]:
+            country_buckets = b["country"]["buckets"]
+            out[b["key"]] = {
+                "event_count": b["doc_count"],
+                "honeypots": [hp["key"] for hp in b["honeypots"]["buckets"]],
+                "country": country_buckets[0]["key"] if country_buckets else None,
+                "first_seen": b["first_seen"].get("value_as_string"),
+                "last_seen": b["last_seen"].get("value_as_string"),
+            }
+        return out
+
     async def honeypot_split(self) -> list[dict[str, Any]]:
         body = {
             "size": 0,

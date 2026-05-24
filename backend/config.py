@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     # Notify cutoff — mirror of forensic-engine/risk_thresholds.ALERT_NOTIFY_MIN.
     # Override via env var RISK_ALERT_THRESHOLD.
-    risk_alert_threshold: int = 75
+    risk_alert_threshold: int = 60
     # High-risk cutoff for queries/chat — mirror of risk_thresholds.HIGH (PROFILE_RISK_MIN).
     risk_high_threshold: int = 60
     alert_dedup_window_minutes: int = 15

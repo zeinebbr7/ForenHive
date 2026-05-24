@@ -108,16 +108,22 @@ async def geo_breakdown(top: int = Query(25, ge=1, le=200)):
 
 
 @router.get("/forensic-sessions")
-async def forensic_sessions_geo(limit: int = Query(100, ge=1, le=500)):
+async def forensic_sessions_geo(
+    limit: int = Query(100, ge=1, le=500),
+    demo_only: bool = Query(False),
+):
     """Return PG forensic sessions with lat/lon from the enrichment cache.
-    Used by the geomap page to overlay demo/enriched IPs on the map."""
+    Used by the geomap page to overlay demo/enriched IPs on the map.
+    Pass demo_only=true to return only the 13 injected demo scenarios."""
     try:
         from db import session_scope
         from sqlalchemy import text
 
+        demo_filter = "AND fs.session_id LIKE 'demo-%'" if demo_only else ""
+
         async with session_scope() as db:
             result = await db.execute(
-                text("""
+                text(f"""
                 SELECT
                     fs.source_ip,
                     fs.honeypot_type,
@@ -133,6 +139,7 @@ async def forensic_sessions_geo(limit: int = Query(100, ge=1, le=500)):
                 JOIN ip_enrichment_cache cache ON cache.ip = fs.source_ip
                 WHERE fs.honeypot_type != 'unified'
                   AND (cache.data->'geo'->>'lat') IS NOT NULL
+                  {demo_filter}
                 GROUP BY fs.source_ip, fs.honeypot_type, fs.risk_score, fs.risk_level,
                          lat, lon, country_code, country_name, city
                 ORDER BY fs.risk_score DESC NULLS LAST

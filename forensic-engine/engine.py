@@ -81,9 +81,11 @@ def _send_whatsapp_alert(ip: str, score: int) -> None:
     sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
     token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     from_ = os.environ.get("TWILIO_WA_NUMBER", "")
-    to = os.environ.get("DEST_WA", "")
+    dest_primary = os.environ.get("DEST_WA", "")
+    dest_extra = [n.strip() for n in os.environ.get("DEST_WA_EXTRA", "").split(",") if n.strip()]
+    recipients = [n for n in [dest_primary] + dest_extra if n]
 
-    if not all([sid, token, from_, to]):
+    if not all([sid, token, from_]) or not recipients:
         log.warning("Twilio env vars missing — WhatsApp alert skipped")
         return
 
@@ -97,18 +99,19 @@ def _send_whatsapp_alert(ip: str, score: int) -> None:
     from twilio.rest import Client
 
     client = Client(sid, token)
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(
-                client.messages.create,
-                from_=f"whatsapp:{from_}",
-                to=to,
-                body=body,
-            )
-            msg = future.result(timeout=5)
-        log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
-    except Exception as e:
-        log.warning(f"WhatsApp alert failed for {ip}: {e}")
+    for to in recipients:
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    client.messages.create,
+                    from_=f"whatsapp:{from_}",
+                    to=to,
+                    body=body,
+                )
+                msg = future.result(timeout=5)
+            log.info(f"WhatsApp alert sent to {to} — SID: {msg.sid}")
+        except Exception as e:
+            log.warning(f"WhatsApp alert failed for {ip} → {to}: {e}")
 
 
 def _now_utc():

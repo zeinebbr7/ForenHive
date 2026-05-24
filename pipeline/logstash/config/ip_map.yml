@@ -1,0 +1,30 @@
+# ForenHive — internal-to-public IP map consumed by Logstash `translate` filter.
+# Source IPs from honeypot-net (Docker NAT 10.212.134.x) are swapped for
+# routable public IPs so downstream GeoIP/AbuseIPDB/VirusTotal enrichment
+# produces non-zero signals. Keys = observed src ip; values = public IP.
+
+# expert tier (3) — Tor / bulletproof / known C2
+"10.212.134.205": "185.220.101.5"
+"10.212.134.206": "45.227.255.206"
+"10.212.134.207": "194.165.16.11"
+
+# medium tier (4) — VPN / datacenter / mass scanners
+"10.212.134.210": "80.82.77.33"
+"10.212.134.211": "92.118.39.18"
+"10.212.134.212": "141.98.10.62"
+"10.212.134.213": "5.188.10.156"
+
+# amateur tier (3) — residential / cheap VPS
+"10.212.134.220": "41.230.42.17"
+"10.212.134.221": "197.0.5.12"
+"10.212.134.222": "188.166.13.4"
+
+# DoS burst sources — collapse local origins into the expert Tor exit.
+# Docker bridge IPs vary by network (bridge0=172.17, custom networks 172.18+).
+"127.0.0.1": "185.220.101.5"
+"172.17.0.1": "185.220.101.5"
+"172.18.0.1": "185.220.101.5"
+"172.19.0.1": "185.220.101.5"
+"172.20.0.1": "185.220.101.5"
+"172.21.0.1": "185.220.101.5"
+"172.16.1.100": "185.220.101.5"

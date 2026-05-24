@@ -12,7 +12,11 @@ log = logging.getLogger(__name__)
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 TWILIO_WA_NUMBER = os.environ.get("TWILIO_WA_NUMBER", "")
-DEST_WA = os.environ.get("DEST_WA", "")
+
+# Support multiple WhatsApp recipients: DEST_WA (primary) + DEST_WA_EXTRA (comma-separated extras)
+_dest_primary = os.environ.get("DEST_WA", "")
+_dest_extra = [n.strip() for n in os.environ.get("DEST_WA_EXTRA", "").split(",") if n.strip()]
+DEST_WA_NUMBERS: list[str] = [n for n in [_dest_primary] + _dest_extra if n]
 
 
 def _whatsapp_alert(
@@ -21,7 +25,7 @@ def _whatsapp_alert(
     from twilio.rest import Client
 
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    level = "CRITICAL" if score >= 70 else "HIGH"  # v2.0.0 CRITICAL cutoff
+    level = "CRITICAL" if score >= 70 else "HIGH"
     if is_internal:
         body = (
             f"⚠️ [FORENHIVE] INSIDER THREAT\n"
@@ -36,14 +40,16 @@ def _whatsapp_alert(
             f"Risk Score : {score}/100\n"
             f"Verification required."
         )
-    msg = client.messages.create(
-        from_=f"whatsapp:{TWILIO_WA_NUMBER}",
-        to=DEST_WA,
-        body=body,
-    )
-    log.info(
-        "WhatsApp alert sent  ip=%s score=%d is_internal=%s sid=%s", ip, score, is_internal, msg.sid
-    )
+    for dest in DEST_WA_NUMBERS:
+        msg = client.messages.create(
+            from_=f"whatsapp:{TWILIO_WA_NUMBER}",
+            to=dest,
+            body=body,
+        )
+        log.info(
+            "WhatsApp alert sent  ip=%s score=%d is_internal=%s to=%s sid=%s",
+            ip, score, is_internal, dest, msg.sid,
+        )
 
 
 def send_alert(ip: str, score: int, is_internal: bool = False, network_class: str = "") -> None:
@@ -52,7 +58,7 @@ def send_alert(ip: str, score: int, is_internal: bool = False, network_class: st
         log.warning("Twilio credentials not configured — alert skipped for %s", ip)
         return
     try:
-        if score > 60 or is_internal:
+        if score >= 60 or is_internal:
             _whatsapp_alert(ip, score, is_internal=is_internal, network_class=network_class)
     except Exception as exc:
         log.error("Alert dispatch failed  ip=%s score=%d error=%s", ip, score, exc)

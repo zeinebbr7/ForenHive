@@ -57,6 +57,7 @@ export default function GeoMap() {
   const [ipList, setIpList] = useState([]);
   const [countryError, setCountryError] = useState(null);
   const [ipError, setIpError] = useState(null);
+  const [demoOnly, setDemoOnly] = useState(false);
 
   // Initialize Leaflet map
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function GeoMap() {
   // Load data and populate map
   useEffect(() => {
     async function fetchGeoEvents() {
+      if (demoOnly) return [];
       const results = await Promise.allSettled([
         api.attacks({ page_size: 100, page: 1, honeypot: 'cowrie' }),
         api.attacks({ page_size: 100, page: 1, honeypot: 'dionaea' }),
@@ -95,7 +97,10 @@ export default function GeoMap() {
 
     async function fetchPgGeoSessions() {
       try {
-        const data = await api._call('/api/geo/forensic-sessions?limit=200');
+        const url = demoOnly
+          ? '/api/geo/forensic-sessions?limit=200&demo_only=true'
+          : '/api/geo/forensic-sessions?limit=200';
+        const data = await api._call(url);
         return (data && data.sessions) || [];
       } catch (_) { return []; }
     }
@@ -111,17 +116,33 @@ export default function GeoMap() {
           if (!byIP[ip]) byIP[ip] = { ip, geo, honeypot: n.honeypot, count: 0 };
           byIP[ip].count++;
         });
+        // Track how many sessions share each lat/lon for stagger offset
+        const coordCount = {};
         pgSessions.forEach(s => {
           const ip = s.source_ip;
           if (!ip || isNaN(s.lat) || isNaN(s.lon)) return;
-          const geo = { lat: s.lat, lon: s.lon, country_code: s.country_code || '', country_name: s.country_name || '', city: s.city || '' };
-          if (byIP[ip]) {
-            byIP[ip].geo = geo;
-            byIP[ip].risk_score = s.risk_score;
-            byIP[ip].risk_level = s.risk_level;
-            if (s.honeypot_type && s.honeypot_type !== 'unified') byIP[ip].honeypot = s.honeypot_type;
+          const hp = s.honeypot_type || 'cowrie';
+          // In demo mode: one marker per (ip, honeypot) so each honeypot colour is visible
+          const key = demoOnly ? `${ip}::${hp}` : ip;
+          const coordKey = `${s.lat},${s.lon}`;
+          const offset = coordCount[coordKey] || 0;
+          coordCount[coordKey] = offset + 1;
+          // Tiny spiral offset so stacked points don't overlap completely
+          const jitter = offset * 0.35;
+          const angle = offset * 137.5 * (Math.PI / 180);
+          const geo = {
+            lat: s.lat + jitter * Math.cos(angle) * 0.01,
+            lon: s.lon + jitter * Math.sin(angle) * 0.015,
+            country_code: s.country_code || '',
+            country_name: s.country_name || '',
+            city: s.city || '',
+          };
+          if (byIP[key]) {
+            byIP[key].geo = geo;
+            byIP[key].risk_score = s.risk_score;
+            byIP[key].risk_level = s.risk_level;
           } else {
-            byIP[ip] = { ip, geo, honeypot: s.honeypot_type || 'cowrie', count: s.sessions || 1, risk_score: s.risk_score, risk_level: s.risk_level, fromPg: true };
+            byIP[key] = { ip, geo, honeypot: hp, count: s.sessions || 1, risk_score: s.risk_score, risk_level: s.risk_level, fromPg: true };
           }
         });
 
@@ -196,8 +217,12 @@ export default function GeoMap() {
       }
     }
 
+    // Clear existing markers before re-loading
+    Object.values(markerMapRef.current).forEach(m => m.remove());
+    markerMapRef.current = {};
+
     loadAll();
-  }, []);
+  }, [demoOnly]);
 
   const countryBarData = countries.slice(0, 12).map(c => ({
     name: flag(c.code) + ' ' + c.name.slice(0, 12),
@@ -228,7 +253,14 @@ export default function GeoMap() {
           <h2 className="page-title">Attacker <span>Map</span></h2>
           <div className="page-sub">Real geographic positions · MaxMind GeoIP enrichment.</div>
         </div>
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setDemoOnly(v => !v)}
+            className={`badge ${demoOnly ? 'gold' : 'blue'}`}
+            style={{ cursor: 'pointer', border: 'none', fontSize: 12, padding: '4px 10px' }}
+          >
+            {demoOnly ? '13 Demo IPs' : 'All IPs'}
+          </button>
           <span className="badge blue" style={{ fontSize: 12 }}>{badge}</span>
         </div>
       </div>
