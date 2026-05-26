@@ -87,8 +87,9 @@ def _engine_loop(interval_minutes: int) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    t = threading.Thread(target=_engine_loop, args=(INTERVAL_MINUTES,), daemon=True)
-    t.start()
+    if INTERVAL_MINUTES > 0:
+        t = threading.Thread(target=_engine_loop, args=(INTERVAL_MINUTES,), daemon=True)
+        t.start()
     yield
 
 

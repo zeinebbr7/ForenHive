@@ -1097,7 +1097,8 @@
   <p>Journal chronologique des événements clés de la session ({{ event_count }} au total).</p>
   <div class="timeline">
     {% for ev in timeline_summary | default([]) %}
-    <div class="tl-item{% if ev.severity == 'CRITICAL' %} crit{% elif ev.severity == 'HIGH' %} warn{% elif ev.severity == 'INFO' %} info{% endif %}">
+    {% set ev_sev = ev.severity if ev is mapping and 'severity' in ev else '' %}
+    <div class="tl-item{% if ev_sev == 'CRITICAL' %} crit{% elif ev_sev == 'HIGH' %} warn{% elif ev_sev == 'INFO' %} info{% endif %}">
       <div class="tl-head">
         <span class="tl-ts">{{ ev.timestamp }}</span>
         <span class="tl-type">{{ ev.event_type }}</span>
@@ -1174,7 +1175,8 @@
     {% for y in yara_matches %}
     <tr>
       <td><span class="tag tag-yara">{{ y.name if y.name is defined else y }}</span></td>
-      <td><span class="score-badge {% if y.severity == 'CRITICAL' %}score-critical{% elif y.severity == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ y.severity | default("HIGH") }}</span></td>
+      {% set sev = y.severity if y is mapping else 'HIGH' %}
+      <td><span class="score-badge {% if sev == 'CRITICAL' %}score-critical{% elif sev == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ sev }}</span></td>
     </tr>
     {% endfor %}
   </table>

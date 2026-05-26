@@ -7,12 +7,14 @@ filebeat.inputs:
     tags: ["cowrie", "honeypot_cowrie"]
     json.keys_under_root: true
     json.add_error_key: true
+    scan_frequency: 5s
 
   - type: log
     enabled: true
     paths:
       - /var/log/dionaea/dionaea/dionaea.log
     tags: ["dionaea", "honeypot_dionaea"]
+    scan_frequency: 5s
 
   - type: log
     enabled: true
@@ -23,6 +25,7 @@ filebeat.inputs:
     tags: ["zeek", "NIDS"]
     json.keys_under_root: true
     json.add_error_key: true
+    scan_frequency: 5s
 
   - type: log
     enabled: true
@@ -31,6 +34,7 @@ filebeat.inputs:
     tags: ["galah", "honeypot_galah"]
     json.keys_under_root: true
     json.add_error_key: true
+    scan_frequency: 5s
 
 output.logstash:
   hosts: ["logstash:5044"]

@@ -78,11 +78,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("watcher start failed: %s", exc)
 
-    # Forensic engine scheduler (every 6 hours)
+    # Forensic engine scheduler (every Friday at 21:00)
     scheduler = BackgroundScheduler()
-    scheduler.add_job(forensic_runner.run_forensic_engine, "interval", hours=6)
+    scheduler.add_job(forensic_runner.run_forensic_engine, "cron", day_of_week="fri", hour=21, minute=0)
     scheduler.start()
-    log.info("Forensic scheduler started (every 6 h)")
+    log.info("Forensic scheduler started (every Friday at 21:00)")
 
     yield
 

@@ -129,8 +129,8 @@ func (s *Server) SetupServer(pc config.PortConfig) *http.Server {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s.handleRequest(w, r, serverAddr, s.Rules)
 		}),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  120 * time.Second,
+		WriteTimeout: 120 * time.Second,
 	}
 }
 
@@ -286,7 +286,7 @@ func (s *Server) ListenForShutdownSignals() {
 		<-sig
 		s.Logger.WithPrefix("GALAH").Infof("received shutdown signal. shutting down servers...")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
 		for _, server := range s.Servers {

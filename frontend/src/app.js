@@ -41,7 +41,7 @@ const NAV_GROUPS = [
   { label: 'Forensic Analysis', items: [
     { id: 'timeline',       label: 'Timeline',              icon: '', roles: ['admin','analyst'] },
     { id: 'reconstruction', label: 'Attack Reconstruction', icon: '', roles: ['admin','analyst'] },
-    { id: 'evidence',       label: 'Evidence Logs',         icon: '', roles: ['admin','analyst'] },
+    { id: 'evidence',       label: 'Evidence Logs',         icon: '', roles: ['admin'] },
     { id: 'profiling',      label: 'Profiling',             icon: '', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [

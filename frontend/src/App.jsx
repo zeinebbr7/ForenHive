@@ -53,7 +53,7 @@ export default function App() {
                 <Route path="/health"         element={<Protected roles={['admin']}><Health /></Protected>} />
                 <Route path="/timeline"       element={<Timeline />} />
                 <Route path="/reconstruction" element={<Reconstruction />} />
-                <Route path="/evidence"       element={<Evidence />} />
+                <Route path="/evidence"       element={<Protected roles={['admin']}><Evidence /></Protected>} />
                 <Route path="/profiling"      element={<Profiling />} />
                 <Route path="/geomap"         element={<GeoMap />} />
                 <Route path="/reporting"      element={<Reporting />} />

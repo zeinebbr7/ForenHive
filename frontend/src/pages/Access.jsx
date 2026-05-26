@@ -59,7 +59,7 @@ const PERMS = [
   ['Sessions',           true,  true ],
   ['Timeline',           true,  true ],
   ['Reconstruction',     true,  true ],
-  ['Evidence Logs',      true,  true ],
+  ['Evidence Logs',      true,  false],
   ['Profiling',          true,  true ],
   ['Geo Map',            true,  true ],
   ['Statistics',         true,  true ],

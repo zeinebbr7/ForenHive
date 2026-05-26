@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     risk_high_threshold: int = 60
     alert_dedup_window_minutes: int = 15
     alert_watcher_enabled: bool = True
-    alert_watcher_interval_seconds: int = 15
+    alert_watcher_interval_seconds: int = 5
 
     smtp_host: str = "localhost"
     smtp_port: int = 587

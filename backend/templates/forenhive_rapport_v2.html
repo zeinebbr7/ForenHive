@@ -31,7 +31,7 @@
       border-bottom: 1px solid rgba(140,26,43,0.10);
     }
     @bottom-left {
-      content: "ForenHive Platform · {{ generated_at | default('') }}";
+      content: "Plateforme ForenHive · {{ generated_at | default('') }}";
       font-family: 'Share Tech Mono','JetBrains Mono',monospace;
       font-size: 7pt; color: #7A6E5A; letter-spacing: 1.3px;
     }
@@ -779,7 +779,7 @@
     <div class="cv-logo">
       <span class="cv-bolt">&#11041;</span>
       <span class="cv-brand-name">ForenHive</span>
-      <span class="cv-brand-tag">SOC Forensic Platform v{{ engine_version | default("1.0") }}</span>
+      <span class="cv-brand-tag">ForenHive SOC Platform v{{ engine_version | default("1.0") }}</span>
     </div>
 
     {# Centered title in the middle #}
@@ -788,7 +788,7 @@
       <div class="cv-eyebrow">Automated Forensic Dossier · Incident Report</div>
       <h1 class="cv-title">SOC Incident<br><em>Forensic Report</em></h1>
       <p class="cv-sub">
-        Single-session forensic analysis of an inbound connection captured by the
+        Forensic analysis of a single inbound connection session captured by the
         ForenHive honeypot cluster.
       </p>
       <div class="cv-scoreline {{ _lvl }}">
@@ -796,7 +796,7 @@
         <span class="sep"></span>
         <span class="lvl-block">
           <span class="lvl">{{ risk_level | default("INFO") }}</span>
-          <span class="lvl-cap">Composite risk level</span>
+          <span class="lvl-cap">Composite Risk Level</span>
         </span>
       </div>
 
@@ -804,19 +804,19 @@
       <div class="cv-stats">
         <div class="cv-stat">
           <div class="cv-stat-val">{{ event_count | default(0) }}</div>
-          <div class="cv-stat-lbl">Events logged</div>
+          <div class="cv-stat-lbl">Recorded Events</div>
         </div>
         <div class="cv-stat">
           <div class="cv-stat-val">{{ auth_attempts | default([]) | length }}</div>
-          <div class="cv-stat-lbl">Auth attempts</div>
+          <div class="cv-stat-lbl">Authentication Attempts</div>
         </div>
         <div class="cv-stat">
           <div class="cv-stat-val">{{ mitre_techniques | default([]) | length }}</div>
-          <div class="cv-stat-lbl">MITRE techniques</div>
+          <div class="cv-stat-lbl">MITRE Techniques</div>
         </div>
         <div class="cv-stat">
           <div class="cv-stat-val">{{ session_duration | default("N/A") }}</div>
-          <div class="cv-stat-lbl">Session duration</div>
+          <div class="cv-stat-lbl">Session Duration</div>
         </div>
       </div>
     </div>
@@ -840,7 +840,7 @@
         <div class="cv-meta-val">{{ honeypot_type | default("Cowrie") }} <span class="small">{{ protocol | default("SSH") | lower }}/{{ honeypot_port | default("22") }}</span></div>
       </div>
       <div class="cv-meta-cell">
-        <div class="cv-meta-lbl">Generated</div>
+        <div class="cv-meta-lbl">Generated on</div>
         <div class="cv-meta-val mono">{{ generated_at }}</div>
       </div>
       <div class="cv-meta-cell">
@@ -854,11 +854,11 @@
 
 {# ═══ TOC ═══ #}
 <section class="toc">
-  <div class="toc-heading">Report · Contents</div>
+  <div class="toc-heading">Report · Summary</div>
   <h1 class="toc-title">Table of <em>Contents</em></h1>
   <div class="toc-cols">
     <div>
-      <div class="toc-entry"><span class="toc-num">01</span><span class="toc-label">Executive Brief</span></div>
+      <div class="toc-entry"><span class="toc-num">01</span><span class="toc-label">Executive Summary</span></div>
       <div class="toc-entry"><span class="toc-num">02</span><span class="toc-label">Methodology</span></div>
       <div class="toc-entry sub"><span class="toc-num">2.1</span><span class="toc-label">Data Sources</span></div>
       <div class="toc-entry sub"><span class="toc-num">2.2</span><span class="toc-label">Risk Scoring Model</span></div>
@@ -891,7 +891,7 @@
 <section class="section">
   <div class="section-bar">
     <span class="section-num">01</span>
-    <h1 class="section-title">Executive Brief</h1>
+    <h1 class="section-title">Executive Summary</h1>
     <span class="section-tag">~/exec_summary</span>
   </div>
 
@@ -902,14 +902,14 @@
       <div class="kpi-sub">{{ risk_level }} &middot; conf {{ risk_confidence | default("N/A") }}</div>
     </div>
     <div class="kpi">
-      <div class="kpi-label">Events Logged</div>
+      <div class="kpi-label">Recorded Events</div>
       <div class="kpi-value">{{ event_count }}</div>
-      <div class="kpi-sub">across {{ honeypot_type | default("Cowrie SSH") }}</div>
+      <div class="kpi-sub">sur {{ honeypot_type | default("Cowrie SSH") }}</div>
     </div>
     <div class="kpi y">
       <div class="kpi-label">Auth Attempts</div>
       <div class="kpi-value">{{ auth_attempts | default([]) | length }}</div>
-      <div class="kpi-sub">brute force &middot; {{ auth_success_count | default(0) }} success</div>
+      <div class="kpi-sub">brute force &middot; {{ auth_success_count | default(0) }} succeeded</div>
     </div>
     <div class="kpi b">
       <div class="kpi-label">Session Duration</div>
@@ -919,28 +919,28 @@
   </div>
 
   <p>
-    On <strong>{{ session_date }}</strong>, the ForenHive honeypot cluster recorded a session originating
-    from <code>{{ source_ip }}</code> ({{ geo_city }}, {{ geo_country }} &middot; AS{{ asn }}{% if isp %} &middot; {{ isp }}{% endif %}).
+    On <strong>{{ session_date }}</strong>, the ForenHive honeypot cluster recorded a session from
+    de <code>{{ source_ip }}</code> ({{ geo_city }}, {{ geo_country }} &middot; AS{{ asn }}{% if isp %} &middot; {{ isp }}{% endif %}).
     {% if abuse_score is defined and abuse_score is not none %}
-      AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> confidence of abuse{% if abuse_reports %} across {{ abuse_reports }} reports{% endif %}<sup class="ref">1</sup>.
+      AbuseIPDB rates this address at <strong>{{ abuse_score }}%</strong> abuse confidence{% if abuse_reports %} across {{ abuse_reports }} reports{% endif %}<sup class="ref">1</sup>.
     {% endif %}
   </p>
   <p>
-    The session comprised <strong>{{ event_count }}</strong> logged events across <strong>{{ honeypot_type | default("Cowrie SSH") }}</strong>.
+    The session comprised <strong>{{ event_count }}</strong> recorded events on <strong>{{ honeypot_type | default("Cowrie SSH") }}</strong>.
     {% if auth_attempts is defined and auth_attempts | length > 0 %}
-      The attacker performed <strong>{{ auth_attempts | length }}</strong> authentication
-      {{ "attempt" if auth_attempts | length == 1 else "attempts" }}, using credentials such as
-      {% for a in auth_attempts[:3] %}<code>{{ a.username }}/{{ a.password }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if auth_attempts | length > 3 %} (and {{ auth_attempts | length - 3 }} others){% endif %}.
+      The attacker made <strong>{{ auth_attempts | length }}</strong>
+      authentication {{ "attempt" if auth_attempts | length == 1 else "attempts" }}, using credentials such as
+      {% for a in auth_attempts[:3] %}<code>{{ a.username }}/{{ a.password }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if auth_attempts | length > 3 %} (and {{ auth_attempts | length - 3 }} more){% endif %}.
     {% endif %}
     {% if exec_narrative is defined and exec_narrative %}{{ exec_narrative }}{% endif %}
   </p>
   <p>
     {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
-      <strong>{{ mitre_techniques | length }} MITRE ATT&amp;CK technique{{ "s" if mitre_techniques | length > 1 else "" }}</strong> were identified
+      <strong>{{ mitre_techniques | length }} MITRE ATT&amp;CK technique{{ "s" if mitre_techniques | length > 1 else "" }}</strong> {{ "were" if mitre_techniques | length > 1 else "was" }} identified
       ({% for t in mitre_techniques[:4] %}<span class="tag tag-mitre">{{ t.tid }}</span>{% endfor %}{% if mitre_techniques | length > 4 %}&hellip;{% endif %}).
     {% endif %}
     {% if yara_matches is defined and yara_matches | length > 0 %}
-      YARA scanning flagged <strong>{{ yara_matches | length }}</strong> signature match{{ "es" if yara_matches | length > 1 else "" }}.
+      YARA analysis flagged <strong>{{ yara_matches | length }}</strong> signature match{{ "es" if yara_matches | length > 1 else "" }}.
     {% elif yara_rules_used is defined %}
       No YARA signatures matched from the {{ yara_rules_used }} rules evaluated (see &sect;5.2).
     {% endif %}
@@ -952,7 +952,7 @@
     {% endif %}
   </p>
   {% if bottom_line is defined and bottom_line %}
-  <div class="callout"><strong>Bottom line.</strong> {{ bottom_line }}</div>
+  <div class="callout"><strong>Conclusion.</strong> {{ bottom_line }}</div>
   {% endif %}
 </section>
 
@@ -964,11 +964,11 @@
     <span class="section-tag">~/method</span>
   </div>
 
-  <h2>Data sources</h2>
+  <h2>Data Sources</h2>
   <table class="tbl-zebra">
-    <tr><th style="width:32mm">Source</th><th>Description</th><th>Purpose</th></tr>
-    <tr><td>{{ honeypot_type | default("Cowrie") }}</td><td>SSH/Telnet medium-interaction honeypot</td><td>Session logs, auth attempts, commands, dropped files</td></tr>
-    <tr><td>AbuseIPDB</td><td>Crowd-sourced IP reputation</td><td>Abuse confidence score, report count</td></tr>
+    <tr><th style="width:32mm">Source</th><th>Description</th><th>Objectif</th></tr>
+    <tr><td>{{ honeypot_type | default("Cowrie") }}</td><td>Medium-interaction SSH/Telnet honeypot</td><td>Session logs, auth attempts, commands, dropped files</td></tr>
+    <tr><td>AbuseIPDB</td><td>Collaborative IP reputation</td><td>Abuse confidence score, report count</td></tr>
     <tr><td>MaxMind GeoLite2 / IPLocate</td><td>IP geolocation &amp; classification</td><td>Country, city, ASN, ISP, Tor/VPN/proxy flags</td></tr>
     <tr><td>Shodan InternetDB</td><td>Passive scan API (free tier)</td><td>Open ports, CVEs, CPEs, tags</td></tr>
     <tr><td>VirusTotal</td><td>Multi-engine AV (free tier &middot; 4 req/day)</td><td>SHA-256 hash lookup for dropped binaries</td></tr>
@@ -976,30 +976,30 @@
   </table>
 
   <p>
-    The MITRE ATT&amp;CK mapping uses a <strong>hybrid</strong> approach:
-    <strong>deterministic rules</strong> map observed commands and protocol behaviour to
-    technique IDs (always correct, no hallucination), supplemented by an LLM-generated
-    narrative (Mistral 7B, temperature 0.1, max 80 tokens) that contextualizes the attack
-    chain without introducing unverified technique IDs.<sup class="ref">3</sup>
+    MITRE ATT&amp;CK mapping uses a <strong>hybrid</strong> approach:
+    <strong>deterministic rules</strong> map observed commands and protocol behavior
+    to technique IDs (always correct, no hallucination), complemented by an LLM-generated narrative
+    (Mistral 7B, temperature 0.1, max 80 tokens) that contextualizes the attack chain
+    without introducing unverified technique IDs.<sup class="ref">3</sup>
   </p>
 
-  <h2>Risk scoring model &#8212; 9 signals (max 100)</h2>
+  <h2>Risk Scoring Model &#8212; 9 Signals (max 100)</h2>
   <p>
-    Signals are grouped under an FBI BAU criminological taxonomy &#8212;
+    Signals are grouped by FBI BAU criminological taxonomy &#8212;
     <strong>WHO</strong> (attacker identity), <strong>WHAT</strong> (intent &amp; impact)
-    and <strong>HOW</strong> (capability). Each signal is deterministic and evidence-backed.
+    and <strong>HOW</strong> (capability). Each signal is deterministic and evidence-based.
   </p>
   <table class="tbl-zebra">
     <tr><th style="width:48mm">Signal</th><th style="width:16mm">Max</th><th style="width:18mm">Class</th><th>Description</th></tr>
-    <tr><td>IP Reputation</td><td class="mono">15</td><td>WHO</td><td>AbuseIPDB abuse confidence (thresholded). Skipped for private IPs.</td></tr>
-    <tr><td>Anonymization / Evasion</td><td class="mono">10</td><td>WHO</td><td>Tor / VPN / proxy usage + datacenter/hosting origin.</td></tr>
-    <tr><td>Threat History</td><td class="mono">8</td><td>WHO</td><td>Prior sessions / recidivism for this source IP.</td></tr>
-    <tr><td>Intent &amp; Volume</td><td class="mono">10</td><td>WHAT</td><td>Login volume &amp; velocity; targeted wordlist signals.</td></tr>
-    <tr><td>Compromise Depth</td><td class="mono">15</td><td>WHAT</td><td>Successful auth, post-access commands, honeytoken access.</td></tr>
-    <tr><td>Exfiltration</td><td class="mono">8</td><td>WHAT</td><td>Credential / sensitive-file reads and outbound transfer.</td></tr>
-    <tr><td>Lateral Movement</td><td class="mono">10</td><td>WHAT</td><td>Pivot attempts, multi-honeypot / multi-service activity.</td></tr>
-    <tr><td>Malware</td><td class="mono">12</td><td>HOW</td><td>YARA severity + VirusTotal detection count on dropped binaries.</td></tr>
-    <tr><td>MITRE Sophistication</td><td class="mono">12</td><td>HOW</td><td>Kill-chain depth &amp; breadth of distinct ATT&amp;CK techniques.</td></tr>
+    <tr><td>IP Reputation</td><td class="mono">15</td><td>QUI</td><td>AbuseIPDB abuse confidence (with thresholds). Ignored for private IPs.</td></tr>
+    <tr><td>Anonymisation / Evasion</td><td class="mono">10</td><td>QUI</td><td>Tor / VPN / proxy use + datacenter/hosting origin.</td></tr>
+    <tr><td>Threat History</td><td class="mono">8</td><td>QUI</td><td>Prior sessions / repeat offending for this source IP.</td></tr>
+    <tr><td>Intent &amp; Volume</td><td class="mono">10</td><td>QUOI</td><td>Connection volume &amp; velocity; targeted-list signals.</td></tr>
+    <tr><td>Compromise Depth</td><td class="mono">15</td><td>QUOI</td><td>Successful auth, post-access commands, honeytoken access.</td></tr>
+    <tr><td>Exfiltration</td><td class="mono">8</td><td>QUOI</td><td>Credential / sensitive file reads and outbound transfer.</td></tr>
+    <tr><td>Lateral Movement</td><td class="mono">10</td><td>QUOI</td><td>Pivot attempts, multi-honeypot / multi-service activity.</td></tr>
+    <tr><td>Malware</td><td class="mono">12</td><td>COMMENT</td><td>YARA severity + VirusTotal detection count on dropped binaries.</td></tr>
+    <tr><td>MITRE Sophistication</td><td class="mono">12</td><td>COMMENT</td><td>Kill-chain depth &amp; breadth of distinct ATT&amp;CK techniques.</td></tr>
   </table>
 </section>
 
@@ -1013,7 +1013,7 @@
 
   <div class="two-col">
     <div>
-      <h2>3.1 Network identity</h2>
+      <h2>3.1 Network Identity</h2>
       <table class="kv">
         <tr><th>Source IP</th><td class="mono"><code>{{ source_ip }}</code></td></tr>
         <tr><th>Country</th><td>{{ geo_country }}</td></tr>
@@ -1025,7 +1025,7 @@
       </table>
     </div>
     <div>
-      <h2>Session metadata</h2>
+      <h2>Session Metadata</h2>
       <table class="kv">
         <tr><th>Session ID</th><td class="mono"><code>{{ session_id }}</code></td></tr>
         <tr><th>Honeypot</th><td>{{ honeypot_type | default("Cowrie") }}</td></tr>
@@ -1038,7 +1038,7 @@
     </div>
   </div>
 
-  <h2>3.2 WHOIS &#8212; network registry</h2>
+  <h2>3.2 WHOIS &#8212; Network Registry</h2>
   {% if whois_data is defined and whois_data %}
   <table class="kv">
     <tr><th>Network Name</th><td class="mono">{{ whois_data.get('network_name') or 'N/A' }}</td></tr>
@@ -1052,10 +1052,10 @@
     <tr><th>PTR (rDNS)</th><td class="mono">{{ ptr_hostname | default('N/A') or 'N/A' }}</td></tr>
   </table>
   {% else %}
-  <p class="muted">No WHOIS data available for this IP — No information available.</p>
+  <p class="muted">No WHOIS data available for this IP — no information available.</p>
   {% endif %}
 
-  <h2>3.3 IPLocate &#8212; threat classification</h2>
+  <h2>3.3 IPLocate &#8212; Threat Classification</h2>
   {% if iplocate_data is defined and iplocate_data %}
   <div class="pill-grid no-break">
     <div class="pill {% if iplocate_data.is_tor %}danger{% else %}ok{% endif %}"><span class="ind"></span>Tor Exit &middot; {% if iplocate_data.is_tor %}YES{% else %}No{% endif %}</div>
@@ -1071,10 +1071,10 @@
     <tr><th>ASN Type</th><td>{{ iplocate_data.asn_type or 'N/A' }}</td></tr>
   </table>
   {% else %}
-  <p class="muted">No IPLocate enrichment available for this IP — No information available.</p>
+  <p class="muted">No IPLocate enrichment available for this IP — no information available.</p>
   {% endif %}
 
-  <h2>3.4 Shodan InternetDB &#8212; passive scan</h2>
+  <h2>3.4 Shodan InternetDB &#8212; Passive Scan</h2>
   {% if shodan_data is defined and shodan_data %}
   <table class="kv">
     <tr><th>Open Ports</th><td class="mono">{{ shodan_data.ports | join(", ") if shodan_data.ports else "N/A" }}</td></tr>
@@ -1083,7 +1083,7 @@
     <tr><th>Tags</th><td>{{ shodan_data.tags | join(", ") if shodan_data.tags else "N/A" }}</td></tr>
   </table>
   {% else %}
-  <p class="muted">No Shodan InternetDB data available for this IP — No information available.</p>
+  <p class="muted">No Shodan InternetDB data available for this IP — no information available.</p>
   {% endif %}
 </section>
 
@@ -1094,10 +1094,11 @@
     <h1 class="section-title">Attack Timeline</h1>
     <span class="section-tag">~/kill_chain</span>
   </div>
-  <p>Chronological log of key events from the session ({{ event_count }} total).</p>
+  <p>Chronological log of key session events ({{ event_count }} total).</p>
   <div class="timeline">
     {% for ev in timeline_summary | default([]) %}
-    <div class="tl-item{% if ev.severity == 'CRITICAL' %} crit{% elif ev.severity == 'HIGH' %} warn{% elif ev.severity == 'INFO' %} info{% endif %}">
+    {% set ev_sev = ev.severity if ev is mapping and 'severity' in ev else '' %}
+    <div class="tl-item{% if ev_sev == 'CRITICAL' %} crit{% elif ev_sev == 'HIGH' %} warn{% elif ev_sev == 'INFO' %} info{% endif %}">
       <div class="tl-head">
         <span class="tl-ts">{{ ev.timestamp }}</span>
         <span class="tl-type">{{ ev.event_type }}</span>
@@ -1119,7 +1120,7 @@
     <span class="section-tag">~/threat_intel</span>
   </div>
 
-  <h2>5.1 MITRE ATT&amp;CK mapping</h2>
+  <h2>5.1 MITRE ATT&amp;CK Mapping</h2>
   {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
   <table class="tbl-zebra">
     <tr><th style="width:24mm">Technique</th><th style="width:50mm">Name</th><th style="width:38mm">Tactic</th><th>Evidence</th></tr>
@@ -1135,7 +1136,7 @@
   {% endif %}
 
   {# ── Kill Chain progression ─────────────────────────────────────────── #}
-  <h3>Kill Chain progression</h3>
+  <h3>Kill Chain Progression</h3>
   <div class="no-break">
   {% set _kc_labels = kc_stages_labels | default(["Recon","Weapon","Delivery","Exploit","Install","C2","Lateral","Actions"]) %}
   {% set _kc = kc_reached | default(0) %}
@@ -1166,7 +1167,7 @@
   </div>
   {% endif %}
 
-  <h2>5.2 Malware analysis &#8212; YARA &amp; VirusTotal</h2>
+  <h2>5.2 Malware Analysis &#8212; YARA &amp; VirusTotal</h2>
   <h3>YARA</h3>
   {% if yara_matches is defined and yara_matches | length > 0 %}
   <table class="tbl-zebra">
@@ -1174,21 +1175,22 @@
     {% for y in yara_matches %}
     <tr>
       <td><span class="tag tag-yara">{{ y.name if y.name is defined else y }}</span></td>
-      <td><span class="score-badge {% if y.severity == 'CRITICAL' %}score-critical{% elif y.severity == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ y.severity | default("HIGH") }}</span></td>
+      {% set sev = y.severity if y is mapping else 'HIGH' %}
+      <td><span class="score-badge {% if sev == 'CRITICAL' %}score-critical{% elif sev == 'HIGH' %}score-high{% else %}score-medium{% endif %}">{{ sev }}</span></td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
   <div class="callout yellow">
-    <strong>YARA:</strong> No signature matched the current ruleset{% if yara_rules_used is defined %} ({{ yara_rules_used }} rules){% endif %}.
-    This does not rule out known malware &#8212; the ruleset may lack signatures specific to this family.<sup class="ref">2</sup>
+    <strong>YARA :</strong> No signatures matched in the current ruleset{% if yara_rules_used is defined %} ({{ yara_rules_used }} rules){% endif %}.
+    This does not exclude a known malware &#8212; the ruleset may lack signatures specific to this family.<sup class="ref">2</sup>
   </div>
   {% endif %}
 
   {% if dropped_files is defined and dropped_files | length > 0 %}
-  <h3>Captured files</h3>
+  <h3>Captured Files</h3>
   <table>
-    <tr><th>File</th><th>SHA-256</th><th>YARA hits</th><th>VT detections</th></tr>
+    <tr><th>File</th><th>SHA-256</th><th>YARA Hits</th><th>VT Detections</th></tr>
     {% for f in dropped_files %}
     <tr>
       <td class="mono"><code>{{ f.filename }}</code></td>
@@ -1203,7 +1205,7 @@
   <h3>VirusTotal</h3>
   {% if not vt_available %}
   <div class="callout yellow">
-    <strong>&#9888; VirusTotal quota exhausted</strong> &#8212; VT lookup unavailable for this session (free tier &middot; 4 requests/day).
+    <strong>&#9888; VirusTotal Quota Exhausted</strong> &#8212; VT lookup unavailable for this session (free tier &middot; 4 requests/day).
   </div>
   {% elif dropped_files is defined and dropped_files | length > 0 %}
     {% if vt_malicious is defined and vt_malicious > 0 %}
@@ -1214,28 +1216,28 @@
     </div>
     {% else %}
     <div class="callout">
-      <strong>VirusTotal:</strong> No AV engine flagged the captured file ({{ dropped_files | length }} file{{ "s" if dropped_files | length > 1 else "" }} analysed).
+      <strong>VirusTotal :</strong> No AV engine flagged the captured file ({{ dropped_files | length }} file{{ "s" if dropped_files | length > 1 else "" }} analysed).
     </div>
     {% endif %}
   {% else %}
   <div class="callout">
-    <strong>VirusTotal:</strong> No file captured during this session &#8212; SHA-256 hash lookup not applicable.
+    <strong>VirusTotal :</strong> No files captured during this session &#8212; SHA-256 hash lookup not applicable.
   </div>
   {% endif %}
 
-  <h2>5.3 Composite risk score &amp; signal breakdown</h2>
+  <h2>5.3 Composite Risk Score &amp; Signal Breakdown</h2>
 
-  <h3>Honeypots involved in this score</h3>
+  <h3>Honeypots Contributing to This Score</h3>
   {% if honeypots_hit is defined and honeypots_hit | length > 0 %}
   <table class="kv">
-    <tr><th>Honeypots hit</th><td>
+    <tr><th>Targeted Honeypots</th><td>
       {% for hp in honeypots_hit %}<span class="tag">{{ hp | upper }}</span>{% endfor %}
       &middot; <strong>{{ honeypots_hit | length }}</strong> honeypot type(s)
     </td></tr>
-    <tr><th>Sessions correlated</th><td class="mono">{{ sessions_count | default(1) }}</td></tr>
-    <tr><th>Scoring method</th><td>
-      Unified 9-signal model (max 100). Each honeypot contributes evidence to one or
-      more signals: <strong>Cowrie</strong> → compromise &amp; brute force (auth attempts),
+    <tr><th>Correlated Sessions</th><td class="mono">{{ sessions_count | default(1) }}</td></tr>
+    <tr><th>Scoring Method</th><td>
+      9-signal unified model (max 100). Each honeypot contributes evidence to one or
+      more signals: <strong>Cowrie</strong> → compromise &amp; brute-force (auth attempts),
       <strong>Dionaea</strong> → malware (YARA on captured binaries) &amp; automation (connections),
       <strong>Galah</strong> → exploitation patterns &amp; automation (HTTP volume).
     </td></tr>
@@ -1244,7 +1246,7 @@
   <p class="muted">No honeypot session metadata available for breakdown.</p>
   {% endif %}
 
-  <h3>Composite risk score</h3>
+  <h3>Composite Risk Score</h3>
   <div class="score-card no-break {% if risk_score|default(0) >= 80 %}lvl-crit{% elif risk_score|default(0) >= 60 %}lvl-high{% elif risk_score|default(0) >= 40 %}lvl-med{% else %}lvl-low{% endif %}">
     <div class="score-headline">
       <div class="score-num">{{ risk_score }}<span class="score-num-max">/ 100</span></div>
@@ -1253,7 +1255,7 @@
     <div class="score-card-meta">
       <div class="score-meta-row">
         <span class="score-meta-key">Verdict</span>
-        <span class="score-meta-val">{{ verdict | default("Pending analysis") }}</span>
+        <span class="score-meta-val">{{ verdict | default("Analysis pending") }}</span>
       </div>
       <div class="score-meta-row">
         <span class="score-meta-key">Confidence</span>
@@ -1272,7 +1274,7 @@
     </div>
   </div>
 
-  <h3>Signal breakdown</h3>
+  <h3>Signal Breakdown</h3>
   {% if signal_breakdown is defined and signal_breakdown | length > 0 %}
   <div class="signal-list no-break">
     {% for sig in signal_breakdown %}
@@ -1281,13 +1283,13 @@
     <div class="signal-row {{ _lvl }}{% if sig.skipped %} skipped{% endif %}">
       <div class="signal-dot"></div>
       <div class="signal-name">{{ sig.name }}{% if sig.value %}<span class="sub">{{ sig.value }}</span>{% endif %}</div>
-      <div class="signal-pct">{% if sig.skipped %}skipped{% elif sig.max_points and sig.max_points > 0 %}{{ (_ratio * 100) | round }}% utilised{% else %}—{% endif %}</div>
+      <div class="signal-pct">{% if sig.skipped %}skipped{% elif sig.max_points and sig.max_points > 0 %}{{ (_ratio * 100) | round }}% used{% else %}—{% endif %}</div>
       <div class="signal-pts">{% if sig.skipped %}N/A{% else %}{{ sig.points }}<span class="max"> / {{ sig.max_points }}</span>{% endif %}</div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <p class="muted">Signal breakdown not available. See &sect;2.2 for scoring criteria.</p>
+  <p class="muted">Signal Breakdown non disponible. See &sect;2.2 for scoring criteria.</p>
   {% endif %}
 </section>
 
@@ -1300,29 +1302,29 @@
   </div>
 
   <div class="disclaimer">
-    <strong>&#9888; DISCLAIMER &#8212;</strong> The following profile is generated using an exploratory
-    framework inspired by FBI BAU criminological profiling concepts (Ressler &amp; Douglas,
-    1988; Turvey BEA; Canter, 2004), adapted for cyber-threat analysis (Zatyko &amp; Bay,
-    2014).<sup class="ref">4</sup> This profile represents a <em>hypothesis</em> derived from
-    observed session behaviour &#8212; it is <strong>not</strong> a conclusive attribution and
-    should be treated as an analytical aid, not as evidence.
+    <strong>&#9888; WARNING &#8212;</strong> The following profile is generated using an exploratory framework
+    inspired by FBI BAU criminological profiling concepts (Ressler &amp; Douglas,
+    1988; Turvey BEA; Canter, 2004), adapted to cyber-threat analysis (Zatyko &amp; Bay,
+    2014).<sup class="ref">4</sup> This profile represents a <em>hypothesis</em> derived from observed session
+    behaviour &#8212; it is <strong>not</strong> a conclusive attribution and
+    must be treated as an analytical aid, not as evidence.
   </div>
 
   {% if profile is defined and profile %}
   <div class="profile-grid">
     <div class="profile-card">
-      <div class="profile-card-h">Profile summary</div>
+      <div class="profile-card-h">Profile Summary</div>
       <div class="profile-rows">
         <div class="profile-row"><span class="profile-key">Sophistication</span><span class="profile-val">{{ profile.sophistication | default("N/A") }}</span></div>
         <div class="profile-row"><span class="profile-key">Confidence</span><span class="profile-val">{{ profile.confidence | default("N/A") }}%</span></div>
         <div class="profile-row"><span class="profile-key">Objective</span><span class="profile-val">{{ profile.objective | default("N/A") }}</span></div>
-        <div class="profile-row"><span class="profile-key">Organized score</span><span class="profile-val">{{ profile.organized_score | default("N/A") }} <span class="profile-val-max">/ 10</span></span></div>
+        <div class="profile-row"><span class="profile-key">Score d'organisation</span><span class="profile-val">{{ profile.organized_score | default("N/A") }} <span class="profile-val-max">/ 10</span></span></div>
         {% if profile.persistence %}<div class="profile-row"><span class="profile-key">Persistence</span><span class="profile-val">{{ profile.persistence }}</span></div>{% endif %}
-        {% if profile.operator_type %}<div class="profile-row"><span class="profile-key">Operator type</span><span class="profile-val">{{ profile.operator_type }}</span></div>{% endif %}
+        {% if profile.operator_type %}<div class="profile-row"><span class="profile-key">Operator Type</span><span class="profile-val">{{ profile.operator_type }}</span></div>{% endif %}
       </div>
     </div>
     <div class="profile-card">
-      <div class="profile-card-h">Behavioral traits</div>
+      <div class="profile-card-h">Behavioral Traits</div>
       <ul class="profile-traits">
         {% for trait in profile.behavioral_traits | default([]) %}
         <li>{{ trait }}</li>
@@ -1333,13 +1335,13 @@
     </div>
   </div>
   {% if profile.detective_narrative is defined and profile.detective_narrative %}
-  <h2>Analytical narrative</h2>
+  <h2>Analytical Narrative</h2>
   <div class="callout">{{ profile.detective_narrative }}</div>
   {% endif %}
   {% if profile.es_reference_cases is defined and profile.es_reference_cases | length > 0 %}
-  <h2>Similar historical sessions (ES memory)</h2>
+  <h2>Similar Historical Sessions (ES memory)</h2>
   <table class="tbl-zebra">
-    <tr><th>Session</th><th>IP</th><th>Similarity basis</th><th>Date</th></tr>
+    <tr><th>Session</th><th>IP</th><th>Match Basis</th><th>Date</th></tr>
     {% for rc in profile.es_reference_cases[:5] %}
     <tr><td><code>{{ rc.session_id }}</code></td><td><code>{{ rc.ip }}</code></td><td>{{ rc.match_reason }}</td><td>{{ rc.date }}</td></tr>
     {% endfor %}
@@ -1384,14 +1386,14 @@
     <span class="section-tag">~/custody</span>
   </div>
   <p>
-    All evidence artifacts are integrity-protected using SHA-256 hashing.
+    All evidence artefacts are integrity-protected by SHA-256 hashing.
     {% if custody_ok %}Timestamps are anchored via RFC&nbsp;3161 from <code>{{ coc_timestamp_authority }}</code>.<sup class="ref">5</sup>
     {% else %}RFC&nbsp;3161 timestamping is supported but was not executed for this report &#8212; the SHA-256 hashes below are verifiable, but no TSA-signed token is attached.<sup class="ref">5</sup>
     {% endif %}
   </p>
   {% if chain_of_custody is defined and chain_of_custody | length > 0 %}
   <table class="tbl-zebra">
-    <tr><th>Artifact</th><th>SHA-256</th><th>Timestamp</th><th style="width:22mm">TSA</th></tr>
+    <tr><th>Artefact</th><th>SHA-256</th><th>Timestamp</th><th style="width:22mm">TSA</th></tr>
     {% for coc in chain_of_custody %}
     <tr>
       <td>{{ coc.artifact }}</td>
@@ -1414,7 +1416,7 @@
     <span class="section-tag">~/mitigations</span>
   </div>
 
-  <h2>9.1 AI-generated <span style="font-weight:400;color:var(--text3)">(Mistral 7B &middot; Ollama &middot; local)</span></h2>
+  <h2>9.1 AI-Generated <span style="font-weight:400;color:var(--text3)">(Mistral 7B &middot; Ollama &middot; local)</span></h2>
   {% if ollama_recommendations is defined and ollama_recommendations | length > 0 %}
   <table class="tbl-zebra">
     <tr><th style="width:10mm">#</th><th style="width:28mm">Priority</th><th>Action</th><th>Rationale</th></tr>
@@ -1428,10 +1430,10 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="callout yellow">Mistral 7B recommendations not available for this session (Ollama timeout or model unavailable).</div>
+  <div class="callout yellow">Recommendations Mistral 7B non disponibles pour cette session (Ollama timeout or model unavailable).</div>
   {% endif %}
 
-  <h2>9.2 Deterministic rules <span style="font-weight:400;color:var(--text3)">(ForenHive engine)</span></h2>
+  <h2>9.2 Deterministic Rules <span style="font-weight:400;color:var(--text3)">(ForenHive engine)</span></h2>
   {% if recommendations is defined and recommendations | length > 0 %}
   <table class="tbl-zebra">
     <tr><th style="width:10mm">#</th><th style="width:28mm">Priority</th><th>Action</th><th>Rationale</th></tr>
@@ -1445,7 +1447,7 @@
     {% endfor %}
   </table>
   {% else %}
-  <p>No deterministic recommendations generated. Review threat analysis for manual assessment.</p>
+  <p>No deterministic recommendations generated. Consult the threat analysis for manual assessment.</p>
   {% endif %}
 </section>
 
@@ -1457,20 +1459,20 @@
     <span class="section-tag">~/wrap_up</span>
   </div>
   <p>
-    The session <code>{{ session_id }}</code> originating from <code>{{ source_ip }}</code>
+    Session <code>{{ session_id }}</code> from <code>{{ source_ip }}</code>
     ({{ geo_city | default("unknown city") }}, {{ geo_country | default("unknown country") }} ·
-    AS{{ asn | default("?") }}) has been classified as
+    AS{{ asn | default("?") }}) was classified as
     <strong>{{ risk_level | default("INFO") }}</strong>
     with a composite risk score of <strong>{{ risk_score }} / 100</strong>
     {% if risk_confidence is defined and risk_confidence %}(confidence: {{ risk_confidence }}){% endif %}.
     {% if mitre_techniques is defined and mitre_techniques | length > 0 %}
-    The analysis identified <strong>{{ mitre_techniques | length }}</strong> MITRE ATT&amp;CK
-    technique{{ "s" if mitre_techniques | length > 1 else "" }} across the kill-chain
+    The analysis identified <strong>{{ mitre_techniques | length }}</strong> MITRE ATT&amp;CK technique{{ "s" if mitre_techniques | length > 1 else "" }}
+    along the kill-chain
     {% if kc_reached is defined %}(stage {{ kc_reached }}/{{ kc_stages_labels | default(['','','','','','','',''])|length }}){% endif %}.
     {% endif %}
     {% if yara_matches is defined and yara_matches | length > 0 %}
-    YARA flagged <strong>{{ yara_matches | length }}</strong> signature
-    {{ "matches" if yara_matches | length > 1 else "match" }}.
+    YARA flagged <strong>{{ yara_matches | length }}</strong>
+    signature match{{ "es" if yara_matches | length > 1 else "" }}.
     {% endif %}
     {% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %}
     VirusTotal returned <strong>{{ vt_malicious }}/{{ vt_total | default("?") }}</strong> AV detections.
@@ -1480,18 +1482,18 @@
   <p>{{ bottom_line }}</p>
   {% endif %}
   <p>
-    All evidentiary artifacts are integrity-protected by SHA-256 hashing.
-    {% if custody_ok %}A signed RFC&nbsp;3161 timestamp token from <code>{{ coc_timestamp_authority }}</code> is attached.
+    All evidence artefacts are integrity-protected by SHA-256 hashing.
+    {% if custody_ok %}An RFC&nbsp;3161 timestamp token signed by <code>{{ coc_timestamp_authority }}</code> is attached.
     {% else %}RFC&nbsp;3161 timestamping is supported by the platform but was <em>not</em> executed for this report
-    (offline mode or TSA unreachable). Hash chain alone is shown below.
+    (offline mode or TSA unreachable). Only the hash chain is shown below.
     {% endif %}
   </p>
 
   {# ── Integrity certification — honest: SHA-256 real, TSA only if signed ── #}
-  <h2>Integrity certification · evidence hash chain</h2>
+  <h2>Integrity Certification · Evidence Hash Chain</h2>
   <div class="integrity-grid no-break">
     <div class="integrity-card">
-      <div class="integrity-card-h">Log integrity</div>
+      <div class="integrity-card-h">Log Integrity</div>
       <div class="integrity-rows">
         <div class="integrity-row">
           <span class="integrity-key">SHA-256</span>
@@ -1502,12 +1504,12 @@
           <span class="integrity-val">{% if chain_of_custody is defined and chain_of_custody | length > 0 %}{{ chain_of_custody[0].artifact }}{% else %}Session JSON snapshot{% endif %}</span>
         </div>
         <div class="integrity-row">
-          <span class="integrity-key">Session start</span>
+          <span class="integrity-key">Session Start</span>
           <span class="integrity-val mono">{% if chain_of_custody is defined and chain_of_custody | length > 0 %}{{ chain_of_custody[0].timestamp }}{% else %}{{ generated_at }}{% endif %}</span>
         </div>
         {% if custody_ok %}
         <div class="integrity-row">
-          <span class="integrity-key">RFC 3161 TSA</span>
+          <span class="integrity-key">TSA RFC 3161</span>
           <span class="integrity-val">{{ coc_timestamp_authority }} &middot; signed token attached</span>
         </div>
         {% endif %}
@@ -1518,26 +1520,26 @@
     </div>
 
     <div class="integrity-card">
-      <div class="integrity-card-h">Report PDF integrity</div>
+      <div class="integrity-card-h">Report PDF Integrity</div>
       <div class="integrity-rows">
         <div class="integrity-row">
           <span class="integrity-key">Report ID</span>
           <span class="integrity-val mono">{{ report_id }}</span>
         </div>
         <div class="integrity-row">
-          <span class="integrity-key">Generated</span>
+          <span class="integrity-key">Generated on</span>
           <span class="integrity-val mono">{{ generated_at }}</span>
         </div>
         <div class="integrity-row">
-          <span class="integrity-key">Renderer</span>
+          <span class="integrity-key">Render Engine</span>
           <span class="integrity-val">WeasyPrint &middot; ForenHive Engine v{{ engine_version | default("1.0") }}</span>
         </div>
         <div class="integrity-row">
           <span class="integrity-key">PDF SHA-256</span>
-          <span class="integrity-val mono">attached as <code>X-PDF-SHA256</code> response header</span>
+          <span class="integrity-val mono">attached as response header <code>X-PDF-SHA256</code></span>
         </div>
       </div>
-      <div class="integrity-foot">✓&nbsp; Tamper-resistant · post-generation SHA-256 attached</div>
+      <div class="integrity-foot">✓&nbsp; Immutable · post-generation SHA-256 attached</div>
     </div>
   </div>
 </section>
@@ -1550,11 +1552,11 @@
     <span class="section-tag">~/refs</span>
   </div>
   <ol class="ref-list">
-    <li>AbuseIPDB. &#8220;IP Address Lookup &#8212; {{ source_ip }}.&#8221; <em>abuseipdb.com/check/{{ source_ip }}</em>. Accessed {{ generated_at[:10] | default("2026") }}.</li>
-    <li>{% if malware_family is defined and malware_family %}Malware family classification &#8212; <strong>{{ malware_family }}</strong>. Derived from YARA ruleset{% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %} and VirusTotal multi-engine detections ({{ vt_malicious }}/{{ vt_total | default("?") }}){% endif %}.{% else %}Malware triage methodology &#8212; YARA signature scanning &amp; VirusTotal v3 SHA-256 hash lookup. No known family matched for this session.{% endif %}</li>
+    <li>AbuseIPDB. &#8220;IP Address Check &#8212; {{ source_ip }}.&#8221; <em>abuseipdb.com/check/{{ source_ip }}</em>. Accessed {{ generated_at[:10] | default("2026") }}.</li>
+    <li>{% if malware_family is defined and malware_family %}Malware family classification &#8212; <strong>{{ malware_family }}</strong>. Derived from YARA ruleset{% if vt_malicious is defined and vt_malicious is not none and vt_malicious > 0 %} and VirusTotal multi-engine detections ({{ vt_malicious }}/{{ vt_total | default("?") }}){% endif %}.{% else %}Methodology de triage de malware &#8212; analyse de signatures YARA &amp; recherche par hash SHA-256 VirusTotal v3. No known family identified for this session.{% endif %}</li>
     <li>MITRE ATT&amp;CK. &#8220;Enterprise Techniques.&#8221; <em>attack.mitre.org/techniques/enterprise</em>. {% for t in mitre_techniques | default([]) %}{{ t.tid }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
     <li>Zatyko, K. &amp; Bay, J. (2014). Turvey, B. (2011). <em>Criminal Profiling: BEA</em>. Ressler &amp; Douglas (1988). Canter, D. (2004).</li>
-    <li>FreeTSA. &#8220;RFC 3161 Time-Stamp Authority.&#8221; <em>freetsa.org</em>.</li>
+    <li>FreeTSA. &#8220;RFC 3161 Timestamp Authority.&#8221; <em>freetsa.org</em>.</li>
     {% for ref in extra_references | default([]) %}
     <li>{{ ref }}</li>
     {% endfor %}

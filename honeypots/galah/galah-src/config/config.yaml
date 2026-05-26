@@ -36,3 +36,4 @@ ports:
     protocol: HTTP
   - port: 8888
     protocol: HTTP
+

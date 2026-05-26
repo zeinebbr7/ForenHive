@@ -284,6 +284,49 @@ def _mitre_lookup(tech_id: str):
     return _MITRE_DB.get(parent, (tech_id, "Unknown"))
 
 
+# Mirrors risk_score._TACTIC_OF — kept local so reports.py has no engine dep.
+_MITRE_TACTIC_OF: dict[str, str] = {
+    "T1110.001": "credential_access",
+    "T1110.003": "credential_access",
+    "T1078": "initial_access",
+    "T1059.004": "execution",
+    "T1105": "command_and_control",
+    "T1552.001": "credential_access",
+    "T1210": "lateral_movement",
+    "T1190": "initial_access",
+    "T1595.002": "reconnaissance",
+    "T1046": "discovery",
+    "T1021.002": "lateral_movement",
+    "T1486": "impact",
+    "T1496": "impact",
+    "T1071.001": "command_and_control",
+    "T1592": "reconnaissance",
+}
+
+
+def _compute_mitre_signal(tech_ids: list, kill_chain_stage: int) -> dict:
+    """Recompute the mitre_sophistication signal from stored technique IDs.
+
+    Used to patch a stale signal_breakdown where the MITRE field was scored
+    before mitre_techniques was populated (produces 0/12 even when techniques
+    exist in the same DB row).
+    """
+    unique = sorted({str(t) for t in tech_ids if t})
+    stage = max(0, int(kill_chain_stage or 0))
+    tech_pts = min(6, len(unique))
+    stage_pts = min(4, stage // 2)
+    tactics = {_MITRE_TACTIC_OF.get(t) for t in unique} - {None}
+    tactic_pts = min(2, max(0, len(tactics) - 1))
+    pts = min(12, tech_pts + stage_pts + tactic_pts)
+    return {
+        "points": pts,
+        "max_points": 12,
+        "detail": f"{len(unique)} technique(s), {len(tactics)} tactic(s), stage {stage}",
+        "skipped": False,
+        "skip_reason": None,
+    }
+
+
 _SIGNAL_META = {
     # ── WHO (33 pts) ──
     "reputation": {
@@ -336,8 +379,18 @@ _SIGNAL_META = {
 }
 
 
-def _build_score_signals_from_breakdown(breakdown: dict) -> list[dict]:
-    """Build §07 signal list from the v2.0.0 9-signal JSONB stored by RiskScorer."""
+def _build_score_signals_from_breakdown(
+    breakdown: dict,
+    mitre_techniques: list | None = None,
+    kill_chain_stage: int = 0,
+) -> list[dict]:
+    """Build §07 signal list from the v2.0.0 9-signal JSONB stored by RiskScorer.
+
+    If the stored mitre_sophistication signal is 0/12 but the caller supplies
+    non-empty mitre_techniques, the signal is recomputed on-the-fly so the
+    report stays self-consistent (handles stale DB rows scored before MITRE
+    mapping was wired into the scorer).
+    """
     signals = []
     order = [
         # WHO
@@ -357,6 +410,16 @@ def _build_score_signals_from_breakdown(breakdown: dict) -> list[dict]:
         sig = breakdown.get(key)
         if sig is None:
             continue
+
+        # Patch stale MITRE signal: stored 0/12 but techniques are available.
+        if (
+            key == "mitre_sophistication"
+            and int(sig.get("points", 0)) == 0
+            and not sig.get("skipped")
+            and mitre_techniques
+        ):
+            sig = {**sig, **_compute_mitre_signal(mitre_techniques, kill_chain_stage)}
+
         meta = _SIGNAL_META.get(key, {"name": key, "source": "ForenHive", "why": ""})
         detail_txt = sig.get("detail") or ""
         skipped = bool(sig.get("skipped"))
@@ -1614,16 +1677,33 @@ async def _build_forensic_context(session_id: str) -> dict:
                         irs_risk_score = int(irs_row["risk_score"])
         except Exception:
             pass
+    # Extract mitre_techniques as plain strings for the MITRE signal patch.
+    _raw_mitre = pg_row.get("mitre_techniques") or []
+    _mitre_ids_for_patch = [
+        t if isinstance(t, str) else (t.get("id") or "")
+        for t in _raw_mitre
+        if t
+    ]
+    _kc_stage_for_patch = int(pg_row.get("kill_chain_stage") or 0)
+
     if sb:
-        score_signals = _build_score_signals_from_breakdown(sb)
+        score_signals = _build_score_signals_from_breakdown(
+            sb, _mitre_ids_for_patch, _kc_stage_for_patch
+        )
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
+
+    # If the MITRE signal was patched (stale DB breakdown), recompute the score
+    # from the patched signals so the headline is self-consistent with §5.3.
+    patched_score = min(100, sum(s["points"] for s in score_signals)) if score_signals else None
 
     # Pick the highest meaningful score across every authoritative source for
     # this IP, so the report headline matches the Profiling page exactly.
     sp_score = profile_dict.get("suspect_profile_risk_score")
     score_candidates = [
-        s for s in (irs_risk_score, session_score, max_sess_score, sp_score) if s is not None
+        s
+        for s in (irs_risk_score, session_score, max_sess_score, sp_score, patched_score)
+        if s is not None
     ]
     if score_candidates:
         risk_score = max(score_candidates)

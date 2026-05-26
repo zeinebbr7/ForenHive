@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -9,6 +11,9 @@ from config import get_settings
 
 from services.alert_engine import get_alert_engine
 from services.elasticsearch import get_es
+
+# Minimum seconds between event-driven engine triggers during a sustained attack
+_ENGINE_TRIGGER_COOLDOWN_SEC = 300
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +31,7 @@ class AlertWatcher:
         self.settings = get_settings()
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
+        self._last_engine_trigger: float = 0.0
 
     async def start(self) -> None:
         if not self.settings.alert_watcher_enabled:
@@ -174,6 +180,19 @@ class AlertWatcher:
 
         if last_ts and last_ts != watermark:
             await self._set_watermark(last_ts)
+
+        # Event-driven forensic engine trigger: if new attack events were found
+        # and the cooldown has elapsed, kick off an immediate engine run.
+        now = time.monotonic()
+        if now - self._last_engine_trigger >= _ENGINE_TRIGGER_COOLDOWN_SEC:
+            self._last_engine_trigger = now
+            from services import forensic_runner
+            threading.Thread(
+                target=forensic_runner.run_forensic_engine,
+                daemon=True,
+                name="forensic-engine-on-attack",
+            ).start()
+            log.info("attack events detected — forensic engine triggered immediately")
 
     async def _loop(self) -> None:
         interval = max(5, self.settings.alert_watcher_interval_seconds)

@@ -30,7 +30,7 @@ export const NAV_GROUPS = [
   { label: 'Forensic Analysis', items: [
     { id: 'timeline',       label: 'Timeline',              icon: '', sub: 'Live stream · auto-refresh every 5 s · charts in real-time', roles: ['admin','analyst'] },
     { id: 'reconstruction', label: 'Attack Reconstruction', icon: '', sub: 'Step-by-step kill-chain reconstruction per session', roles: ['admin','analyst'] },
-    { id: 'evidence',       label: 'Evidence Logs',         icon: '', sub: 'Raw honeypot logs · filter by sensor · SHA-256 verification', roles: ['admin','analyst'] },
+    { id: 'evidence',       label: 'Evidence Logs',         icon: '', sub: 'Raw honeypot logs · filter by sensor · SHA-256 verification', roles: ['admin'] },
     { id: 'profiling',      label: 'Profiling',             icon: '', sub: 'FBI methodology applied to cyber attacker behavioral analysis · LLM-powered', roles: ['admin','analyst'] },
   ]},
   { label: 'Threat Intelligence', items: [
