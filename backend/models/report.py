@@ -93,6 +93,10 @@ class AttackerProfile(BaseModel):
     yara_matches: List[str] = []
     ioc_hashes: List[str] = []
     risk_score: int = 0
+    risk_level: Optional[str] = None
+    confidence: Optional[str] = None
+    signal_breakdown: Optional[Dict[str, Any]] = None
+    risk_source: Optional[str] = None  # "forensic_sessions" | "ip_risk_scores" | "legacy"
     mistral_analysis: Optional[str] = None
     top_usernames: List[str] = []
     top_passwords: List[str] = []

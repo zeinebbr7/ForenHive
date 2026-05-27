@@ -1007,31 +1007,42 @@
     const sb = p.signal_breakdown;
     if (!sb || typeof sb !== 'object') return '';
     const SIGNALS = [
-      { key:'reputation',      label:'Reputation',     color:'var(--red2)'       },
-      { key:'compromise',      label:'Compromise',     color:'var(--accent-gold)' },
-      { key:'brute_force',     label:'Brute Force',    color:'var(--yellow)'     },
-      { key:'malware',         label:'Malware',        color:'var(--red2)'       },
-      { key:'anonymization',   label:'Anonymization',  color:'var(--purple2)'    },
-      { key:'sophistication',  label:'Sophistication', color:'var(--blue2)'      },
+      { key:'reputation',           label:'IP Reputation (AbuseIPDB)',                                  color:'var(--red2)'        },
+      { key:'anonymization',        label:'Anonymisation / Evasion (Tor / VPN / Bogon)',                color:'var(--purple2)'     },
+      { key:'threat_history',       label:'Threat History (Recidivism + Geo)',                          color:'var(--blue2)'       },
+      { key:'intent_volume',        label:'Intent & Volume (Effort + Recon)',                           color:'var(--blue2)'       },
+      { key:'compromise_depth',     label:'Compromise Depth (Auth + Commands + Files)',                 color:'var(--red2)'        },
+      { key:'exfiltration',         label:'Exfiltration (Egress Volume)',                               color:'var(--red2)'        },
+      { key:'lateral_movement',     label:'Lateral Movement (CVE + SMB + Multi-HP + Critical Ports)',   color:'var(--red2)'        },
+      { key:'malware',              label:'Malware Detected (YARA / VirusTotal)',                       color:'var(--accent-gold)' },
+      { key:'mitre_sophistication', label:'MITRE Sophistication (TTP Breadth)',                         color:'var(--red2)'        },
     ].filter(s => sb[s.key] != null);
     if (!SIGNALS.length) return '';
-    const total = SIGNALS.reduce((acc,s)=>acc+(Number(sb[s.key])||0),0);
+    const valOf = s => {
+      const v = sb[s.key];
+      return typeof v === 'object' ? (Number(v.points)||0) : (Number(v)||0);
+    };
+    const maxOf = s => {
+      const v = sb[s.key];
+      return typeof v === 'object' && v.max ? Number(v.max) : null;
+    };
+    const total = SIGNALS.reduce((acc,s)=>acc+valOf(s),0);
     return `
       <div class="dos-card">
         <div class="dos-sec">
           <div class="dos-sec-hdr">
             <span class="dos-sec-icon">◫</span>
             <span class="dos-sec-title">Risk Signal Breakdown</span>
-            <span class="dos-sec-sub">6-signal model · total ${total}/100</span>
+            <span class="dos-sec-sub">9-signal model · total ${total}/100</span>
           </div>
           ${SIGNALS.map(s => {
-            const val = Number(sb[s.key])||0;
-            const max = 30;
+            const val = valOf(s);
+            const max = maxOf(s) || 15;
             const pct = Math.min(100, val/max*100);
             return `<div class="dos-signal-row">
               <span class="dos-signal-label">${s.label}</span>
               <div class="dos-signal-track"><div class="dos-signal-fill" style="width:${pct.toFixed(1)}%;background:${s.color}"></div></div>
-              <span class="dos-signal-val" style="color:${s.color}">${val}</span>
+              <span class="dos-signal-val" style="color:${s.color}">${val}/${max}</span>
             </div>`;
           }).join('')}
         </div>

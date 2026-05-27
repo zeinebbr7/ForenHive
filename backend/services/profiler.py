@@ -1,15 +1,76 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Optional
 
+from sqlalchemy import text
+
+from db import session_scope
 from models.report import AttackerProfile
 
-from services.alert_engine import RiskScorer
+from services.alert_engine import RiskScorer as _LegacyRiskScorer
 from services.elasticsearch import get_es
 from services.enrichment import get_enrichment
 from services.ollama_service import get_ollama
+
+log = logging.getLogger("profiler")
+
+
+async def _unified_risk_for_ip(ip: str) -> Optional[dict]:
+    """
+    Read the 9-signal risk score for an IP from PostgreSQL.
+
+    Lookup order (same source the PDF report uses, so the score on the
+    platform always matches the PDF):
+      1. ip_risk_scores  — per-IP aggregate over the sliding window
+      2. forensic_sessions — most recent session for this IP (snapshot)
+
+    Returns None if no row is found (engine has never scored this IP yet).
+    """
+    try:
+        async with session_scope() as db:
+            row = (await db.execute(
+                text("""
+                    SELECT risk_score, risk_level, confidence, signal_breakdown
+                    FROM ip_risk_scores
+                    WHERE source_ip = CAST(:ip AS INET)
+                    LIMIT 1
+                """),
+                {"ip": ip},
+            )).mappings().first()
+            if row and row["risk_score"] is not None:
+                return {
+                    "risk_score":       int(row["risk_score"]),
+                    "risk_level":       row["risk_level"],
+                    "confidence":       row["confidence"],
+                    "signal_breakdown": row["signal_breakdown"],
+                    "risk_source":      "ip_risk_scores",
+                }
+
+            row = (await db.execute(
+                text("""
+                    SELECT risk_score, risk_level, confidence, signal_breakdown
+                    FROM forensic_sessions
+                    WHERE source_ip = :ip
+                      AND honeypot_type != 'unified'
+                    ORDER BY risk_score DESC NULLS LAST, started_at DESC
+                    LIMIT 1
+                """),
+                {"ip": ip},
+            )).mappings().first()
+            if row and row["risk_score"] is not None:
+                return {
+                    "risk_score":       int(row["risk_score"]),
+                    "risk_level":       row["risk_level"],
+                    "confidence":       row["confidence"],
+                    "signal_breakdown": row["signal_breakdown"],
+                    "risk_source":      "forensic_sessions",
+                }
+    except Exception as e:
+        log.warning(f"_unified_risk_for_ip({ip}) failed: {e}")
+    return None
 
 
 async def build_profile(ip: str) -> AttackerProfile:
@@ -86,35 +147,53 @@ async def build_profile(ip: str) -> AttackerProfile:
     top_commands = [c for c, _ in Counter(commands_all).most_common(10)]
     top_usernames = [u for u, _ in Counter(usernames_all).most_common(10)]
 
-    risk_score, _breakdown = RiskScorer.score(
-        {
-            "failed_auth_count": sum(
-                1
-                for e in events
-                if e.get("eventid") == "cowrie.login.failed"
-                or (e.get("event") or {}).get("id") == "cowrie.login.failed"
-            ),
-            "is_tor": bool(iplocate.get("is_tor") or abuseipdb.get("is_tor")),
-            "abuseipdb_score": abuseipdb.get("abuseipdb_score"),
-            "yara_match": yara_matches[0] if yara_matches else None,
-            "mitre_techniques": list(set(mitre)),
-            "country_iso": country_iso,
-            "new_ip": False,
-            "payload": " ".join(top_commands),
-            "commands": top_commands,
-            "http_path": next(
-                (
-                    e.get("url", {}).get("path") if isinstance(e.get("url"), dict) else None
+    # Single source of truth for the displayed risk score: the forensic engine's
+    # 9-signal output stored in PostgreSQL (ip_risk_scores → forensic_sessions).
+    # The legacy 18-signal alert_engine.RiskScorer is only used as a last-resort
+    # fallback when the engine has never scored this IP yet.
+    unified = await _unified_risk_for_ip(ip)
+    if unified:
+        risk_score       = unified["risk_score"]
+        risk_level       = unified["risk_level"]
+        risk_confidence  = unified["confidence"]
+        signal_breakdown = unified["signal_breakdown"]
+        risk_source      = unified["risk_source"]
+    else:
+        legacy_score, legacy_breakdown = _LegacyRiskScorer.score(
+            {
+                "failed_auth_count": sum(
+                    1
                     for e in events
+                    if e.get("eventid") == "cowrie.login.failed"
+                    or (e.get("event") or {}).get("id") == "cowrie.login.failed"
                 ),
-                None,
-            ),
-            "unique_dest_ports": len(dest_ports),
-            "command_count": len(commands_all),
-            "download_attempt": bool(downloads),
-            "session_duration_seconds": 0,
-        }
-    )
+                "is_tor": bool(iplocate.get("is_tor") or abuseipdb.get("is_tor")),
+                "abuseipdb_score": abuseipdb.get("abuseipdb_score"),
+                "yara_match": yara_matches[0] if yara_matches else None,
+                "mitre_techniques": list(set(mitre)),
+                "country_iso": country_iso,
+                "new_ip": False,
+                "payload": " ".join(top_commands),
+                "commands": top_commands,
+                "http_path": next(
+                    (
+                        e.get("url", {}).get("path") if isinstance(e.get("url"), dict) else None
+                        for e in events
+                    ),
+                    None,
+                ),
+                "unique_dest_ports": len(dest_ports),
+                "command_count": len(commands_all),
+                "download_attempt": bool(downloads),
+                "session_duration_seconds": 0,
+            }
+        )
+        risk_score       = legacy_score
+        risk_level       = None
+        risk_confidence  = None
+        signal_breakdown = None
+        risk_source      = "legacy"
+        log.info(f"build_profile({ip}): no engine score yet — using legacy estimate {legacy_score}/100")
 
     profile = AttackerProfile(
         ip=ip,
@@ -140,6 +219,10 @@ async def build_profile(ip: str) -> AttackerProfile:
         yara_matches=sorted(set(yara_matches)),
         ioc_hashes=sorted(set(ioc_hashes)),
         risk_score=risk_score,
+        risk_level=risk_level,
+        confidence=risk_confidence,
+        signal_breakdown=signal_breakdown,
+        risk_source=risk_source,
         top_usernames=top_usernames,
         top_passwords=_list("passwords"),
         top_commands=top_commands,

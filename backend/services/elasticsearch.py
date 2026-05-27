@@ -18,6 +18,82 @@ from models.attack import (
 log = logging.getLogger(__name__)
 
 
+async def _apply_unified_scores(rows: list[dict[str, Any]]) -> None:
+    """
+    Overwrite each row's risk_score/severity with the forensic engine's
+    9-signal score (ip_risk_scores) when available — ensures the dashboard
+    listing, profile detail page and PDF report all show the same number.
+    Rows without an engine score keep their ES-derived value.
+    """
+    if not rows:
+        return
+    ips = [r["source_ip"] for r in rows if r.get("source_ip")]
+    if not ips:
+        return
+    # Local import: avoid a top-level dependency on db.py for ES bootstrap.
+    try:
+        from db import session_scope
+        from sqlalchemy import text
+    except Exception:
+        return
+
+    lookup: dict[str, dict[str, Any]] = {}
+    try:
+        async with session_scope() as db:
+            # CAST each element so source_ip (INET) compares with the text list.
+            res = await db.execute(
+                text("""
+                    SELECT host(source_ip) AS ip, risk_score, risk_level
+                    FROM ip_risk_scores
+                    WHERE source_ip = ANY(CAST(:ips AS INET[]))
+                """),
+                {"ips": ips},
+            )
+            for m in res.mappings().all():
+                lookup[m["ip"]] = {
+                    "risk_score": int(m["risk_score"]) if m["risk_score"] is not None else None,
+                    "risk_level": m["risk_level"],
+                }
+            # Second-pass fallback: forensic_sessions (highest score per IP)
+            missing = [ip for ip in ips if ip not in lookup]
+            if missing:
+                res2 = await db.execute(
+                    text("""
+                        SELECT DISTINCT ON (source_ip)
+                               source_ip AS ip, risk_score, risk_level
+                        FROM forensic_sessions
+                        WHERE source_ip = ANY(:ips)
+                          AND honeypot_type != 'unified'
+                        ORDER BY source_ip, risk_score DESC NULLS LAST, started_at DESC
+                    """),
+                    {"ips": missing},
+                )
+                for m in res2.mappings().all():
+                    if m["risk_score"] is None:
+                        continue
+                    lookup[m["ip"]] = {
+                        "risk_score": int(m["risk_score"]),
+                        "risk_level": m["risk_level"],
+                    }
+    except Exception as e:
+        log.warning(f"_apply_unified_scores failed: {e}")
+        return
+
+    for r in rows:
+        u = lookup.get(r.get("source_ip"))
+        if not u or u["risk_score"] is None:
+            continue
+        score = u["risk_score"]
+        r["risk_score"] = score
+        r["severity"] = u["risk_level"] or (
+            "CRITICAL" if score >= 80
+            else "HIGH" if score >= 60
+            else "MEDIUM" if score >= 40
+            else "LOW" if score >= 20
+            else "INFO"
+        )
+
+
 class ESClient:
     _instance: ESClient | None = None
 
@@ -481,6 +557,11 @@ class ESClient:
                     "last_seen": b["last_seen"].get("value_as_string"),
                 }
             )
+
+        # Override risk_score / severity with the unified 9-signal score from
+        # PostgreSQL whenever the forensic engine has scored the IP. Keeps the
+        # listing, the profile detail page and the PDF report in lockstep.
+        await _apply_unified_scores(out)
         return out
 
     async def stats_for_ips(self, ips: list[str]) -> dict[str, dict[str, Any]]:
