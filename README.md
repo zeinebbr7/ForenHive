@@ -31,9 +31,14 @@ comportementale par LLM local (Mistral 7B), sans dépendance LLM externe.
 │  MITRE ATT&CK hybride │ Suspect Profiler (Mistral 7B)   │
 │  Chaîne de Custody SHA-256 / RFC 3161                   │
 ├─────────────────────────────────────────────────────────┤
-│  C4 — BACKEND + SPA + REPORTING                         │
-│  FastAPI (13 routers) │ SPA HTML/JS │ Ollama:11434      │
-│  PDF WeasyPrint (bilingue FR/EN) │ Export STIX 2.1      │
+│  C4 — BACKEND                                           │
+│  FastAPI (12 routers) │ PDF WeasyPrint (FR/EN)           │
+│  Export STIX 2.1 │ Alertes e-mail + Twilio              │
+│  Ollama:11434 (chat + profiling LLM)                    │
+├─────────────────────────────────────────────────────────┤
+│  C5 — FRONTEND                                          │
+│  SPA React/Vite (18 pages) │ i18n FR/EN │ JWT Bearer    │
+│  Nginx:3000                                             │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -44,7 +49,8 @@ comportementale par LLM local (Mistral 7B), sans dépendance LLM externe.
 | S1 | Honeypots (Cowrie, Dionaea, Galah, Zeek) | ✅ |
 | S2 | Pipeline ETL (Filebeat → Logstash → Elasticsearch) | ✅ |
 | S3 | Forensic Engine (enrichissement, YARA, MITRE, scoring, profiling, CoC) | ✅ |
-| S4 | Backend FastAPI + SPA + Reporting PDF + STIX | ✅ |
+| S4 | Backend FastAPI (12 routers, PDF WeasyPrint, Export STIX 2.1, alertes) | ✅ |
+| S5 | Frontend SPA React/Vite (18 pages, i18n FR/EN, JWT, Nginx) | ✅ |
 
 ## Prérequis
 
@@ -105,11 +111,10 @@ forenhive/
 
 ```
 zeineb/* ──┐
-           ├──► develop ──► main
-ismail/* ──┘
+ismail/* ──┴──► main
 ```
 
-Toujours brancher depuis `develop`, jamais commit direct sur `main`.
+Tous les sprints sont terminés et mergés sur `main`.
 
 ## Documentation
 
@@ -117,7 +122,6 @@ Toujours brancher depuis `develop`, jamais commit direct sur `main`.
 - [Guide de déploiement](docs/deployment.md)
 - [Forensic Engine — modules, signaux, Suspect Profiler](docs/forensic-engine.md)
 - [API REST — endpoints](docs/api.md)
-- [CHANGELOG](docs/CHANGELOG.md)
 
 ## Équipe
 

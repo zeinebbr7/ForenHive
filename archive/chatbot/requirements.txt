@@ -1,5 +1,0 @@
-groq
-elasticsearch
-psycopg2-binary
-rich
-requests
