@@ -25,6 +25,15 @@ Given the attacker metadata below, produce a concise 2-3 sentence
 assessment of the likely threat actor, their sophistication level,
 and the probable intent. Do not invent facts.
 
+STRICT GROUNDING — only state what the metadata shows:
+  - If "Top usernames tried" is "none", do NOT mention usernames, credentials,
+    passwords, or login attempts at all.
+  - If "Top commands observed" is "none", do NOT mention commands or shell access.
+  - If MITRE techniques and YARA matches are both "none", do NOT claim malware,
+    exploitation, post-exploitation, or compromise — describe it as scanning or
+    reconnaissance only.
+  - Never assert a specific country/origin other than the Country field below.
+
 IP: {ip}
 Country: {country} ({country_iso})
 ASN: {asn} — {as_org}
@@ -42,9 +51,17 @@ Assessment:"""
 _RECOMMENDATIONS_PROMPT = """\
 You are a senior SOC analyst. Based on the attack data below, output exactly 3 to 5 actionable \
 defensive recommendations as a JSON array. Each item must have exactly these three fields:
-  "priority": one of IMMEDIATE, HIGH, or MEDIUM
+  "priority": one of IMMEDIATE, HIGH, MEDIUM, or LOW
   "action": a concise imperative sentence (max 20 words)
   "rationale": one sentence explaining why (max 20 words)
+
+GROUNDING RULES (mandatory — stay faithful to the evidence):
+  - Calibrate priority to the risk level: CRITICAL→up to IMMEDIATE, HIGH→up to HIGH,
+    MEDIUM→up to MEDIUM, LOW/INFO→MEDIUM or LOW only (never HIGH/IMMEDIATE).
+  - Do NOT claim or imply compromise, post-exploitation, lateral movement, data
+    exfiltration, or malware UNLESS auth success is true OR commands were observed
+    OR YARA matched. With none of those, treat it as reconnaissance/scanning only.
+  - Every rationale must be supported by a field below; do not invent activity.
 
 Output ONLY the JSON array — no markdown, no explanation, no extra text.
 
@@ -175,7 +192,13 @@ class OllamaService:
         if use_cache:
             cached = await self._get_cached_recs(ip)
             if cached:
-                return cached
+                # Re-ground even cached recs against the current evidence so an
+                # old over-stated rec (e.g. HIGH "post-exploitation" on a 0/INFO
+                # session) can never slip through.
+                return self._ground_recs(
+                    cached, risk_level=risk_level, auth_success=auth_success,
+                    commands=commands, yara=yara, ip=ip,
+                )
 
         prompt = _RECOMMENDATIONS_PROMPT.format(
             ip=ip,
@@ -213,14 +236,58 @@ class OllamaService:
         if not recs:
             recs = [
                 {
-                    "priority": "HIGH",
-                    "action": f"Block {ip} at perimeter firewall.",
-                    "rationale": "Ollama unavailable — fallback recommendation.",
+                    "priority": "MEDIUM",
+                    "action": f"Monitor and log activity from {ip}.",
+                    "rationale": "Ollama unavailable — conservative fallback recommendation.",
                 }
             ]
 
+        recs = self._ground_recs(
+            recs, risk_level=risk_level, auth_success=auth_success,
+            commands=commands, yara=yara, ip=ip,
+        )
         await self._store_cached_recs(ip, recs)
         return recs
+
+    # Priority ranking + per-risk-level caps (mirror risk_thresholds bands).
+    _PRIO_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "IMMEDIATE": 3}
+    _LEVEL_CAP = {
+        "INFO": "LOW", "LOW": "MEDIUM", "MEDIUM": "HIGH",
+        "HIGH": "IMMEDIATE", "CRITICAL": "IMMEDIATE",
+    }
+    _COMPROMISE_TERMS = (
+        "post-exploit", "post exploit", "compromis", "lateral", "exfiltrat",
+        "data theft", "breach", "backdoor", "c2", "command-and-control",
+    )
+
+    def _ground_recs(
+        self, recs: list[dict], *, risk_level: str, auth_success: bool,
+        commands: list[str] | None, yara: list[str] | None, ip: str,
+    ) -> list[dict]:
+        """Deterministically constrain LLM recs to the evidence: cap priority to the
+        risk level and drop recommendations that assert compromise when none occurred."""
+        cap = self._LEVEL_CAP.get((risk_level or "INFO").upper(), "IMMEDIATE")
+        cap_rank = self._PRIO_RANK[cap]
+        has_activity = bool(auth_success) or bool(commands) or bool(yara)
+        out: list[dict] = []
+        for r in recs:
+            prio = str(r.get("priority", "MEDIUM")).upper()
+            if self._PRIO_RANK.get(prio, 1) > cap_rank:
+                prio = cap
+            action = str(r.get("action", ""))
+            rationale = str(r.get("rationale", ""))
+            if not has_activity and any(
+                t in (action + " " + rationale).lower() for t in self._COMPROMISE_TERMS
+            ):
+                continue  # no successful auth / commands / YARA → drop compromise claim
+            out.append({"priority": prio, "action": action, "rationale": rationale})
+        if not out:
+            out = [{
+                "priority": cap,
+                "action": f"Monitor and log activity from {ip}; no compromise observed.",
+                "rationale": "Reconnaissance/scanning only — no auth success, commands, or malware.",
+            }]
+        return out
 
     async def analyze_profile(self, profile: dict[str, Any], *, use_cache: bool = True) -> str:
         ip = profile.get("ip", "")

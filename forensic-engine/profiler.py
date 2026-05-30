@@ -600,9 +600,16 @@ class AttackerProfiler:
             f"{section3}\n"
             f"## SIMILAR PAST CASES (for comparison)\n\n"
             f"{section4}\n"
+            f"GROUNDING RULES (mandatory):\n"
+            f"- Use ONLY the facts in the evidence above. Do NOT invent or guess the IP "
+            f"address, country, city, or organization.\n"
+            f"- The <country>/<organization>/<asn> in the evidence are authoritative; any "
+            f"origin you mention MUST match them exactly.\n"
+            f"- Treat attribution as a HYPOTHESIS, never as established fact; do not assert a "
+            f"nationality the evidence does not support.\n"
             f"Now analyze this attacker profile and output ONLY the JSON object.\n"
-            f"JSON schema:\n"
-            f'{{"source_ip": "string", "sophistication": "amateur|intermediate|expert|unknown", '
+            f"JSON schema (do NOT include source_ip — it is set by the engine):\n"
+            f'{{"sophistication": "amateur|intermediate|expert|unknown", '
             f'"confidence": 0.0-1.0, "primary_objective": "string", "secondary_objective": "string|null", '
             f'"behavioral_traits": ["..."], "organized_score": 0.0-1.0, "disguise_used": true/false, '
             f'"disguise_type": "tor|vpn|proxy|none", "escalation_detected": true/false, '
@@ -633,9 +640,10 @@ class AttackerProfiler:
             log.error(f"JSON parse failed twice for {source_ip}; returning minimal profile")
             return self._minimal_profile(source_ip, confidence=0.0)
 
-        # Ensure required fields exist
-        profile.setdefault("source_ip", source_ip)
-        profile.setdefault("risk_score", risk_score)
+        # Authoritative fields — never trust the LLM's guess for these. The IP and
+        # the 9-signal risk score come from the engine, not the narrative model.
+        profile["source_ip"] = source_ip
+        profile["risk_score"] = risk_score
         profile.setdefault("similar_past_cases", len(similar))
         profile.setdefault("confidence", 0.5)
 

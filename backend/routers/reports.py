@@ -411,10 +411,13 @@ def _build_score_signals_from_breakdown(
         if sig is None:
             continue
 
-        # Patch stale MITRE signal: stored 0/12 but techniques are available.
+        # Recompute the MITRE signal from the report's authoritative technique
+        # set (§5.1 mitre_rows) + kill-chain stage whenever techniques are
+        # supplied, so the §5.3 bar always matches §5.1 / the header count /
+        # the kill-chain stage. (Previously only patched when the stored bar was
+        # 0/12, which left §5.1=5 techniques vs §5.3="2 technique(s)".)
         if (
             key == "mitre_sophistication"
-            and int(sig.get("points", 0)) == 0
             and not sig.get("skipped")
             and mitre_techniques
         ):
@@ -939,6 +942,37 @@ def _adapt_context_for_v2(ctx: dict) -> dict:
     }
 
 
+_NARRATIVE_ACTIVITY_TERMS = (
+    "login", "log-in", "credential", "username", "password", "root", "brute",
+    "command", "shell", "exploit", "malware", "lateral", "compromise",
+    "post-exploit", "exfiltrat", "backdoor", "beacon",
+)
+
+
+def _ground_narrative(
+    text: str, *, auth_attempts: int, success: int, commands: int, mitre: int, yara: int
+) -> str:
+    """Deterministic safety net for the LLM narrative: if the session has NO
+    authentication attempts, commands, MITRE techniques or malware, the narrative
+    must not claim any of those. Such a narrative (e.g. "attempts to use the 'root'
+    username" on a 0-attempt session) is replaced with a grounded statement so the
+    prose never contradicts the engine's signals."""
+    if not text:
+        return text
+    has_activity = (auth_attempts > 0 or success > 0 or commands > 0 or mitre > 0 or yara > 0)
+    if has_activity:
+        return text
+    low = text.lower()
+    if any(t in low for t in _NARRATIVE_ACTIVITY_TERMS):
+        return (
+            "Low-interaction session with no authentication attempts, commands, "
+            "MITRE ATT&CK techniques, or malware observed. The activity is consistent "
+            "with passive scanning or opportunistic reconnaissance rather than an "
+            "active intrusion."
+        )
+    return text
+
+
 async def _build_forensic_context(session_id: str) -> dict:
     from db import session_scope
     from sqlalchemy import text
@@ -1092,27 +1126,15 @@ async def _build_forensic_context(session_id: str) -> dict:
         except Exception as exc:
             log.debug("suspect_profiles query failed for %s: %s", source_ip, exc)
 
-    # ── Pre-flight: aggregate individual sessions for unified rows ───────────
-    # Must run BEFORE MITRE / Kill Chain sections so pg_row is populated.
-    # We aggregate whenever the IP has multiple sessions (treating the report
-    # as a per-IP summary rather than a single isolated session). This is the
-    # behaviour users expect when generating a report from a brute-force IP:
-    # the timeline, kill chain and risk should reflect ALL the attacker's
-    # activity, not just one stray TCP connection.
+    # ── Per-session faithfulness ─────────────────────────────────────────────
+    # A report renders EXACTLY the engine's stored record for the one session
+    # opened — its score, breakdown, MITRE, malware and enrichment snapshot — so
+    # every section (§3 identity, §5.3 signals, §6 profile) agrees and matches
+    # what the engine actually computed. We therefore only aggregate across an
+    # IP's sessions for genuine "unified-" rollup sessions; a normal session is
+    # NOT silently promoted to an IP-wide summary (that was the root cause of the
+    # report mixing one session's identity with another session's score).
     is_unified = pg_row.get("honeypot_type") == "unified" or session_id.startswith("unified-")
-    if not is_unified and source_ip:
-        try:
-            async with session_scope() as db:
-                _cnt = await db.execute(
-                    text(
-                        "SELECT COUNT(*) FROM forensic_sessions WHERE source_ip = :ip AND honeypot_type != 'unified'"
-                    ),
-                    {"ip": source_ip},
-                )
-                if int(_cnt.scalar() or 0) > 1:
-                    is_unified = True
-        except Exception:
-            pass
     if is_unified and source_ip:
         try:
             async with session_scope() as db:
@@ -1391,21 +1413,33 @@ async def _build_forensic_context(session_id: str) -> dict:
     if source_ip:
         try:
             async with session_scope() as db:
-                # Always pull the full per-IP timeline so the report reflects
-                # the attacker's complete activity (e.g. brute-force IPs that
-                # span dozens of sessions in a few seconds — the single-session
-                # view shows only ~5 events out of hundreds).
-                tl_res = await db.execute(
-                    text("""
-                        SELECT ts, honeypot_type, event_category, event_action,
-                               destination_port, protocol, summary, session_id
-                        FROM forensic_timeline_events
-                        WHERE source_ip = :ip
-                        ORDER BY ts ASC
-                        LIMIT 2000
-                    """),
-                    {"ip": source_ip},
-                )
+                # Per-session faithfulness: the timeline shows the opened
+                # session's own events. Only genuine "unified-" rollups span the
+                # whole IP's activity.
+                if is_unified:
+                    tl_res = await db.execute(
+                        text("""
+                            SELECT ts, honeypot_type, event_category, event_action,
+                                   destination_port, protocol, summary, session_id
+                            FROM forensic_timeline_events
+                            WHERE source_ip = :ip
+                            ORDER BY ts ASC
+                            LIMIT 2000
+                        """),
+                        {"ip": source_ip},
+                    )
+                else:
+                    tl_res = await db.execute(
+                        text("""
+                            SELECT ts, honeypot_type, event_category, event_action,
+                                   destination_port, protocol, summary, session_id
+                            FROM forensic_timeline_events
+                            WHERE session_id = :sid
+                            ORDER BY ts ASC
+                            LIMIT 2000
+                        """),
+                        {"sid": session_id},
+                    )
                 tl_rows = list(tl_res.mappings())
                 for r in tl_rows:
                     cat = r["event_category"] or ""
@@ -1615,48 +1649,14 @@ async def _build_forensic_context(session_id: str) -> dict:
         profile_dict["mistral_analysis"] = pg_row["forensic_narrative"]
 
     # ── Score signals ──────────────────────────────────────
-    # The platform headline is the IP's MAX session score (mirrors the
-    # Profiling page). To keep the headline coherent with the breakdown,
-    # we surface the breakdown of the session that actually achieved that
-    # max — not the breakdown of the session the user happens to be viewing.
-    # Otherwise the visible signals sum to a different number than the
-    # headline (e.g. headline 34, signals summing to 24).
+    # Per-session faithfulness: render THIS session's own stored 9-signal
+    # breakdown. We never swap in another session's breakdown — the headline,
+    # the bars and §3's identity must all describe the one session being viewed.
+    # (ip_risk_scores is used only as a last resort when the session has no
+    # stored breakdown at all.)
     sb = pg_row.get("signal_breakdown") or {}
     session_score = int(pg_row["risk_score"]) if pg_row.get("risk_score") is not None else None
-    max_sess_score: int | None = None
-    if source_ip:
-        try:
-            async with session_scope() as db:
-                top = await db.execute(
-                    text("""
-                        SELECT risk_score, signal_breakdown
-                        FROM forensic_sessions
-                        WHERE source_ip = :ip
-                          AND risk_score IS NOT NULL
-                        ORDER BY risk_score DESC
-                        LIMIT 1
-                    """),
-                    {"ip": source_ip},
-                )
-                top_row = top.mappings().fetchone()
-                if top_row and top_row["risk_score"] is not None:
-                    max_sess_score = int(top_row["risk_score"])
-                    top_sb = top_row["signal_breakdown"] or {}
-                    if isinstance(top_sb, str):
-                        try:
-                            top_sb = json.loads(top_sb)
-                        except Exception:
-                            top_sb = {}
-                    # Adopt the top session's breakdown only if it's richer
-                    # (or equal) than the current session's — never demote.
-                    if isinstance(top_sb, dict) and top_sb and (
-                        session_score is None or max_sess_score > session_score
-                    ):
-                        sb = top_sb
-        except Exception:
-            pass
 
-    # ip_risk_scores fallback (only if no per-session breakdown at all)
     irs_risk_score: int | None = None
     if not sb and source_ip:
         try:
@@ -1677,13 +1677,18 @@ async def _build_forensic_context(session_id: str) -> dict:
                         irs_risk_score = int(irs_row["risk_score"])
         except Exception:
             pass
-    # Extract mitre_techniques as plain strings for the MITRE signal patch.
-    _raw_mitre = pg_row.get("mitre_techniques") or []
-    _mitre_ids_for_patch = [
-        t if isinstance(t, str) else (t.get("id") or "")
-        for t in _raw_mitre
-        if t
-    ]
+    # Score the MITRE sophistication signal on the EXACT technique set rendered
+    # in §5.1 (mitre_rows) and the header count — not the raw stored breakdown —
+    # so §5.1, the headline MITRE stat, the kill-chain stage and this §5.3 bar
+    # always cite the same numbers (previously §5.1 listed 5 while §5.3 said 2).
+    _mitre_ids_for_patch = [r["id"] for r in mitre_rows if r.get("id")]
+    if not _mitre_ids_for_patch:
+        _raw_mitre = pg_row.get("mitre_techniques") or []
+        _mitre_ids_for_patch = [
+            t if isinstance(t, str) else (t.get("id") or "")
+            for t in _raw_mitre
+            if t
+        ]
     _kc_stage_for_patch = int(pg_row.get("kill_chain_stage") or 0)
 
     if sb:
@@ -1693,59 +1698,58 @@ async def _build_forensic_context(session_id: str) -> dict:
     else:
         score_signals = _build_score_signals_legacy(profile_dict, detail)
 
-    # If the MITRE signal was patched (stale DB breakdown), recompute the score
-    # from the patched signals so the headline is self-consistent with §5.3.
-    patched_score = min(100, sum(s["points"] for s in score_signals)) if score_signals else None
-
-    # Pick the highest meaningful score across every authoritative source for
-    # this IP, so the report headline matches the Profiling page exactly.
-    sp_score = profile_dict.get("suspect_profile_risk_score")
-    score_candidates = [
-        s
-        for s in (irs_risk_score, session_score, max_sess_score, sp_score, patched_score)
-        if s is not None
-    ]
-    if score_candidates:
-        risk_score = max(score_candidates)
+    # Headline = the exact sum of the §5.3 signal bars rendered just below it
+    # (capped at 100). The engine guarantees a session's stored score equals the
+    # sum of its breakdown, so this faithfully reproduces the engine's number for
+    # the opened session while making §1/§5.3/§10 self-evidently agree (no hidden
+    # source can disagree with the visible bars).
+    signal_sum = (
+        min(100, sum(int(s.get("points", 0)) for s in score_signals))
+        if score_signals
+        else None
+    )
+    if signal_sum is not None:
+        risk_score = signal_sum
     else:
-        risk_score = int(profile_dict.get("risk_score") or 0)
+        # No signal breakdown at all — fall back to the stored per-session score.
+        _fallback = [s for s in (session_score, irs_risk_score) if s is not None]
+        risk_score = max(_fallback) if _fallback else int(profile_dict.get("risk_score") or 0)
     risk_label, risk_color = _risk_label_color(risk_score)
 
-    # ── Malware intelligence — also check PG enrichment_data for captured files ──
-    if not profile_dict.get("yara_matches") and not profile_dict.get("ioc_hashes") and source_ip:
-        try:
-            async with session_scope() as db:
-                pg_enrich = await db.execute(
-                    text("""
-                    SELECT
-                        enrichment_data->'yara_matches'   AS yara_matches,
-                        enrichment_data->>'captured_file' AS captured_file,
-                        enrichment_data->'vt_malicious'   AS vt_malicious
-                    FROM forensic_sessions
-                    WHERE source_ip = :ip
-                      AND enrichment_data->'yara_matches' IS NOT NULL
-                      AND jsonb_array_length(enrichment_data->'yara_matches') > 0
-                    LIMIT 1
-                """),
-                    {"ip": source_ip},
-                )
-                pe_row = pg_enrich.mappings().fetchone()
-                if pe_row:
-                    ym = pe_row["yara_matches"]
-                    if isinstance(ym, str):
-                        try:
-                            ym = json.loads(ym)
-                        except Exception:
-                            ym = []
-                    if ym:
-                        profile_dict["yara_matches"] = ym
-                    if pe_row["captured_file"]:
-                        profile_dict.setdefault("ioc_hashes", [])
-                        if pe_row["captured_file"] not in profile_dict["ioc_hashes"]:
-                            profile_dict["ioc_hashes"].insert(0, pe_row["captured_file"])
-        except Exception:
-            pass
+    # ── Malware intelligence — from THIS session's stored enrichment snapshot ──
+    # Faithful to the opened session: read its own yara_matches / captured_file
+    # rather than borrowing malware from another session of the same IP.
+    if not profile_dict.get("yara_matches") and not profile_dict.get("ioc_hashes"):
+        _ed = pg_row.get("enrichment_data") or {}
+        ym = _ed.get("yara_matches")
+        if isinstance(ym, str):
+            try:
+                ym = json.loads(ym)
+            except Exception:
+                ym = []
+        if ym:
+            profile_dict["yara_matches"] = ym
+        _cap = _ed.get("captured_file")
+        if _cap:
+            profile_dict.setdefault("ioc_hashes", [])
+            if _cap not in profile_dict["ioc_hashes"]:
+                profile_dict["ioc_hashes"].insert(0, _cap)
     malware_info = _resolve_malware_info(profile_dict.get("yara_matches") or [])
+
+    # ── Ground the LLM narrative against the engine's signals ──────────────────
+    # Guarantees the prose (exec summary §1, attack-chain §5.1, profile §6 — all
+    # derived from mistral_analysis) never claims auth/commands/malware on a
+    # session that recorded none of them.
+    _na = int(pg_row.get("login_attempts") or len(logins) or 0)
+    _su = int(pg_row.get("success_count") or 0)
+    _nc = len(cmds)
+    _nm = len([r for r in mitre_rows if r.get("id")])
+    _ny = len(profile_dict.get("yara_matches") or [])
+    if profile_dict.get("mistral_analysis"):
+        profile_dict["mistral_analysis"] = _ground_narrative(
+            profile_dict["mistral_analysis"],
+            auth_attempts=_na, success=_su, commands=_nc, mitre=_nm, yara=_ny,
+        )
 
     # ── VirusTotal result from file_analysis table ─────────
     vt_result: dict[str, Any] = {}
@@ -1883,6 +1887,41 @@ async def _build_forensic_context(session_id: str) -> dict:
                         profile_dict["usage_type"] = rep["usage_type"]
         except Exception:
             pass
+
+    # ── Per-session faithfulness: §3 identity/threat = the SAME snapshot the
+    # engine scored this session from (enrichment_data), not a fresh per-IP
+    # lookup. Otherwise §3 (live) and §5.3 (stored) disagree — which is exactly
+    # how a quiet probe ended up showing another session's geo/abuse/VPN. The
+    # session snapshot takes precedence over the IP-level cache.
+    _ed = pg_row.get("enrichment_data") or {}
+    if isinstance(_ed, dict) and _ed:
+        for _k in ("reputation", "geo", "threat_summary", "privacy", "infrastructure"):
+            if isinstance(_ed.get(_k), dict) and _ed.get(_k):
+                enrichment_cache[_k] = _ed[_k]
+        _rep = _ed.get("reputation") or {}
+        _geo = _ed.get("geo") or {}
+        _thr = _ed.get("threat_summary") or {}
+        if _rep.get("abuse_score") is not None:
+            profile_dict["abuseipdb_score"] = _rep["abuse_score"]
+        if _rep.get("total_reports") is not None:
+            profile_dict["abuseipdb_reports"] = _rep["total_reports"]
+        _country = _rep.get("country_name") or _geo.get("country")
+        if _country:
+            profile_dict["country"] = _country
+        _cc = _rep.get("country_code") or _geo.get("country_code")
+        if _cc:
+            profile_dict["country_iso"] = _cc
+        if _geo.get("city"):
+            profile_dict["city"] = _geo["city"]
+        if _geo.get("asn"):
+            profile_dict["asn"] = f"AS{_geo['asn']}"
+        if _geo.get("org"):
+            profile_dict["isp"] = _geo["org"]
+        for _flag in ("is_tor", "is_vpn", "is_proxy", "is_datacenter", "is_bogon"):
+            if _flag in _thr:
+                profile_dict[_flag] = bool(_thr[_flag])
+        if _thr.get("tier"):
+            profile_dict["threat_tier"] = _thr["tier"]
 
     # ── Engine-persisted IOCs (forensic_iocs) ─────────────────────────────────
     # The engine's ioc_extractor.py upserts every URL/domain/IP/hash/CVE/cmdline
@@ -2196,7 +2235,10 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> list[dict[s
                     WITH ranked AS (
                         SELECT
                             fs.*,
-                            ROW_NUMBER() OVER (PARTITION BY fs.source_ip ORDER BY fs.started_at DESC) AS rn,
+                            -- Anchor each IP on its HIGHEST-scoring session so opening
+                            -- the report from this list shows that IP's most significant
+                            -- (and fully self-consistent) session, not just the latest.
+                            ROW_NUMBER() OVER (PARTITION BY fs.source_ip ORDER BY fs.risk_score DESC NULLS LAST, fs.started_at DESC) AS rn,
                             COUNT(*)                 OVER (PARTITION BY fs.source_ip) AS agg_sessions_count,
                             SUM(fs.login_attempts)   OVER (PARTITION BY fs.source_ip) AS agg_login_attempts,
                             SUM(fs.success_count)    OVER (PARTITION BY fs.source_ip) AS agg_success_count,
@@ -2208,32 +2250,45 @@ async def forensic_sessions(limit: int = Query(50, ge=1, le=200)) -> list[dict[s
                     )
                     SELECT
                         r.session_id, r.source_ip, r.honeypot_type,
-                        -- Prefer the unified per-IP score (ip_risk_scores) when present,
-                        -- but never fall below the actual per-session score: ip_risk_scores
-                        -- is only populated for IPs above the profiling threshold, so most
-                        -- sessions would otherwise COALESCE to 0 despite having a real score.
-                        GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) AS risk_score,
+                        -- Per-IP unified score: max across the same stored authoritative
+                        -- sources the forensic report headline uses, so this list, the
+                        -- report and the Profiling page always agree. Sources:
+                        --   irs.risk_score        — ip_risk_scores (unified per-IP score)
+                        --   r.agg_risk_score      — MAX per-session forensic_sessions score
+                        --   sp.sp_risk_score      — suspect_profiles (Profiling/FBI-BAU score)
+                        -- ip_risk_scores & suspect_profiles only exist above the profiling
+                        -- threshold, hence COALESCE-to-0 + GREATEST so we never drop below
+                        -- the real per-session score.
+                        GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0), COALESCE(sp.sp_risk_score, 0)) AS risk_score,
                         CASE
-                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 80 THEN 'CRITICAL'
-                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 60 THEN 'HIGH'
-                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 40 THEN 'MEDIUM'
-                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0)) >= 20 THEN 'LOW'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0), COALESCE(sp.sp_risk_score, 0)) >= 70 THEN 'CRITICAL'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0), COALESCE(sp.sp_risk_score, 0)) >= 45 THEN 'HIGH'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0), COALESCE(sp.sp_risk_score, 0)) >= 25 THEN 'MEDIUM'
+                            WHEN GREATEST(COALESCE(irs.risk_score, 0), COALESCE(r.agg_risk_score, 0), COALESCE(sp.sp_risk_score, 0)) >= 10 THEN 'LOW'
                             ELSE 'INFO'
                         END                                AS risk_level,
                         COALESCE(irs.confidence, 'LOW')    AS confidence,
                         r.kill_chain_phase,
-                        r.agg_kc_stage                     AS kill_chain_stage,
+                        -- Per-session faithful: the anchor (top) session's OWN
+                        -- attempts/success/stage, so the list and the report it
+                        -- opens show the same numbers (not IP-wide sums).
+                        r.kill_chain_stage                 AS kill_chain_stage,
                         r.primary_technique, r.forensic_narrative,
                         r.honeypots_hit, r.honeypot_count,
                         r.agg_sessions_count               AS sessions_count,
-                        r.agg_login_attempts               AS login_attempts,
-                        r.agg_success_count                AS success_count,
-                        r.agg_velocity                     AS attack_velocity,
+                        r.login_attempts                   AS login_attempts,
+                        r.success_count                    AS success_count,
+                        r.attack_velocity                  AS attack_velocity,
                         r.started_at, r.ended_at,
                         r.mitre_techniques
                     FROM ranked r
                     LEFT JOIN ip_risk_scores irs
                            ON irs.source_ip = CAST(r.source_ip AS INET)
+                    LEFT JOIN (
+                        SELECT source_ip, MAX(COALESCE(risk_score, 0)) AS sp_risk_score
+                        FROM suspect_profiles
+                        GROUP BY source_ip
+                    ) sp ON CAST(sp.source_ip AS TEXT) = CAST(r.source_ip AS TEXT)
                     WHERE r.rn = 1
                     ORDER BY risk_score DESC, r.started_at DESC
                     LIMIT :lim
@@ -2354,33 +2409,8 @@ async def forensic_session_enrichment(session_id: str) -> dict[str, Any]:
                 except Exception:
                     mt = []
             mitre_techniques = mt if isinstance(mt, list) else []
-
-            # Aggregate MITRE techniques across ALL sessions for this IP so the
-            # reconstruction view shows the full picture (not just one session).
-            if source_ip:
-                agg = await db.execute(
-                    text("""
-                    SELECT DISTINCT elem AS tech
-                    FROM forensic_sessions,
-                         jsonb_array_elements_text(
-                             CASE WHEN jsonb_typeof(mitre_techniques) = 'array'
-                                  THEN mitre_techniques ELSE '[]'::jsonb END
-                         ) AS elem
-                    WHERE source_ip = :ip AND honeypot_type != 'unified'
-                      AND elem IS NOT NULL AND elem != ''
-                """),
-                    {"ip": source_ip},
-                )
-                agg_techs = [r2[0] for r2 in agg.fetchall()]
-                if agg_techs:
-                    # Preserve order, dedupe, prefer aggregated set
-                    seen = set()
-                    merged = []
-                    for t in agg_techs + mitre_techniques:
-                        if t and t not in seen:
-                            seen.add(t)
-                            merged.append(t)
-                    mitre_techniques = merged
+            # Per-session faithfulness: the reconstruction reflects THIS session's
+            # own techniques (matching the forensic report), not an IP-wide union.
     except Exception as exc:
         log.warning("enrichment lookup failed for %s: %s", session_id, exc)
         return out
@@ -2444,6 +2474,19 @@ async def forensic_session_enrichment(session_id: str) -> dict[str, Any]:
                 "domain": live_abuseipdb.get("domain"),
                 "is_tor": live_abuseipdb.get("is_tor", False),
             }
+
+    # Per-session faithfulness: overlay the session's OWN stored enrichment
+    # snapshot (the data the engine scored from) over the IP-level cache, so the
+    # reconstruction's geo / abuse / VPN match the forensic report exactly
+    # (e.g. the session's Russia snapshot, not a fresh per-IP lookup). WHOIS and
+    # Shodan stay from the IP cache (network-level, no per-session conflict).
+    if isinstance(enrichment_data, dict) and enrichment_data:
+        for _k in ("reputation", "geo", "threat_summary", "privacy", "infrastructure"):
+            if isinstance(enrichment_data.get(_k), dict) and enrichment_data.get(_k):
+                enrichment[_k] = enrichment_data[_k]
+        if isinstance(enrichment.get("geo"), dict) and enrichment["geo"].get("org") and not enrichment["geo"].get("as_org"):
+            enrichment["geo"]["as_org"] = enrichment["geo"]["org"]
+        cache_hit = True
 
     rep = enrichment.get("reputation") or {}
     whois = enrichment.get("whois") or {}

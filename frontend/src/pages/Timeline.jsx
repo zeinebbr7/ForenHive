@@ -1,8 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, PieChart, Pie, Cell,
-} from 'recharts';
 import api from '../api';
 import { SOURCE_META } from '../constants';
 import { fmt, evNormalize } from '../utils';
@@ -11,12 +7,6 @@ const HP_COLORS  = { cowrie: '#8C1A2B', dionaea: '#ff5050', galah: '#b464ff', ze
 const SEV_COLORS = { critical: '#ff5050', high: '#ff9933', medium: '#f59e0b', low: '#2dd4bf' };
 const SEV_COLOR  = { critical: 'red', high: 'red', medium: 'gold', low: 'teal' };
 const SEV_LABEL  = { critical: ' CRIT', high: ' HIGH', medium: ' MED', low: ' LOW' };
-const TOOLTIP_STYLE = {
-  backgroundColor: '#0d111e', border: '1px solid #1e2538',
-  borderRadius: '6px', fontFamily: "'JetBrains Mono', monospace",
-  fontSize: '11px', color: '#e0e6f0',
-};
-const AXIS_TICK = { fontSize: 10, fill: '#8892a4', fontFamily: "'JetBrains Mono', monospace" };
 const MAX_TICKS  = 20;
 const HP_KEYS    = ['cowrie', 'dionaea', 'galah', 'zeek'];
 
@@ -142,40 +132,6 @@ function ChartsPanel({ history, byHp, bySev, total, paused }) {
           </div>
         </div>
 
-        {history.length === 0 ? (
-          <div className="tl-wait">Waiting for first tick…</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={150}>
-            <AreaChart data={history} margin={{ top: 4, right: 6, bottom: 0, left: -22 }}>
-              <defs>
-                {HP_KEYS.map(hp => (
-                  <linearGradient key={hp} id={`grad-${hp}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"  stopColor={HP_COLORS[hp]} stopOpacity={0.55} />
-                    <stop offset="100%" stopColor={HP_COLORS[hp]} stopOpacity={0.05} />
-                  </linearGradient>
-                ))}
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="t" tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={28} />
-              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} width={32} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: 'rgba(255,255,255,0.12)', strokeWidth: 1 }} />
-              {HP_KEYS.map(hp => (
-                <Area
-                  key={hp}
-                  type="monotone"
-                  dataKey={hp}
-                  stackId="a"
-                  stroke={HP_COLORS[hp]}
-                  strokeWidth={1.5}
-                  fill={`url(#grad-${hp})`}
-                  name={(SOURCE_META[hp] || { label: hp }).label}
-                  isAnimationActive={false}
-                />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-
         <div className="tl-mini-legend">
           {HP_KEYS.map(hp => (
             <span key={hp} className="tl-mini-legend-item">
@@ -203,32 +159,6 @@ function ChartsPanel({ history, byHp, bySev, total, paused }) {
           <div className="tl-wait">No events yet.</div>
         ) : (
           <div className="tl-split-body">
-            <div className="tl-donut-wrap">
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie
-                    data={hpData}
-                    dataKey="count"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={48}
-                    outerRadius={70}
-                    paddingAngle={3}
-                    stroke="none"
-                  >
-                    {hpData.map((e, i) => (
-                      <Cell key={i} fill={HP_COLORS[e.hp] || '#888'} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="tl-donut-center">
-                <div className="tl-donut-center-val">{hpData.length}</div>
-                <div className="tl-donut-center-lbl">sources</div>
-              </div>
-            </div>
             <div className="tl-legend">
               {hpData.map((e, i) => (
                 <div key={i} className="tl-legend-row">
