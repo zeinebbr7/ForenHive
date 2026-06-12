@@ -8,7 +8,7 @@
 
 ## Objectives
 
-- Stand up four complementary honeypots covering distinct attack surfaces (interactive shell, vulnerable services, web, passive capture).
+- Stand up three complementary honeypots  + zeek covering distinct attack surfaces (interactive shell, vulnerable services, web, passive capture).
 - Guarantee network isolation between the honeypots and the production backend.
 - Emit structured (JSON) logs into a shared volume so the Sprint 2 pipeline can ingest them without extra glue.
 - Make every honeypot's configuration versioned in git for reproducibility.
